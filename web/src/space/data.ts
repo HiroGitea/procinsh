@@ -36,7 +36,7 @@ interface PackedTree {
   height: number;
 }
 
-const WRAPPED_ROW_OFFSET = PROCESS_SIDE / 4;
+const WRAPPED_ROW_OFFSET = PROCESS_SIDE;
 
 function networkGroups(fd_relations: FdRelation[]) {
   const groups = new Map<string, NetworkGroup>();
