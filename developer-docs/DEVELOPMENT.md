@@ -401,7 +401,7 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 
 | 対象 | 配置・表示の考え方 | 主な実装 |
 |---|---|---|
-| プロセスと親子関係 | 初期表示・Rearrange では葉の子を一つの領域にまとめ、その中で折り返す。葉の領域は PID・開始時刻順で最初の葉の位置に置き、子孫を持つ兄弟の枝の領域と横一列に並べる。枝の領域同士は縦に積まず、ルートが異なる木同士は木全体をまとめて折り返せる。折り返す行はプロセスの一辺分ずつ右へずらす。葉の折り返しにより同じ深さでも縦位置は異なり得る。通常更新は既存位置を保ち、新規プロセスを親の近くの空き位置に置くため、枝を横に分離する制約は適用しない | [`treeLayout`・`stableLayout`](../web/src/space/process-layout.ts) |
+| プロセスと親子関係 | 初期表示・Rearrange では葉の子を一つの領域にまとめ、その中で折り返す。子孫を持つ兄弟の枝の領域と横一列に並べ、異なるソケット通信相手が多いプロセスを含む領域を中央寄りに置く。葉の領域内も通信相手が多いプロセスから中央に近い位置を割り当てる。通信相手は現在の識別子で確認済みのローカル接続を数え、同じ相手への複数 FD は一つとし、共有 FD・接続候補・外部接続先・自己接続を除く。複数の通信相手を持つプロセスがない場合は PID・開始時刻順で最初の葉の位置に葉の領域を置く。枝の領域同士は縦に積まず、ルートが異なる木同士は木全体をまとめて折り返せる。折り返す行はプロセスの一辺分ずつ右へずらす。葉の折り返しにより同じ深さでも縦位置は異なり得る。通常更新は既存位置を保ち、新規プロセスを親の近くの空き位置に置くため、枝を横に分離する制約は適用しない | [`treeLayout`・`stableLayout`](../web/src/space/process-layout.ts) |
 | 仮想アドレス空間 | アドレス順にメモリ領域を積み上げ、アドレスの隙間を圧縮し、高さをプロセスごとに正規化。プロセス間の同じ高さは同じアドレスを意味しない | [`layoutMaps`](../web/src/space/data.ts)、[`regionColor`](../web/src/space/scene.ts#L81) |
 | ユーザーの識別 | 箱の上下の枠は実 UID、縦の枠は実効 UID に応じて色分け | [`userColor`・`processColors`](../web/src/space/model.ts) |
 | IPC・ネットワーク接続 | FD 関係を線で表示。接続候補・共有 FD は破線。ネットワーク接続先はプロセス・プロトコル・相手 IP/port ごとにまとめ、プロセスの上方に配置 | [`buildScene`](../web/src/space/scene.ts#L99)、[`networkGroups`](../web/src/space/data.ts)、[`networkLayout`](../web/src/space/data.ts) |
@@ -450,7 +450,7 @@ SPACE は両端が表示中のシグナルを最大256件保持し、紫色の�
 | 対象 | テストソース | 実行手順 |
 |---|---|---|
 | 部品間の import 境界、シーンへの入力、当たり判定・選択、カメラ範囲、詳細表示のリンク・操作、描画の通知・停止復帰 | [space-components.test.ts](../web/tests/space-components.test.ts) | `npm --prefix web test` |
-| プロセス配置 | [process-layout.ts](../web/src/space/process-layout.ts) の in-source test | `npm --prefix web test -- src/space/process-layout.ts` |
+| プロセス配置 | [process-layout.ts](../web/src/space/process-layout.ts) の in-source test と [process-layout.test.ts](../web/tests/process-layout.test.ts) のソケット通信相手・配置安定性の回帰テスト | `npm --prefix web test -- src/space/process-layout.ts tests/process-layout.test.ts` |
 | データのマージ、接続先・ファイルの配置、活動モデル、解像度調整 | [data.ts](../web/src/space/data.ts)・[renderer.ts](../web/src/space/renderer.ts) の in-source test | `npm --prefix web test` |
 | 表示ラベルと UID 色 | [space-formatting.test.ts](../web/tests/space-formatting.test.ts) | `npm --prefix web test` |
 | 観測状態・活動経路、SSE の停止・再同期・古い通知の破棄 | [data.ts の in-source test](../web/src/space/data.ts) | `npm --prefix web test` |

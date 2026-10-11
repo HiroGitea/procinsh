@@ -299,8 +299,19 @@ export class SpaceDataStore {
     for (const id of this.edgeStats.keys())
       if (!edges.has(id)) this.edgeStats.delete(id);
     const layout = rearrange
-      ? treeLayout(snapshot.processes)
-      : stableLayout(snapshot.processes, this.positions());
+      ? treeLayout(
+          snapshot.processes,
+          undefined,
+          undefined,
+          snapshot.fd_relations,
+        )
+      : stableLayout(
+          snapshot.processes,
+          this.positions(),
+          undefined,
+          undefined,
+          snapshot.fd_relations,
+        );
     this.nodes.clear();
     for (const p of snapshot.processes) {
       const place = layout.get(key(p.identity));

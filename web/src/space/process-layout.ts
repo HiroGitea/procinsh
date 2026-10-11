@@ -1,7 +1,7 @@
 // Pure process placement: full forest layout and stable incremental updates.
 // Exports ProcessLayoutNode, treeLayout, and stableLayout; no SSE or rendering state.
 import { key, PROCESS_SIDE } from "./model.js";
-import type { ProcessId } from "../shared/api-types.js";
+import type { ProcessId, FdRelation } from "../shared/api-types.js";
 import type { Position, TreePosition } from "./types.js";
 
 /** The identity and parent relationship needed to place a process. */
@@ -13,6 +13,8 @@ interface PackedTree {
   positions: Map<string, TreePosition>;
   width: number;
   height: number;
+  /** Largest number of distinct socket peers of any process in this block. */
+  socketPeers: number;
 }
 
 const WRAPPED_ROW_OFFSET = PROCESS_SIDE;
@@ -25,11 +27,14 @@ const WRAPPED_ROW_OFFSET = PROCESS_SIDE;
  * branches with descendants occupy separate horizontal ranges. Trees with
  * different roots can wrap as whole units. Depth describes ancestry, not rows.
  * xGap and yGap control horizontal and vertical spacing.
+ * Distinct confirmed socket peers prioritize central sibling blocks and leaf
+ * slots. Shared descriptors, candidates, external and stale peers do not count.
  */
 export function treeLayout(
   processes: ProcessLayoutNode[],
   xGap = 4.8,
   yGap = 6.5,
+  relations: readonly FdRelation[] = [],
 ): Map<string, TreePosition> {
   const ordered = [...processes].sort(
     (a, b) =>
@@ -37,6 +42,27 @@ export function treeLayout(
       a.identity.start_time_ticks - b.identity.start_time_ticks,
   );
   const known = new Map(ordered.map((node) => [key(node.identity), node]));
+  const peers = new Map<string, Set<string>>();
+  for (const relation of relations) {
+    if (
+      !relation.peer ||
+      relation.shared ||
+      relation.candidate ||
+      relation.endpoint.resource.kind !== "socket" ||
+      relation.peer.resource.kind !== "socket"
+    )
+      continue;
+    const a = key(relation.endpoint.process_id),
+      b = key(relation.peer.process_id);
+    if (a === b || !known.has(a) || !known.has(b)) continue;
+    for (const [owner, peer] of [
+      [a, b],
+      [b, a],
+    ]) {
+      if (!peers.has(owner)) peers.set(owner, new Set());
+      peers.get(owner)!.add(peer);
+    }
+  }
   const rank = new Map(
     ordered.map((node, index) => [key(node.identity), index]),
   );
@@ -85,7 +111,32 @@ export function treeLayout(
     gap: number,
     wrapRows: boolean,
   ): PackedTree => {
-    if (!layouts.length) return { positions: new Map(), width: 0, height: 0 };
+    if (!layouts.length)
+      return { positions: new Map(), width: 0, height: 0, socketPeers: 0 };
+    // Balance widths around the busiest block so a wide quiet subtree cannot
+    // push a socket hub back to the edge. Sibling order breaks degree ties.
+    if (!wrapRows && layouts.some((layout) => layout.socketPeers > 1)) {
+      const prioritized = layouts
+        .map((layout, index) => ({ layout, index }))
+        .sort(
+          (a, b) =>
+            b.layout.socketPeers - a.layout.socketPeers || a.index - b.index,
+        );
+      const left: PackedTree[] = [],
+        right: PackedTree[] = [];
+      let leftWidth = 0,
+        rightWidth = 0;
+      for (const { layout } of prioritized.slice(1)) {
+        if (leftWidth <= rightWidth) {
+          left.push(layout);
+          leftWidth += layout.width + gap;
+        } else {
+          right.push(layout);
+          rightWidth += layout.width + gap;
+        }
+      }
+      layouts = [...left.reverse(), prioritized[0].layout, ...right];
+    }
     const area = layouts.reduce(
       (sum, layout) => sum + (layout.width + gap) * (layout.height + gap),
       0,
@@ -121,7 +172,12 @@ export function treeLayout(
       width = Math.max(width, cursorX - gap);
       rowHeight = Math.max(rowHeight, layout.height);
     }
-    return { positions, width, height: cursorY + rowHeight };
+    return {
+      positions,
+      width,
+      height: cursorY + rowHeight,
+      socketPeers: Math.max(...layouts.map((layout) => layout.socketPeers)),
+    };
   };
   const build = (id: string): PackedTree => {
     const childIds = children.get(id)!,
@@ -130,8 +186,56 @@ export function treeLayout(
     // Insert the wrapped leaf block at the first leaf's place in sibling order.
     for (const child of childIds) {
       if (children.get(child)!.length) layouts.push(build(child));
-      else if (child === leaves[0])
-        layouts.push(pack(leaves.map(build), 3, true));
+      else if (child === leaves[0]) {
+        const block = pack(leaves.map(build), 3, true);
+        if (block.socketPeers > 1) {
+          const slots = [...block.positions.values()];
+          const centerX =
+            (Math.min(...slots.map((p) => p.x)) +
+              Math.max(...slots.map((p) => p.x))) /
+            2;
+          const centerY =
+            (Math.min(...slots.map((p) => p.y)) +
+              Math.max(...slots.map((p) => p.y))) /
+            2;
+          const distance = (p: TreePosition) =>
+            (p.x - centerX) ** 2 + (p.y - centerY) ** 2;
+          const available = [...slots].sort(
+            (a, b) => distance(a) - distance(b) || a.y - b.y || a.x - b.x,
+          );
+          const hubs = leaves
+            .filter((leaf) => (peers.get(leaf)?.size ?? 0) > 1)
+            .sort(
+              (a, b) =>
+                peers.get(b)!.size - peers.get(a)!.size ||
+                rank.get(a)! - rank.get(b)!,
+            );
+          const placements = new Map<string, TreePosition>();
+          const used = new Set<TreePosition>();
+          for (const [index, hub] of hubs.entries()) {
+            const slot = available[index];
+            used.add(slot);
+            placements.set(hub, {
+              ...block.positions.get(hub)!,
+              x: slot.x,
+              y: slot.y,
+            });
+          }
+          const remaining = slots.filter((slot) => !used.has(slot));
+          let nextSlot = 0;
+          for (const leaf of leaves) {
+            if (placements.has(leaf)) continue;
+            const slot = remaining[nextSlot++];
+            placements.set(leaf, {
+              ...block.positions.get(leaf)!,
+              x: slot.x,
+              y: slot.y,
+            });
+          }
+          block.positions = placements;
+        }
+        layouts.push(block);
+      }
     }
     const packed = pack(layouts, 3, false);
     const width = Math.max(xGap, packed.width),
@@ -150,6 +254,7 @@ export function treeLayout(
       positions,
       width,
       height: packed.height ? packed.height + yGap : yGap,
+      socketPeers: Math.max(peers.get(id)?.size ?? 0, packed.socketPeers),
     };
   };
   const forest = pack(roots.map(build), 9, true),
@@ -175,8 +280,9 @@ export function stableLayout(
   previous: ReadonlyMap<string, Pick<Position, "x" | "y">> = new Map(),
   xGap = 4.8,
   yGap = 6.5,
+  relations: readonly FdRelation[] = [],
 ): Map<string, TreePosition> {
-  const initial = treeLayout(processes, xGap, yGap),
+  const initial = treeLayout(processes, xGap, yGap, relations),
     result = new Map<string, TreePosition>();
   for (const [id, place] of initial) {
     const old = previous.get(id);
