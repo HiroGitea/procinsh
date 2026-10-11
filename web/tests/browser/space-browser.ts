@@ -558,13 +558,13 @@ try {
     const links=[[820001,820002],[820002,820004],[820004,820005]];
     const floorGeometry=links.every(([a,b])=>{
       const path=line(a,b);
-      return path.width===0.48&&path.points.every(p=>p[2]===0.06)&&path.points.slice(1).every((p,i)=>p[0]===path.points[i][0]||p[1]===path.points[i][1]);
+      return path.width===0.6&&path.points.every(p=>p[2]===0.06)&&path.points.slice(1).every((p,i)=>p[0]===path.points[i][0]||p[1]===path.points[i][1]);
     });
     m.selectProcess('820002:1');
     const entireFamily=links.every(([a,b])=>line(a,b).r===1&&line(a,b).g===1&&line(a,b).b===1);
-    const siblingsMuted=line(820001,820003).r===0.35&&line(820006,820007).r===0.35;
+    const siblingsMuted=line(820001,820003).r===0.22&&line(820006,820007).r===0.22;
     document.getElementById('close').click();
-    const cleared=links.every(([a,b])=>line(a,b).r===0.35);
+    const cleared=links.every(([a,b])=>line(a,b).r===0.22);
     m.selectProcess('820005:1');
     const allAncestors=links.every(([a,b])=>line(a,b).r===1);
     m.selectProcess('820002:1');m.fitScene();
