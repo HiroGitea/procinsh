@@ -16,6 +16,7 @@ import type {
 } from "./contracts.js";
 import { createSpaceDetails } from "./details.js";
 import { spaceElement as $ } from "./dom-types.js";
+import { initGlyph3D, ProcessInspectionCard } from "./inspection-card.js";
 
 const selection = new SpaceSelection();
 const data = new SpaceDataStore(
@@ -48,6 +49,18 @@ const search = createSpaceSearch(
 );
 const scene = createSpaceScene();
 const camera = createSpaceCamera($("world"));
+let inspectionCard: ProcessInspectionCard | null = null;
+initGlyph3D()
+  .then((atlas) => {
+    if (atlas) {
+      inspectionCard = new ProcessInspectionCard(atlas);
+      scene.root.add(inspectionCard);
+    }
+  })
+  .catch((err) => {
+    console.warn("Failed to initialize inspection card:", err);
+  });
+
 const renderer = createSpaceRenderer({
   graphics: T,
   canvas: $("world"),
@@ -61,6 +74,7 @@ const renderer = createSpaceRenderer({
   cpuGlows: data.cpuGlows,
   beforeFrame(now) {
     camera.controls.update();
+    inspectionCard?.updateCamera(camera.camera);
     if (now - lastFilePrune >= 1000) {
       lastFilePrune = now;
       pruneFiles(now);
@@ -86,7 +100,73 @@ bindSelection($("world"), $("hover"), {
   hover(state) {
     Object.assign(selection, state);
   },
+  onRegionHover(target) {
+    inspectionCard?.handleHover(target, camera.camera);
+  },
+  hitInspectionCard(ray) {
+    const hit = inspectionCard ? inspectionCard.hitTest(ray) : false;
+    if (hit) inspectionCard?.keepAlive();
+    return hit;
+  },
+  onInspectionCardClick() {
+    inspectionCard?.toggleLock();
+  },
 });
+
+window.addEventListener("keydown", (e) => {
+  if (document.activeElement?.tagName === "INPUT") return;
+  if (e.key === "x" || e.key === "X" || e.key === "m" || e.key === "M") {
+    inspectionCard?.toggleMode(camera.camera);
+  } else if (e.key === "Escape") {
+    inspectionCard?.unlock();
+  } else if (e.key === "l" || e.key === "L") {
+    inspectionCard?.toggleLock();
+  } else if (
+    e.key === "[" ||
+    e.key === "PageUp" ||
+    e.key === "ArrowUp" ||
+    e.key === "k" ||
+    e.key === "K"
+  ) {
+    if (inspectionCard?.isInteractive()) {
+      e.preventDefault();
+      inspectionCard.scrollPages(-1);
+    }
+  } else if (
+    e.key === "]" ||
+    e.key === "PageDown" ||
+    e.key === "ArrowDown" ||
+    e.key === "j" ||
+    e.key === "J"
+  ) {
+    if (inspectionCard?.isInteractive()) {
+      e.preventDefault();
+      inspectionCard.scrollPages(1);
+    }
+  }
+});
+
+const wheelRay = new T.Raycaster();
+const wheelMouse = new T.Vector2();
+
+$("world").addEventListener(
+  "wheel",
+  (e: WheelEvent) => {
+    if (!inspectionCard?.isInteractive() || e.ctrlKey || e.metaKey) return;
+    wheelMouse.set(
+      (e.clientX / innerWidth) * 2 - 1,
+      (-e.clientY / innerHeight) * 2 + 1,
+    );
+    wheelRay.setFromCamera(wheelMouse, camera.camera);
+    if (inspectionCard.hitTest(wheelRay)) {
+      e.preventDefault();
+      e.stopPropagation();
+      inspectionCard.scrollPages(e.deltaY > 0 ? 1 : -1);
+    }
+  },
+  { passive: false },
+);
+
 let firstView = true;
 let lastFilePrune = 0;
 
@@ -148,12 +228,16 @@ function updateSelection() {
 function clearSelection() {
   selection.clear();
   updateSelection();
+  inspectionCard?.unlock();
 }
 function selectProcess(id: string | null, focus = false) {
   selection.choose("process", id);
   updateSelection();
   const pos = id && data.nodes.get(id)?.pos;
   if (focus && pos) camera.focus(pos);
+  if (id && inspectionCard?.hasTarget(id)) {
+    inspectionCard.lock();
+  }
 }
 function selectConnection(id: string | null) {
   selection.choose("connection", id);

@@ -67,7 +67,10 @@ pub(super) async fn guard_http(request: Request, next: Next, address: SocketAddr
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
-    headers.insert(header::CONTENT_SECURITY_POLICY, "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".parse().unwrap());
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'".parse().unwrap(),
+    );
     headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse().unwrap());
     headers.insert(header::REFERRER_POLICY, "no-referrer".parse().unwrap());
     response

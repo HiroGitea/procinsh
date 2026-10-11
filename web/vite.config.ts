@@ -43,6 +43,9 @@ export default defineConfig(({ mode }) => {
   return {
     appType: "mpa",
     define: { "import.meta.vitest": "undefined" },
+    resolve: {
+      dedupe: ["three"],
+    },
     plugins: [applicationPages()],
     build: {
       manifest: true,
@@ -58,6 +61,12 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      fs: {
+        allow: [
+          resolve(import.meta.dirname, ".."),
+          resolve(import.meta.dirname, "../../../glyph3d-js"),
+        ],
+      },
       proxy: {
         "/api": {
           target: backend,

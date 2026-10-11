@@ -6,7 +6,9 @@ import type {
   FdRelation,
   IpcIdentity,
   FileIdentity,
+  MemoryMap,
 } from "../shared/api-types.js";
+import type { Region } from "./types.js";
 export const remoteLabel = (socket: SocketEndpoint | null | undefined) =>
   socket?.remote_hostname && socket.remote
     ? `${socket.remote_hostname}:${socket.remote.port}`
@@ -85,4 +87,46 @@ export function signalName(signal: number) {
     names[signal] ||
     (signal >= 32 && signal <= 64 ? `SIGRT${signal - 32}` : `SIG${signal}`)
   );
+}
+
+export function layoutMaps<M extends Pick<MemoryMap, "start" | "end">>(
+  maps: M[],
+) {
+  const sorted = [...maps].sort((a, b) =>
+    BigInt(a.start) < BigInt(b.start) ? -1 : 1,
+  );
+  const sizes = sorted.map((m) => Number(BigInt(m.end) - BigInt(m.start)));
+  const total = sizes.reduce((a, b) => a + b, 0) || 1,
+    gap = 0.018;
+  let z = 0;
+  return sorted
+    .map((m, i) => {
+      const h = Math.max(0.008, (sizes[i] / total) * 7);
+      const result = { ...m, z, h };
+      z += h + gap;
+      return result;
+    })
+    .map((m, _, all) => ({ ...m, z: (m.z / z) * 8, h: (m.h / z) * 8 }));
+}
+
+export function findNearestRegion(
+  regions: readonly Region[] | undefined,
+  z: number,
+): Region | undefined {
+  if (!regions || regions.length === 0) return undefined;
+  for (let i = 0; i < regions.length; i++) {
+    const r = regions[i];
+    if (z >= r.z && z <= r.z + r.h) return r;
+  }
+  let best = regions[0];
+  let bestDist = Infinity;
+  for (let i = 0; i < regions.length; i++) {
+    const r = regions[i];
+    const dist = z < r.z ? r.z - z : z > r.z + r.h ? z - (r.z + r.h) : 0;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = r;
+    }
+  }
+  return best;
 }

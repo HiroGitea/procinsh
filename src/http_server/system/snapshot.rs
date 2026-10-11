@@ -127,7 +127,7 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
     let mut namespaces = HashSet::new();
     let mut denied = 0;
     let mut truncated = false;
-    let deadline = Instant::now() + Duration::from_secs(4);
+    let deadline = Instant::now() + Duration::from_secs(8);
     for summary in summaries {
         let parent_id = identities
             .get(&summary.parent_pid)

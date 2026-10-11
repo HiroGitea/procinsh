@@ -35,6 +35,7 @@
     "vitest": "5.0.3"
   },
   "dependencies": {
+    "@glyph3d/core": "file:../../../glyph3d-js/packages/glyph3d-core",
     "three": "0.180.0"
   }
 }
