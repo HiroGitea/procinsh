@@ -20,6 +20,13 @@ function processPosition(id: string) {
   const pos = data.nodes.get(id)?.pos;
   return pos && { x: pos.x, y: pos.y, z: pos.z };
 }
+function connectionVisual(id: string) {
+  const view = scene.renderView().edgeViews.find(view => view.e.id === id);
+  return view && {
+    points: view.curve.getPoints(16).map(point => point.toArray()),
+    screen: view.curve.getPoint(0.75).project(camera.camera).toArray(),
+  };
+}
 export {
   selectFile,
   fileVisuals,
@@ -36,6 +43,7 @@ export {
   signalVisuals,
   cameraView,
   processPosition,
+  connectionVisual,
   parentLineVisual,
   cpuGlowStates,
   cpuGlowVisual,

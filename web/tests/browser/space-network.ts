@@ -41,8 +41,11 @@ export async function checkNetworkSpace(
     "idle connections have no particles",
   );
   const clickProjected = async (field: "screen" | "pathScreen") => {
+    // Use a section near the destination where the curve clears its owner's hull.
     const [x, y] = await evaluate<[number, number]>(
-      `import(window.spaceTestModule).then(m=>m.networkVisuals().find(g=>g.members.includes('net-a')).${field})`,
+      field === "pathScreen"
+        ? "import(window.spaceTestModule).then(m=>m.connectionVisual('net-a').screen)"
+        : "import(window.spaceTestModule).then(m=>m.networkVisuals().find(g=>g.members.includes('net-a')).screen)",
     );
     await cdp("Input.dispatchMouseEvent", {
       type: "mousePressed",
@@ -132,6 +135,16 @@ export async function checkNetworkSpace(
     await evaluate("document.getElementById('details').hidden"),
     false,
     "path selects group",
+  );
+  assert.equal(
+    await evaluate("document.getElementById('connection-state').textContent"),
+    "Network destination",
+    "path selects a network group instead of its process",
+  );
+  assert.equal(
+    await evaluate("document.getElementById('connection-label').textContent"),
+    "TCP example.test:443 ×2",
+    "path selects the intended network destination",
   );
   const animated = await evaluate<{
     particles: Array<{ direction: number }>;

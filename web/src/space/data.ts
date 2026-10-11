@@ -1,6 +1,6 @@
 // System SSE, observed state, retained activity, and plain layout coordinates.
 import { Display } from "../shared/display.js";
-import { key, remoteLabel, ipcKey, fileLabel } from "./model.js";
+import { key, remoteLabel, ipcKey, fileLabel, PROCESS_SIDE } from "./model.js";
 import type {
   Position,
   TreePosition,
@@ -35,6 +35,8 @@ interface PackedTree {
   width: number;
   height: number;
 }
+
+const WRAPPED_ROW_OFFSET = PROCESS_SIDE;
 
 function networkGroups(fd_relations: FdRelation[]) {
   const groups = new Map<string, NetworkGroup>();
@@ -201,10 +203,13 @@ function treeLayout(processes: TreeNode[], xGap = 4.8, yGap = 6.5) {
     let cursorX = 0,
       cursorY = 0,
       rowHeight = 0,
+      rowOffset = 0,
       width = 0;
     for (const layout of layouts) {
-      if (cursorX && cursorX + layout.width > target) {
-        cursorX = 0;
+      if (cursorX > rowOffset && cursorX - rowOffset + layout.width > target) {
+        // Offset each wrapped row together with all of its descendant branches.
+        rowOffset += WRAPPED_ROW_OFFSET;
+        cursorX = rowOffset;
         cursorY += rowHeight + gap;
         rowHeight = 0;
       }
@@ -312,7 +317,7 @@ function stableLayout(
       for (let dy = 0; dy <= radius && !found; dy++)
         for (let dx = -radius; dx <= radius; dx++) {
           if (Math.max(Math.abs(dx), dy) !== radius) continue;
-          const x = origin.x + dx * xGap,
+          const x = origin.x + dx * xGap + dy * WRAPPED_ROW_OFFSET,
             y = origin.y + dy * yGap;
           if (vacant(x, y)) {
             found = { ...place, x, y };

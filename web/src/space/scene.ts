@@ -1,6 +1,6 @@
 // Build and update Three.js geometry from data and selection state.
 import * as T from "three";
-import { key, processColors } from "./model.js";
+import { key, processColors, PROCESS_SIDE } from "./model.js";
 import type {
   Region,
   RenderNode,
@@ -16,6 +16,111 @@ import type {
   RenderView,
   PickingView,
 } from "./contracts.js";
+
+const PARENT_LINE_WIDTH = 0.6;
+const PARENT_LINE_Z = 0.06;
+const PARENT_LINE_BRIGHTNESS = 0.22;
+const SOCKET_HEIGHT = 4;
+
+type ParentPath = {
+  parent: string;
+  child: string;
+  points: T.Vector3[];
+  active: boolean;
+};
+type ParentSegment = {
+  start: T.Vector3;
+  end: T.Vector3;
+  paths: number[];
+};
+type ParentJoint = {
+  position: T.Vector3;
+  paths: number[];
+};
+
+// Split collinear overlaps so each floor section has one mesh and all its owners.
+function parentSegments(paths: ParentPath[]): ParentSegment[] {
+  const rows = new Map<
+    string,
+    {
+      horizontal: boolean;
+      fixed: number;
+      events: Map<number, { path: number; add: boolean }[]>;
+    }
+  >();
+  paths.forEach((path, index) => {
+    for (let i = 1; i < path.points.length; i++) {
+      const a = path.points[i - 1],
+        b = path.points[i];
+      if (a.equals(b)) continue;
+      const horizontal = a.y === b.y;
+      const fixed = horizontal ? a.y : a.x;
+      const id = `${horizontal ? "x" : "y"}:${fixed}`;
+      let row = rows.get(id);
+      if (!row) {
+        row = { horizontal, fixed, events: new Map() };
+        rows.set(id, row);
+      }
+      const start = Math.min(horizontal ? a.x : a.y, horizontal ? b.x : b.y);
+      const end = Math.max(horizontal ? a.x : a.y, horizontal ? b.x : b.y);
+      for (const [position, add] of [
+        [start, true],
+        [end, false],
+      ] as const) {
+        const events = row.events.get(position) ?? [];
+        events.push({ path: index, add });
+        row.events.set(position, events);
+      }
+    }
+  });
+  const result: ParentSegment[] = [];
+  for (const row of rows.values()) {
+    const coordinates = [...row.events.keys()].sort((a, b) => a - b);
+    const active = new Map<number, number>();
+    for (let i = 0; i < coordinates.length - 1; i++) {
+      const start = coordinates[i],
+        end = coordinates[i + 1];
+      for (const event of row.events.get(start)!) {
+        const count = (active.get(event.path) ?? 0) + (event.add ? 1 : -1);
+        if (count) active.set(event.path, count);
+        else active.delete(event.path);
+      }
+      if (!active.size) continue;
+      const point = (value: number) =>
+        new T.Vector3(
+          row.horizontal ? value : row.fixed,
+          row.horizontal ? row.fixed : value,
+          PARENT_LINE_Z,
+        );
+      result.push({
+        start: point(start),
+        end: point(end),
+        paths: [...active.keys()],
+      });
+    }
+  }
+  return result;
+}
+
+// Round caps and joins share the highlight of every path meeting at that point.
+function parentJoints(sections: ParentSegment[]): ParentJoint[] {
+  const joints = new Map<string, { position: T.Vector3; paths: Set<number> }>();
+  for (const section of sections)
+    for (const position of [section.start, section.end]) {
+      const id = `${position.x}:${position.y}`;
+      let joint = joints.get(id);
+      if (!joint) {
+        joint = { position, paths: new Set() };
+        joints.set(id, joint);
+      }
+      for (const path of section.paths) joint.paths.add(path);
+    }
+  return [...joints.values()].map(({ position, paths }) => ({
+    position,
+    paths: [...paths],
+  }));
+}
+
 function disposeObject(object: T.Object3D) {
   if (
     object instanceof T.Mesh ||
@@ -37,9 +142,15 @@ export function createSpaceScene() {
   let edgeViews: EdgeView[] = [],
     networkViews: NetworkView[] = [],
     fileViews = new Map<string, FileView>();
-  let parentViews: { parent: string; child: string }[] = [],
-    parentLines: T.LineSegments<T.BufferGeometry, T.LineBasicMaterial> | null =
-      null;
+  let parentViews: ParentPath[] = [],
+    parentSections: ParentSegment[] = [],
+    parentCorners: ParentJoint[] = [],
+    parentLines: T.InstancedMesh<T.PlaneGeometry, T.MeshBasicMaterial> | null =
+      null,
+    parentLineJoints: T.InstancedMesh<
+      T.CircleGeometry,
+      T.MeshBasicMaterial
+    > | null = null;
   let geometryGroup = new T.Group(),
     fileGroup = new T.Group();
   scene.add(geometryGroup, fileGroup);
@@ -103,7 +214,7 @@ export function createSpaceScene() {
     const visible = input.visible;
     hullIds = [...visible];
     hull = new T.InstancedMesh(
-      new T.BoxGeometry(2.2, 2.2, 8),
+      new T.BoxGeometry(PROCESS_SIDE, PROCESS_SIDE, 8),
       new T.MeshBasicMaterial({
         color: 0x4bd6bf,
         transparent: true,
@@ -143,44 +254,73 @@ export function createSpaceScene() {
     haloGlow.frustumCulled = false;
     geometryGroup.add(haloGlow);
     parentViews = [];
-    const parentPos = [],
-      parentColors = [];
     for (const childId of hullIds) {
       const child = nodes.get(childId)!,
         parentId = child.parent_id && key(child.parent_id),
         parent = parentId && nodes.get(parentId);
-      if (!parent || !visible.has(parentId)) continue;
-      parentViews.push({ parent: parentId, child: childId });
-      parentPos.push(
-        parent.pos.x,
-        parent.pos.y,
-        0.06,
-        child.pos.x,
-        child.pos.y,
-        0.06,
-      );
-      parentColors.push(0.12, 0.28, 0.27, 0.12, 0.28, 0.27);
+      if (!parent || parentId === childId || !visible.has(parentId)) continue;
+      const middleY = (parent.pos.y + child.pos.y) / 2;
+      parentViews.push({
+        parent: parentId,
+        child: childId,
+        active: false,
+        points: [
+          new T.Vector3(parent.pos.x, parent.pos.y, PARENT_LINE_Z),
+          new T.Vector3(parent.pos.x, middleY, PARENT_LINE_Z),
+          new T.Vector3(child.pos.x, middleY, PARENT_LINE_Z),
+          new T.Vector3(child.pos.x, child.pos.y, PARENT_LINE_Z),
+        ],
+      });
     }
-    const parentGeometry = new T.BufferGeometry();
-    parentGeometry.setAttribute(
-      "position",
-      new T.Float32BufferAttribute(parentPos, 3),
-    );
-    parentGeometry.setAttribute(
-      "color",
-      new T.Float32BufferAttribute(parentColors, 3),
-    );
-    parentLines = new T.LineSegments(
-      parentGeometry,
-      new T.LineBasicMaterial({
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.55,
+    parentSections = parentSegments(parentViews);
+    parentLines = new T.InstancedMesh(
+      new T.PlaneGeometry(1, 1),
+      new T.MeshBasicMaterial({
+        color: 0xffffff,
+        side: T.DoubleSide,
         depthWrite: false,
       }),
+      Math.max(1, parentSections.length),
     );
+    parentLines.count = parentSections.length;
+    parentLines.name = "parent-lines";
     parentLines.renderOrder = -1;
+    const sectionTransform = new T.Object3D();
+    const parentColor = new T.Color().setRGB(
+      PARENT_LINE_BRIGHTNESS,
+      PARENT_LINE_BRIGHTNESS,
+      PARENT_LINE_BRIGHTNESS,
+    );
+    for (let i = 0; i < parentSections.length; i++) {
+      const { start, end } = parentSections[i];
+      sectionTransform.position.copy(start).lerp(end, 0.5);
+      sectionTransform.rotation.z = Math.atan2(
+        end.y - start.y,
+        end.x - start.x,
+      );
+      sectionTransform.scale.set(start.distanceTo(end), PARENT_LINE_WIDTH, 1);
+      sectionTransform.updateMatrix();
+      parentLines.setMatrixAt(i, sectionTransform.matrix);
+      parentLines.setColorAt(i, parentColor);
+    }
     geometryGroup.add(parentLines);
+    parentCorners = parentJoints(parentSections);
+    parentLineJoints = new T.InstancedMesh(
+      new T.CircleGeometry(PARENT_LINE_WIDTH / 2, 24),
+      parentLines.material.clone(),
+      Math.max(1, parentCorners.length),
+    );
+    parentLineJoints.count = parentCorners.length;
+    parentLineJoints.name = "parent-line-joints";
+    sectionTransform.rotation.set(0, 0, 0);
+    sectionTransform.scale.set(1, 1, 1);
+    for (let i = 0; i < parentCorners.length; i++) {
+      sectionTransform.position.copy(parentCorners[i].position);
+      sectionTransform.updateMatrix();
+      parentLineJoints.setMatrixAt(i, sectionTransform.matrix);
+      parentLineJoints.setColorAt(i, parentColor);
+    }
+    geometryGroup.add(parentLineJoints);
     const linePos: number[] = [],
       lineColors: number[] = [],
       lineEdges: (ConnectionPick | null)[] = [],
@@ -309,7 +449,7 @@ export function createSpaceScene() {
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       markers.setMatrixAt(i, dummy.matrix);
-      const start = owner.pos.clone().setZ(7.5),
+      const start = owner.pos.clone().setZ(SOCKET_HEIGHT),
         mid = start.clone().lerp(pos, 0.5);
       mid.z += 2;
       const curve = new T.QuadraticBezierCurve3(start, mid, pos);
@@ -339,16 +479,19 @@ export function createSpaceScene() {
         (b && !visible.has(key(b.identity)))
       )
         continue;
+      const socket = e.endpoint.resource.kind === "socket";
+      const height = (fd: number) =>
+        socket
+          ? SOCKET_HEIGHT + ((fd % 12) - 5.5) * 0.11
+          : 1 + (fd % 12) * 0.11;
       const start = a.pos
         .clone()
-        .add(new T.Vector3(1.12, 0, 1 + (e.endpoint.fd % 12) * 0.11));
+        .add(new T.Vector3(1.12, 0, height(e.endpoint.fd)));
       const end = b
-        ? b.pos
-            .clone()
-            .add(new T.Vector3(-1.12, 0, 1 + (e.peer!.fd % 12) * 0.11))
-        : start.clone().add(new T.Vector3(3.5, -2.5, -0.6));
+        ? b.pos.clone().add(new T.Vector3(-1.12, 0, height(e.peer!.fd)))
+        : start.clone().add(new T.Vector3(3.5, -2.5, socket ? 0 : -0.6));
       const mid = start.clone().lerp(end, 0.5);
-      mid.z = 0.22;
+      if (!socket) mid.z = 0.22;
       const curve = new T.QuadraticBezierCurve3(start, mid, end);
       edgeViews.push({ e, curve });
       const pts = curve.getPoints(16);
@@ -461,8 +604,8 @@ export function createSpaceScene() {
     fileGroup.add(lines);
   }
   function updateParentSelection(selectionState: SelectionState) {
-    if (!parentLines?.geometry.attributes.color) return;
-    const active = new Set();
+    if (!parentLines?.instanceColor) return;
+    const active = new Set<string>();
     if (selectionState.process) {
       let child = selectionState.process;
       const seen = new Set();
@@ -470,27 +613,48 @@ export function createSpaceScene() {
         seen.add(child);
         const parentId = nodes.get(child)?.parent_id;
         const parent: string | null | undefined = parentId && key(parentId);
-        if (!parent || !nodes.has(parent)) break;
+        if (!parent || parent === child || !nodes.has(parent)) break;
         active.add(`${parent}>${child}`);
         child = parent;
       }
+      const children = new Map<string, string[]>();
       for (const [id, n] of nodes) {
         const parent = n.parent_id && key(n.parent_id);
-        if (parent === selectionState.process)
-          active.add(`${selectionState.process}>${id}`);
+        if (parent && parent !== id) {
+          const list = children.get(parent) ?? [];
+          list.push(id);
+          children.set(parent, list);
+        }
+      }
+      const pending = [selectionState.process];
+      const descendants = new Set<string>();
+      while (pending.length) {
+        const parent = pending.pop()!;
+        if (descendants.has(parent)) continue;
+        descendants.add(parent);
+        for (const child of children.get(parent) ?? []) {
+          active.add(`${parent}>${child}`);
+          pending.push(child);
+        }
       }
     }
-    const colors = parentLines.geometry.attributes.color;
-    for (let i = 0; i < parentViews.length; i++) {
-      const view = parentViews[i],
-        bright = active.has(`${view.parent}>${view.child}`);
-      const color: [number, number, number] = bright
-        ? [0.55, 1, 0.82]
-        : [0.12, 0.28, 0.27];
-      colors.setXYZ(i * 2, ...color);
-      colors.setXYZ(i * 2 + 1, ...color);
+    for (const path of parentViews)
+      path.active = active.has(`${path.parent}>${path.child}`);
+    const color = new T.Color();
+    for (const [mesh, sections] of [
+      [parentLines, parentSections],
+      [parentLineJoints, parentCorners],
+    ] as const) {
+      if (!mesh?.instanceColor) continue;
+      for (let i = 0; i < sections.length; i++) {
+        const bright = sections[i].paths.some(
+          (index) => parentViews[index].active,
+        );
+        const level = bright ? 1 : PARENT_LINE_BRIGHTNESS;
+        mesh.setColorAt(i, color.setRGB(level, level, level));
+      }
+      mesh.instanceColor.needsUpdate = true;
     }
-    colors.needsUpdate = true;
   }
   function updateSelection(selectionState: SelectionState) {
     const n = nodes.get(selectionState.process ?? "");
@@ -517,11 +681,13 @@ export function createSpaceScene() {
       (view) => view.parent === parent && view.child === child,
     );
     if (index < 0 || !parentLines) return null;
-    const color = parentLines.geometry.attributes.color;
+    const level = parentViews[index].active ? 1 : PARENT_LINE_BRIGHTNESS;
     return {
-      r: color.getX(index * 2),
-      g: color.getY(index * 2),
-      b: color.getZ(index * 2),
+      r: level,
+      g: level,
+      b: level,
+      width: PARENT_LINE_WIDTH,
+      points: parentViews[index].points.map((point) => point.toArray()),
     };
   }
 
@@ -551,7 +717,12 @@ export function createSpaceScene() {
         nodes,
         hullIds,
         hull,
-        objects: [...geometryGroup.children, ...fileGroup.children],
+        objects: [
+          ...geometryGroup.children.filter(
+            (object) => object !== parentLines && object !== parentLineJoints,
+          ),
+          ...fileGroup.children,
+        ],
       };
     },
     dispose() {
