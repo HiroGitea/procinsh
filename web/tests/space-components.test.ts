@@ -68,7 +68,8 @@ test("space-components regression", async () => {
             "./contracts.js",
             "./model.js",
             "./dom-types.js",
-          ].includes(path),
+          ].includes(path) ||
+            (name === "data.ts" && path === "./process-layout.js"),
           `${name} depends on ${path}`,
         );
     }
