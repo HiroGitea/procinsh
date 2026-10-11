@@ -50,11 +50,10 @@ export {
 };
 
 export { key } from "./model.js";
-export { treeLayout } from "./data.js";
+export { treeLayout } from "./process-layout.js";
 export { AdaptiveRenderScale } from "./renderer.js";
 `,
   ],
-  [resolve(import.meta.dirname, "src/space/data.ts"), "export { treeLayout };"],
   [
     resolve(import.meta.dirname, "src/space/renderer.ts"),
     "export { AdaptiveRenderScale };",
