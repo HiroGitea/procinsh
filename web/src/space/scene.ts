@@ -17,7 +17,7 @@ import type {
   PickingView,
 } from "./contracts.js";
 
-const PARENT_LINE_WIDTH = 0.12;
+const PARENT_LINE_WIDTH = 0.24;
 const PARENT_LINE_Z = 0.06;
 const PARENT_LINE_BRIGHTNESS = 0.35;
 const SOCKET_HEIGHT = 4;

@@ -558,7 +558,7 @@ try {
     const links=[[820001,820002],[820002,820004],[820004,820005]];
     const floorGeometry=links.every(([a,b])=>{
       const path=line(a,b);
-      return path.width===0.12&&path.points.every(p=>p[2]===0.06)&&path.points.slice(1).every((p,i)=>p[0]===path.points[i][0]||p[1]===path.points[i][1]);
+      return path.width===0.24&&path.points.every(p=>p[2]===0.06)&&path.points.slice(1).every((p,i)=>p[0]===path.points[i][0]||p[1]===path.points[i][1]);
     });
     m.selectProcess('820002:1');
     const entireFamily=links.every(([a,b])=>line(a,b).r===1&&line(a,b).g===1&&line(a,b).b===1);
