@@ -30,6 +30,193 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("socket attachment faces survive endpoint reversal across rebuilds", async () => {
+  const { createSpaceScene } = await import("../src/space/scene.js");
+  const { key } = await import("../src/space/model.js");
+  const pairs = [
+    [
+      { pid: 2, start_time_ticks: 90, fd: 10 },
+      { pid: 10, start_time_ticks: 1, fd: 2 },
+    ],
+    [
+      { pid: 10, start_time_ticks: 2, fd: 10 },
+      { pid: 10, start_time_ticks: 10, fd: 2 },
+    ],
+    [
+      { pid: 10, start_time_ticks: 2, fd: 2 },
+      { pid: 10, start_time_ticks: 2, fd: 10 },
+    ],
+  ];
+  for (const [low, high] of pairs) {
+    const endpoints = [low, high].map(({ fd, ...process_id }) =>
+      fdEndpoint({
+        process_id,
+        fd,
+        kind: "socket",
+        resource: {
+          kind: "socket",
+          device: { major: 0, minor: 1 },
+          inode: String(fd),
+        },
+      }),
+    );
+    const nodes = new Map<string, PlacedProcess>();
+    for (const endpoint of endpoints) {
+      const identity = endpoint.process_id;
+      if (!nodes.has(key(identity)))
+        nodes.set(key(identity), {
+          ...processInfo({ identity }),
+          pos: { x: nodes.size * 10, y: nodes.size * 5, z: 0 },
+          regions: [],
+        });
+    }
+    const scene = createSpaceScene();
+    const input: SceneInput = {
+      nodes,
+      snapshot: { processes: [...nodes.values()], fd_relations: [] },
+      network: new Map(),
+      networkPositions: new Map(),
+      files: new Map(),
+      filePositions: new Map(),
+      visible: new Set(nodes.keys()),
+    };
+    const expected = endpoints.map((endpoint, index) => {
+      const pos = nodes.get(key(endpoint.process_id))!.pos;
+      return new T.Vector3(
+        pos.x + (index === 0 ? 1.12 : -1.12),
+        pos.y,
+        4 + ((endpoint.fd % 12) - 5.5) * 0.11,
+      );
+    });
+    for (const style of [{}, { candidate: true }, { shared: true }]) {
+      const relation = fdRelation({
+        id: "socket",
+        endpoint: endpoints[0],
+        peer: endpoints[1],
+        socket: socketEndpoint(),
+        ...style,
+      });
+      let forward: T.QuadraticBezierCurve3 | undefined;
+      let segments: number[][] | undefined;
+      // Start with the reverse orientation too, so a cache cannot mask the bug.
+      for (const reversed of [true, false, true]) {
+        const edge = reversed
+          ? { ...relation, endpoint: relation.peer!, peer: relation.endpoint }
+          : relation;
+        scene.rebuild(
+          { ...input, snapshot: { ...input.snapshot, fd_relations: [edge] } },
+          null,
+        );
+        const view = scene.renderView().edgeViews[0];
+        assert.equal(
+          view.e,
+          edge,
+          "rendering preserves the relation's logical orientation",
+        );
+        assert.deepEqual(
+          view.curve.v0.toArray(),
+          expected[reversed ? 1 : 0].toArray(),
+        );
+        assert.deepEqual(
+          view.curve.v2.toArray(),
+          expected[reversed ? 0 : 1].toArray(),
+        );
+        if (!reversed) forward = view.curve;
+        else if (forward)
+          for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+            assert.ok(
+              forward.getPoint(t).distanceTo(view.curve.getPoint(1 - t)) < 1e-9,
+              "reversing the relation preserves the path and reverses its animation direction",
+            );
+          }
+        if (relation.candidate || relation.shared) {
+          const line = scene
+            .pickingView()
+            .objects.find(
+              (object) =>
+                object instanceof T.LineSegments &&
+                object.userData.fd_relations?.[0] === edge,
+            ) as T.LineSegments;
+          const positions = line.geometry.getAttribute("position");
+          const current: number[][] = [];
+          for (let i = 0; i < positions.count; i += 2) {
+            const ends = [
+              new T.Vector3().fromBufferAttribute(positions, i).toArray(),
+              new T.Vector3().fromBufferAttribute(positions, i + 1).toArray(),
+            ];
+            ends.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+            current.push(ends.flat());
+          }
+          current.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+          if (segments)
+            assert.deepEqual(
+              current,
+              segments,
+              "the dashed segments stay in place",
+            );
+          segments = current;
+        }
+      }
+    }
+    scene.dispose();
+  }
+});
+
+test("pipe and external socket attachments keep their existing offsets", async () => {
+  const { createSpaceScene } = await import("../src/space/scene.js");
+  const node: PlacedProcess = {
+    ...processInfo({ identity: { pid: 10, start_time_ticks: 1 } }),
+    pos: { x: 0, y: 0, z: 0 },
+    regions: [],
+  };
+  const peer: PlacedProcess = {
+    ...processInfo({ identity: { pid: 2, start_time_ticks: 1 } }),
+    pos: { x: 10, y: 5, z: 0 },
+    regions: [],
+  };
+  const pipe = fdRelation({
+    endpoint: fdEndpoint({ process_id: node.identity, fd: 3 }),
+    peer: fdEndpoint({ process_id: peer.identity, fd: 4 }),
+  });
+  const external = fdRelation({
+    id: "external",
+    endpoint: fdEndpoint({
+      process_id: node.identity,
+      fd: 5,
+      kind: "socket",
+      resource: { kind: "socket", device: { major: 0, minor: 1 }, inode: "5" },
+    }),
+    socket: socketEndpoint(),
+  });
+  const scene = createSpaceScene();
+  scene.rebuild(
+    {
+      nodes: new Map([
+        ["10:1", node],
+        ["2:1", peer],
+      ]),
+      snapshot: { processes: [node, peer], fd_relations: [pipe, external] },
+      network: new Map(),
+      networkPositions: new Map(),
+      files: new Map(),
+      filePositions: new Map(),
+      visible: new Set(["10:1", "2:1"]),
+    },
+    null,
+  );
+  const [pipeView, externalView] = scene.renderView().edgeViews;
+  assert.deepEqual(pipeView.curve.v0.toArray(), [1.12, 0, 1 + 3 * 0.11]);
+  assert.deepEqual(pipeView.curve.v2.toArray(), [10 - 1.12, 5, 1 + 4 * 0.11]);
+  assert.equal(pipeView.curve.v1.z, 0.22);
+  assert.deepEqual(externalView.curve.v0.toArray(), [1.12, 0, 4 - 0.5 * 0.11]);
+  assert.deepEqual(externalView.curve.v2.toArray(), [
+    1.12 + 3.5,
+    -2.5,
+    4 - 0.5 * 0.11,
+  ]);
+  scene.dispose();
+});
+
 test("space-components regression", async () => {
   // Exercise SPACE components with plain inputs, Three.js objects, and callbacks.
   const { createSpaceScene } = await import("../src/space/scene.js");
