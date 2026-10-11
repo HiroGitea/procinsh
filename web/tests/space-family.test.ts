@@ -71,7 +71,7 @@ test("floor family paths highlight every ancestor and descendant without sibling
       [-6, 5, 0.06],
       [-6, 10, 0.06],
     ]);
-    assert.equal(path.width, 0.24);
+    assert.equal(path.width, 0.48);
     assert.equal(path.r, path.g);
     assert.equal(path.g, path.b);
     assert.equal(path.r, 0.35);
@@ -88,7 +88,7 @@ test("floor family paths highlight every ancestor and descendant without sibling
       mesh.getMatrixAt(i, matrix);
       matrix.decompose(position, rotation, scale);
       assert.ok(Math.abs(position.z - 0.06) < 1e-7);
-      assert.ok(Math.abs(scale.y - 0.24) < 1e-7);
+      assert.ok(Math.abs(scale.y - 0.48) < 1e-7);
     }
     scene.updateSelection(selection(2));
     for (const [parent, child] of [
