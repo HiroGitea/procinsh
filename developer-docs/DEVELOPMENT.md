@@ -393,11 +393,11 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 
 #### プロセス・接続先・ファイルの配置
 
-[`SpaceDataStore.replaceSnapshot`](../web/src/space/data.ts#L506) が受信構造から配置済みの状態を作り、[`buildScene`](../web/src/space/scene.ts#L99) がプロセスの箱・メモリ領域・親子線・接続線を構築します。構造更新では既存のプロセスと接続先の位置を維持しながら、追加・削除を反映します。
+[`SpaceDataStore.replaceSnapshot`](../web/src/space/data.ts) が受信構造から配置済みの状態を作り、[`buildScene`](../web/src/space/scene.ts#L99) がプロセスの箱・メモリ領域・親子線・接続線を構築します。プロセスの追加・削除・親の変更時は、兄弟とその子孫の配置に必要な横幅を確保します。親子構成が同じ更新ではプロセスの位置を維持し、通常の更新では既存のネットワーク接続先の位置も維持します。
 
 | 対象 | 配置・表示の考え方 | 主な実装 |
 |---|---|---|
-| プロセスと親子関係 | 親子関係に沿って平面に配置。通常の更新は既存位置を保ち、新規プロセスを空き領域へ配置。Rearrange は全体を再配置 | [`treeLayout`](../web/src/space/data.ts#L139)、[`stableLayout`](../web/src/space/data.ts#L256) |
+| プロセスと親子関係 | 兄弟は必ず同じ y 座標に並び、親から一世代分離した行に配置。枝ごとに子孫全体の横幅を確保し、折り返さずに展開。通常の更新は最初の存続プロセスの x 座標を基準に配置し、Rearrange は全体を中央に配置 | [`treeLayout`・`stableLayout`](../web/src/space/data.ts) |
 | 仮想アドレス空間 | アドレス順にメモリ領域を積み上げ、アドレスの隙間を圧縮し、高さをプロセスごとに正規化。プロセス間の同じ高さは同じアドレスを意味しない | [`layoutMaps`](../web/src/space/data.ts#L107)、[`regionColor`](../web/src/space/scene.ts#L81) |
 | ユーザーの識別 | 箱の上下の枠は実 UID、縦の枠は実効 UID に応じて色分け | [`userColor`・`processColors`](../web/src/space/model.ts) |
 | IPC・ネットワーク接続 | FD 関係を線で表示。接続候補・共有 FD は破線。ネットワーク接続先はプロセス・プロトコル・相手 IP/port ごとにまとめ、プロセスの上方に配置 | [`buildScene`](../web/src/space/scene.ts#L99)、[`networkGroups`](../web/src/space/data.ts#L39)、[`networkLayout`](../web/src/space/data.ts#L68) |
