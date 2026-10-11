@@ -48,7 +48,6 @@ export async function initGlyph3D(): Promise<GlyphAtlas | null> {
         wasmUrl: "/wasm/hb.wasm",
         fontSize: 48,
         atlasSize: 2048,
-        cache: false,
       });
       return sharedAtlas;
     } catch (e) {

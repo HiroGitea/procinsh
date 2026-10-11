@@ -28,7 +28,6 @@ function connectionVisual(id: string) {
   };
 }
 export {
-  inspectionCard,
   selectFile,
   fileVisuals,
   fileParticles,

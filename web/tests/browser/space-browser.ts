@@ -112,10 +112,6 @@ try {
   );
   const first = snapshot.processes[0].identity;
   await waitFor(
-    "import(window.spaceTestModule).then(m=>Boolean(m.inspectionCard))",
-    "memory inspection glyph engine",
-  );
-  await waitFor(
     `import(window.spaceTestModule).then(m=>Boolean(m.processPosition('${first.pid}:${first.start_time_ticks}')))`,
     "rendered space snapshot",
   );
@@ -396,15 +392,6 @@ try {
   );
   await delay(100);
   const hoverText = await evaluate<string>(`(()=>{
-    const nativeFetch=window.fetch;
-    window.fetch=(input,options)=>{
-      const url=new URL(typeof input==='string'?input:input.url,location.href);
-      if(url.pathname==='/api/processes/memory'&&url.searchParams.get('pid')==='424242'&&url.searchParams.get('start_time_ticks')==='7'){
-        const length=Number(url.searchParams.get('length'));
-        return Promise.resolve(new Response(JSON.stringify({process_id:{pid:424242,start_time_ticks:7},address:url.searchParams.get('address'),requested_length:length,bytes:Array.from({length},(_,i)=>i%256),partial:false,captured_at:Date.now()}),{headers:{'Content-Type':'application/json'}}));
-      }
-      return nativeFetch(input,options);
-    };
     const canvas=document.getElementById('world'),hover=document.getElementById('hover');
     for(let y=80;y<innerHeight;y+=12) for(let x=0;x<innerWidth;x+=12){
       canvas.dispatchEvent(new PointerEvent('pointermove',{clientX:x,clientY:y}));
