@@ -1,6 +1,7 @@
 // Own camera projection, world bounds, focus, and OrbitControls.
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { PARENT_LINE_WIDTH } from "./model.js";
 import type { Position } from "./types.js";
 import type { WorldPositions } from "./contracts.js";
 export function createSpaceCamera(canvas: HTMLCanvasElement) {
@@ -38,6 +39,12 @@ export function createSpaceCamera(canvas: HTMLCanvasElement) {
       box.expandByPoint(new T.Vector3(pos.x, pos.y, pos.z));
       box.expandByPoint(new T.Vector3(pos.x, pos.y, 8));
     }
+    for (const route of positions.parentRoutes)
+      for (const p of route.points) {
+        const radius = PARENT_LINE_WIDTH / 2;
+        box.expandByPoint(new T.Vector3(p.x - radius, p.y - radius, 0.06));
+        box.expandByPoint(new T.Vector3(p.x + radius, p.y + radius, 0.06));
+      }
     for (const p of positions.networks)
       box.expandByPoint(new T.Vector3(p.x, p.y, p.z + 1));
     for (const p of positions.files)

@@ -1,6 +1,12 @@
 // Build and update Three.js geometry from data and selection state.
 import * as T from "three";
-import { key, processColors, PROCESS_SIDE } from "./model.js";
+import {
+  key,
+  processColors,
+  PROCESS_SIDE,
+  PROCESS_FRAME_SIDE,
+  PARENT_LINE_WIDTH,
+} from "./model.js";
 import type {
   Region,
   RenderNode,
@@ -17,7 +23,6 @@ import type {
   PickingView,
 } from "./contracts.js";
 
-const PARENT_LINE_WIDTH = 0.6;
 const PARENT_LINE_Z = 0.06;
 const PARENT_LINE_BRIGHTNESS = 0.22;
 const SOCKET_HEIGHT = 4;
@@ -168,7 +173,9 @@ export function createSpaceScene() {
     );
   }
   const selection = new T.LineSegments(
-    new T.EdgesGeometry(new T.BoxGeometry(2.45, 2.45, 8.3)),
+    new T.EdgesGeometry(
+      new T.BoxGeometry(PROCESS_FRAME_SIDE, PROCESS_FRAME_SIDE, 8.3),
+    ),
     new T.LineBasicMaterial({
       color: 0xd1ffce,
       transparent: true,
@@ -254,22 +261,13 @@ export function createSpaceScene() {
     haloGlow.frustumCulled = false;
     geometryGroup.add(haloGlow);
     parentViews = [];
-    for (const childId of hullIds) {
-      const child = nodes.get(childId)!,
-        parentId = child.parent_id && key(child.parent_id),
-        parent = parentId && nodes.get(parentId);
-      if (!parent || parentId === childId || !visible.has(parentId)) continue;
-      const middleY = (parent.pos.y + child.pos.y) / 2;
+    for (const route of input.parentRoutes) {
+      if (!visible.has(route.parent) || !visible.has(route.child)) continue;
       parentViews.push({
-        parent: parentId,
-        child: childId,
+        parent: route.parent,
+        child: route.child,
         active: false,
-        points: [
-          new T.Vector3(parent.pos.x, parent.pos.y, PARENT_LINE_Z),
-          new T.Vector3(parent.pos.x, middleY, PARENT_LINE_Z),
-          new T.Vector3(child.pos.x, middleY, PARENT_LINE_Z),
-          new T.Vector3(child.pos.x, child.pos.y, PARENT_LINE_Z),
-        ],
+        points: route.points.map((p) => new T.Vector3(p.x, p.y, PARENT_LINE_Z)),
       });
     }
     parentSections = parentSegments(parentViews);

@@ -8,6 +8,8 @@ import type {
   FileIdentity,
 } from "../shared/api-types.js";
 export const PROCESS_SIDE = 2.2;
+export const PROCESS_FRAME_SIDE = 2.45;
+export const PARENT_LINE_WIDTH = 0.6;
 export const remoteLabel = (socket: SocketEndpoint | null | undefined) =>
   socket?.remote_hostname && socket.remote
     ? `${socket.remote_hostname}:${socket.remote.port}`

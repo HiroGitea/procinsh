@@ -20,6 +20,16 @@ function processPosition(id: string) {
   const pos = data.nodes.get(id)?.pos;
   return pos && { x: pos.x, y: pos.y, z: pos.z };
 }
+function previewFamilyRoutes(legacy: boolean) {
+  const parentRoutes = legacy ? data.parentRoutes.map(route => {
+    const a = data.nodes.get(route.parent)!.pos,
+      b = data.nodes.get(route.child)!.pos,
+      y = (a.y + b.y) / 2;
+    return { ...route, points: [{x:a.x,y:a.y},{x:a.x,y},{x:b.x,y},{x:b.x,y:b.y}] };
+  }) : data.parentRoutes;
+  scene.rebuild({ ...sceneInput(), parentRoutes }, selection.process);
+  scene.updateSelection(selection);
+}
 function connectionVisual(id: string) {
   const view = scene.renderView().edgeViews.find(view => view.e.id === id);
   return view && {
@@ -43,6 +53,7 @@ export {
   signalVisuals,
   cameraView,
   processPosition,
+  previewFamilyRoutes,
   connectionVisual,
   parentLineVisual,
   cpuGlowStates,

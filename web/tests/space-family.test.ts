@@ -1,6 +1,7 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
 import * as T from "three";
+import { familyRoutes } from "../src/space/family-routing.js";
 import { createSpaceScene } from "../src/space/scene.js";
 import type { SceneInput } from "../src/space/contracts.js";
 import type { PlacedProcess, SelectionState } from "../src/space/types.js";
@@ -28,6 +29,18 @@ function process(
 }
 function input(processes: PlacedProcess[]): SceneInput {
   return {
+    parentRoutes: familyRoutes(
+      new Map(
+        processes.map((n) => [
+          `${n.identity.pid}:1`,
+          {
+            ...n.pos,
+            depth: 0,
+            parent: n.parent_id ? `${n.parent_id.pid}:1` : null,
+          },
+        ]),
+      ),
+    ),
     nodes: new Map(processes.map((node) => [`${node.identity.pid}:1`, node])),
     visible: new Set(processes.map((node) => `${node.identity.pid}:1`)),
     snapshot: { processes, fd_relations: [] },

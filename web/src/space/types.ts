@@ -22,6 +22,12 @@ export interface TreePosition {
   depth: number;
   parent: string | null;
 }
+/** Floor polyline joining bottom centers; independent of rendering and search. */
+export interface ParentRouteInfo {
+  parent: string;
+  child: string;
+  points: ReadonlyArray<Pick<Position, "x" | "y">>;
+}
 export interface NetworkGroup {
   id: string;
   endpoint: FdEndpoint;

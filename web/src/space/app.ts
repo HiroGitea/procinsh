@@ -92,6 +92,7 @@ let lastFilePrune = 0;
 
 function sceneInput(): SceneInput {
   return {
+    parentRoutes: data.parentRoutes,
     snapshot: data.snapshot,
     nodes: data.nodes,
     network: data.network,
@@ -112,6 +113,7 @@ function detailsInput(): DetailsInput {
 }
 function worldPositions(): WorldPositions {
   return {
+    parentRoutes: data.parentRoutes,
     processes: [...data.nodes.values()].map((n) => n.pos),
     networks: data.networkPositions.values(),
     files: data.filePositions.values(),

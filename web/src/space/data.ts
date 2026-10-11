@@ -1,8 +1,10 @@
 // System SSE, observed state, retained activity, and plain layout coordinates.
+import { familyRoutes, refineFamilyLayout } from "./family-routing.js";
 import { Display } from "../shared/display.js";
 import { key, remoteLabel, ipcKey, fileLabel, PROCESS_SIDE } from "./model.js";
 import type {
   Position,
+  ParentRouteInfo,
   TreePosition,
   NetworkGroup,
   RecentFile,
@@ -489,6 +491,8 @@ const quietEvents: DataEvents = {
 /** Owns the system subscription, observations, retained activity, and layout. */
 export class SpaceDataStore {
   snapshot: SystemSnapshot = { processes: [], fd_relations: [] };
+  parentRoutes: readonly ParentRouteInfo[] = [];
+  private routeSignature = "";
   readonly nodes = new Map<string, PlacedProcess>();
   readonly cpuGlows = new Map<string, CpuGlow>();
   readonly edgeStats = new Map<string, EdgeStat>();
@@ -520,9 +524,20 @@ export class SpaceDataStore {
     const edges = new Set(snapshot.fd_relations.map((e) => e.id));
     for (const id of this.edgeStats.keys())
       if (!edges.has(id)) this.edgeStats.delete(id);
+    const previous = this.positions();
     const layout = rearrange
       ? treeLayout(snapshot.processes)
-      : stableLayout(snapshot.processes, this.positions());
+      : stableLayout(snapshot.processes, previous);
+    if (rearrange || previous.size === 0) refineFamilyLayout(layout);
+    const signature = JSON.stringify(
+      [...layout]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, p]) => [id, p.parent, p.x, p.y]),
+    );
+    if (signature !== this.routeSignature) {
+      this.parentRoutes = familyRoutes(layout);
+      this.routeSignature = signature;
+    }
     this.nodes.clear();
     for (const p of snapshot.processes) {
       const place = layout.get(key(p.identity));

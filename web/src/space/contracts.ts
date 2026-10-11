@@ -2,6 +2,7 @@
 import type * as T from "three";
 import type { SystemSnapshot } from "../shared/api-types.js";
 import type {
+  ParentRouteInfo,
   PlacedProcess,
   Position,
   NetworkGroup,
@@ -34,11 +35,13 @@ export interface FileSceneInput {
   visible: ReadonlySet<string>;
 }
 export interface SceneInput extends FileSceneInput {
+  parentRoutes: readonly ParentRouteInfo[];
   snapshot: SystemSnapshot;
   network: ReadonlyMap<string, NetworkGroup>;
   networkPositions: ReadonlyMap<string, Position>;
 }
 export interface WorldPositions {
+  parentRoutes: readonly ParentRouteInfo[];
   processes: Iterable<Position>;
   networks: Iterable<Position>;
   files: Iterable<Position>;

@@ -68,6 +68,7 @@ test("space-components regression", async () => {
             "./contracts.js",
             "./model.js",
             "./dom-types.js",
+            ...(name === "data.ts" ? ["./family-routing.js"] : []),
           ].includes(path),
           `${name} depends on ${path}`,
         );
@@ -106,6 +107,7 @@ test("space-components regression", async () => {
   {
     const scene = createSpaceScene();
     const input: SceneInput = {
+      parentRoutes: [],
       nodes,
       snapshot: { processes: [node], fd_relations: [] },
       network: new Map(),
@@ -291,6 +293,7 @@ test("space-components regression", async () => {
     const camera = createSpaceCamera(canvas);
     const positions = {
       processes: [{ x: 0, y: 0, z: 0 }],
+      parentRoutes: [],
       networks: [{ x: 1000, y: 0, z: 12 }],
       files: [{ x: -100, y: 0, z: -3 }],
     };
@@ -307,12 +310,35 @@ test("space-components regression", async () => {
     camera.focus({ x: 7, y: 8, z: 0 });
     assert.deepEqual(camera.view().target, [7, 8, 4]);
     const before = camera.view();
-    camera.fit({ processes: [], networks: [], files: [] });
+    camera.fit({ parentRoutes: [], processes: [], networks: [], files: [] });
     assert.deepEqual(
       camera.view(),
       before,
       "empty bounds leave the camera in place",
     );
+    const routed = {
+      ...positions,
+      parentRoutes: [
+        {
+          parent: "a",
+          child: "b",
+          points: [
+            { x: -2000, y: 3000 },
+            { x: 3000, y: 3000 },
+          ],
+        },
+      ],
+    };
+    camera.adaptWorld(routed);
+    assert.ok(
+      camera.camera.far > 20000,
+      "far plane includes route stroke outside process bounds",
+    );
+    camera.fit(routed);
+    const target = camera.view().target;
+    assert.ok(Math.abs(target[0] - 500) < 1e-8);
+    assert.ok(Math.abs(target[1] - 1500.15) < 1e-8);
+    assert.equal(target[2], 4.5);
     camera.dispose();
   }
 

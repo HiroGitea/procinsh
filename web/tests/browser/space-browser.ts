@@ -578,6 +578,44 @@ try {
     repositoryPath("target/browser-space-family.png"),
     Buffer.from(familyPng.data, "base64"),
   );
+  const routingChecks = await evaluate<Record<string, boolean>>(`(async()=>{
+    const m=await import(window.spaceTestModule);
+    document.getElementById('reset').click();
+    const make=(i)=>({identity:{pid:830000+i,start_time_ticks:1},parent_id:i>1?{pid:830001,start_time_ticks:1}:null,name:'routing-'+i,uid:1000,maps_epoch:1,maps:[]});
+    m.renderSystemSnapshot({processes:[make(1)],fd_relations:[]},true);
+    const processes=Array.from({length:15},(_,i)=>make(i+1));
+    m.renderSystemSnapshot({processes,fd_relations:[]});
+    const positions=processes.map(p=>m.processPosition(m.key(p.identity)));
+    const links=processes.slice(1).map(p=>m.parentLineVisual('830001:1',m.key(p.identity)));
+    const safe=links.every((route,i)=>route.points.slice(1).every((b,j)=>{
+      const a=route.points[j];
+      return positions.every((p,k)=>k===0||k===i+1||Math.max(a[0],b[0])<p.x-1.725||Math.min(a[0],b[0])>p.x+1.725||Math.max(a[1],b[1])<p.y-1.725||Math.min(a[1],b[1])>p.y+1.725);
+    }));
+    m.selectProcess('830005:1');
+    const highlighted=m.parentLineVisual('830001:1','830005:1').r===1;
+    const before=m.parentLineVisual('830001:1','830005:1').points;
+    const search=document.getElementById('search');search.value='routing-';search.dispatchEvent(new Event('input'));
+    const filterStable=JSON.stringify(before)===JSON.stringify(m.parentLineVisual('830001:1','830005:1').points);
+    m.fitScene();
+    return {safe,highlighted,filterStable};
+  })()`);
+  for (const [check, passed] of Object.entries(routingChecks))
+    assert.equal(passed, true, `obstacle routing: ${check}`);
+  // Same positions/camera/selection, with the old midpoint path as a visual reference.
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 50 });
+  for (const legacy of [true, false]) {
+    await evaluate(
+      `import(window.spaceTestModule).then(m=>m.previewFamilyRoutes(${legacy}))`,
+    );
+    await delay(150);
+    const png = await cdp("Page.captureScreenshot", { format: "png" });
+    await writeFile(
+      repositoryPath(
+        `target/browser-space-routing-${legacy ? "before" : "after"}.png`,
+      ),
+      Buffer.from(png.data, "base64"),
+    );
+  }
   await evaluate(`(async()=>{
     const m=await import(window.spaceTestModule);
     document.getElementById('reset').click();
@@ -700,7 +738,7 @@ try {
   );
 
   await evaluate(
-    `import(window.spaceTestModule).then(m=>m.renderSystemSnapshot(${JSON.stringify(snapshot)}))`,
+    `import(window.spaceTestModule).then(m=>m.renderSystemSnapshot(${JSON.stringify({ ...snapshot, processes: snapshot.processes.map((p) => ({ ...p, maps: p.maps ?? [] })) })}))`,
   );
   await evaluate("document.getElementById('reset').click()");
   await delay(800);
