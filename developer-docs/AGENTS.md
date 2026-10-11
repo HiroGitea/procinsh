@@ -13,6 +13,9 @@
 - C ソース・ヘッダー（BPF を含む）を変更したら `python3 scripts/format_c.py` で整形し、`python3 scripts/format_c.py --check` を実行すること
   - clang-format は `requirements-format.txt` の固定バージョンを使うこと。インストール手順は `developer-docs/DEVELOPMENT.md` を参照。
 - procinsh を起動するときは強めの権限が必要になるので、./scripts/dev_run.sh を利用すること
+- 実装が完了したら、空いているポートで修正版のサーバーを起動し、Tailscale IPv4 と localhost（127.0.0.1・::1）の両方で待ち受けること
+  - `./scripts/preview_bind.sh run ./scripts/dev_run.sh <PORT>` を利用できる
+  - サーバーはユーザーが確認できるよう起動したままにし、使用したポートとアクセス URL を報告すること
 - ptrace・perf・BPF など権限が必要な Rust 単体テストは `./scripts/dev_test.sh` で実行すること
   - perf の検証では `PROCINSH_REQUIRE_PERF=1 ./scripts/dev_test.sh` を使い、権限不足によるスキップを禁止すること
   - `dev_test.sh` の後ろにはテスト名フィルターや `--nocapture` などのテスト実行引数を渡せる
