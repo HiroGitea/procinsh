@@ -21,6 +21,8 @@ const WRAPPED_ROW_OFFSET = PROCESS_SIDE;
  * Place a process forest on the x/y plane, centered horizontally.
  * Missing parents and self-parent links become roots; cycles are broken
  * deterministically. Keys include both PID and process start time.
+ * Sibling subtrees stay side by side; only trees with different roots can wrap
+ * onto another row. Within each tree, y coordinates follow tree depth.
  * xGap and yGap control horizontal and vertical spacing.
  */
 export function treeLayout(
@@ -77,17 +79,23 @@ export function treeLayout(
   const roots = ordered
     .map((node) => key(node.identity))
     .filter((id) => !parents.get(id));
-  const pack = (layouts: PackedTree[], gap: number): PackedTree => {
+  const pack = (
+    layouts: PackedTree[],
+    gap: number,
+    wrapRows: boolean,
+  ): PackedTree => {
     if (!layouts.length) return { positions: new Map(), width: 0, height: 0 };
     const area = layouts.reduce(
       (sum, layout) => sum + (layout.width + gap) * (layout.height + gap),
       0,
     );
-    const target = Math.max(
-      40,
-      ...layouts.map((layout) => layout.width),
-      Math.sqrt(area) * 1.4,
-    );
+    const target = wrapRows
+      ? Math.max(
+          40,
+          ...layouts.map((layout) => layout.width),
+          Math.sqrt(area) * 1.4,
+        )
+      : Infinity;
     const positions = new Map<string, TreePosition>();
     let cursorX = 0,
       cursorY = 0,
@@ -96,7 +104,7 @@ export function treeLayout(
       width = 0;
     for (const layout of layouts) {
       if (cursorX > rowOffset && cursorX - rowOffset + layout.width > target) {
-        // Offset each wrapped row together with all of its descendant branches.
+        // Move each wrapped forest row together with all descendants of its roots.
         rowOffset += WRAPPED_ROW_OFFSET;
         cursorX = rowOffset;
         cursorY += rowHeight + gap;
@@ -115,7 +123,7 @@ export function treeLayout(
     return { positions, width, height: cursorY + rowHeight };
   };
   const build = (id: string): PackedTree => {
-    const packed = pack(children.get(id)!.map(build), 3);
+    const packed = pack(children.get(id)!.map(build), 3, false);
     const width = Math.max(xGap, packed.width),
       offsetX = (width - packed.width) / 2;
     const positions = new Map<string, TreePosition>([
@@ -134,7 +142,7 @@ export function treeLayout(
       height: packed.height ? packed.height + yGap : yGap,
     };
   };
-  const forest = pack(roots.map(build), 9),
+  const forest = pack(roots.map(build), 9, true),
     result = forest.positions;
   const values = [...result.values()];
   const center = values.length
@@ -227,15 +235,75 @@ export function stableLayout(
 
 if (import.meta.vitest) {
   const { test } = import.meta.vitest;
+  const processNode = (pid: number, parent: number | null = null) => ({
+    identity: { pid, start_time_ticks: pid * 10 },
+    parent_id:
+      parent !== null ? { pid: parent, start_time_ticks: parent * 10 } : null,
+  });
+
+  test("subtrees stay side by side and only root trees wrap", async () => {
+    const assert: typeof import("node:assert/strict") = (
+      await import("node:assert/strict")
+    ).default;
+    const nodes = [processNode(1)];
+    const branches: string[][] = [];
+    for (let i = 0; i < 12; i++) {
+      const child = processNode(i + 2, 1);
+      nodes.push(child);
+      const branch = [key(child.identity)];
+      for (let j = 0; j < i + 5; j++) {
+        const grandchild = processNode(1000 + i * 100 + j, i + 2);
+        nodes.push(grandchild);
+        branch.push(key(grandchild.identity));
+        if (j % 3 === 0) {
+          const descendant = processNode(
+            10000 + i * 100 + j,
+            grandchild.identity.pid,
+          );
+          nodes.push(descendant);
+          branch.push(key(descendant.identity));
+        }
+      }
+      branches.push(branch);
+    }
+    const layout = treeLayout(nodes);
+    for (const p of layout.values())
+      assert.equal(p.y, p.depth * 6.5, "tree depth determines the row");
+    const bounds = branches.map((ids) => {
+      const xs = ids.map((id) => layout.get(id)!.x);
+      return { min: Math.min(...xs), max: Math.max(...xs) };
+    });
+    for (let i = 1; i < bounds.length; i++)
+      assert.ok(
+        bounds[i - 1].max < bounds[i].min,
+        "sibling subtrees occupy disjoint horizontal ranges",
+      );
+
+    const forestNodes = Array.from({ length: 60 }, (_, i) => [
+      processNode(i * 10 + 1),
+      processNode(i * 10 + 2, i * 10 + 1),
+      processNode(i * 10 + 3, i * 10 + 1),
+      processNode(i * 10 + 4, i * 10 + 2),
+    ]).flat();
+    const forest = treeLayout(forestNodes);
+    const roots = [...forest.values()].filter((p) => p.parent === null);
+    assert.ok(
+      new Set(roots.map((p) => p.y)).size > 1,
+      "different root trees can wrap onto multiple rows",
+    );
+    for (const p of forest.values())
+      if (p.parent)
+        assert.equal(
+          p.y - forest.get(p.parent)!.y,
+          6.5,
+          "each wrapped tree keeps its internal rows aligned by depth",
+        );
+  });
+
   test("process tree and stable layout", async () => {
     const assert: typeof import("node:assert/strict") = (
       await import("node:assert/strict")
     ).default;
-    const processNode = (pid: number, parent: number | null = null) => ({
-      identity: { pid, start_time_ticks: pid * 10 },
-      parent_id:
-        parent !== null ? { pid: parent, start_time_ticks: parent * 10 } : null,
-    });
     assert.deepEqual(treeLayout([]), new Map());
     const tree = treeLayout([
       processNode(1),
@@ -284,15 +352,14 @@ if (import.meta.vitest) {
       processNode(1),
       ...Array.from({ length: 400 }, (_, i) => processNode(i + 2, 1)),
     ]);
-    const fanoutX = [...fanout.values()].map((v) => v.x),
-      fanoutY = [...fanout.values()].map((v) => v.y);
+    const fanoutX = [...fanout.values()].map((v) => v.x);
     assert.ok(
-      Math.max(...fanoutX) - Math.min(...fanoutX) < 400,
-      "large sibling groups wrap instead of becoming one long row",
+      Math.max(...fanoutX) - Math.min(...fanoutX) > 400,
+      "large sibling groups expand horizontally",
     );
     assert.ok(
-      Math.max(...fanoutY) > 20,
-      "wrapped sibling groups use the plane",
+      [...fanout.values()].every((v) => v.y === v.depth * 6.5),
+      "siblings stay on the same row even for large groups",
     );
     const originalNodes = [
       processNode(1),

@@ -401,7 +401,7 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 
 | 対象 | 配置・表示の考え方 | 主な実装 |
 |---|---|---|
-| プロセスと親子関係 | 親子関係に沿って平面に配置。折り返す行はプロセスの一辺分ずつ右へずらし、子孫の枝もまとめて移動。通常の更新は既存位置を保ち、新規プロセスの配置でも次の行へ移る際に同じ幅をずらす。Rearrange は全体を再配置 | [`treeLayout`・`stableLayout`](../web/src/space/process-layout.ts) |
+| プロセスと親子関係 | 初期表示・Rearrange では同じ木の兄弟の枝を横一列に並べ、深さに応じて縦位置を決める。木の中は折り返さず、ルートが異なる木同士だけ折り返す。折り返す行はプロセスの一辺分ずつ右へずらし、木全体をまとめて移動。通常更新では既存位置を保ち、新規プロセスは親の近くの空き位置に配置するため、木の中の折り返しを禁止する制約は適用しない | [`treeLayout`・`stableLayout`](../web/src/space/process-layout.ts) |
 | 仮想アドレス空間 | アドレス順にメモリ領域を積み上げ、アドレスの隙間を圧縮し、高さをプロセスごとに正規化。プロセス間の同じ高さは同じアドレスを意味しない | [`layoutMaps`](../web/src/space/data.ts)、[`regionColor`](../web/src/space/scene.ts#L81) |
 | ユーザーの識別 | 箱の上下の枠は実 UID、縦の枠は実効 UID に応じて色分け | [`userColor`・`processColors`](../web/src/space/model.ts) |
 | IPC・ネットワーク接続 | FD 関係を線で表示。接続候補・共有 FD は破線。ネットワーク接続先はプロセス・プロトコル・相手 IP/port ごとにまとめ、プロセスの上方に配置 | [`buildScene`](../web/src/space/scene.ts#L99)、[`networkGroups`](../web/src/space/data.ts)、[`networkLayout`](../web/src/space/data.ts) |
