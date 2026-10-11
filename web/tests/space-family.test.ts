@@ -76,10 +76,20 @@ test("floor family paths highlight every ancestor and descendant without sibling
     assert.equal(path.g, path.b);
     assert.equal(path.r, 0.35);
     const mesh = floorMesh(scene);
+    const joints = scene.root.getObjectByName("parent-line-joints");
+    assert.ok(joints instanceof T.InstancedMesh);
+    assert.ok(joints.geometry instanceof T.CircleGeometry);
     assert.ok(
       !scene.pickingView().objects.includes(mesh),
       "floor ancestry is not a selectable connection",
     );
+    assert.ok(!scene.pickingView().objects.includes(joints));
+    const outline = joints.geometry.attributes.position;
+    for (let i = 0; i < outline.count; i++)
+      assert.ok(
+        Math.hypot(outline.getX(i), outline.getY(i)) <= path.width / 2 + 1e-7,
+        "round joins stay inside a circle with the stroke's radius",
+      );
     const matrix = new T.Matrix4(),
       position = new T.Vector3(),
       rotation = new T.Quaternion(),
@@ -124,6 +134,30 @@ test("floor family paths highlight every ancestor and descendant without sibling
       [1, 1, 1],
       "shared trunk uses the active branch's color",
     );
+    const jointIndices = (x: number, y: number) =>
+      Array.from({ length: joints.count }, (_, i) => i).filter((i) => {
+        joints.getMatrixAt(i, matrix);
+        position.setFromMatrixPosition(matrix);
+        assert.ok(Math.abs(position.z - 0.06) < 1e-7);
+        return position.x === x && position.y === y;
+      });
+    for (const [x, y] of path.points)
+      assert.equal(
+        jointIndices(x, y).length,
+        1,
+        "each bend and endpoint has one round join",
+      );
+    joints.getColorAt(jointIndices(0, 5)[0], color);
+    assert.deepEqual(
+      color.toArray(),
+      [1, 1, 1],
+      "shared round join follows the active branch",
+    );
+    joints.getColorAt(jointIndices(6, 5)[0], color);
+    assert.ok(
+      Math.abs(color.r - 0.35) < 1e-7,
+      "sibling's rounded bend stays muted",
+    );
     scene.updateSelection(selection(5));
     assert.equal(scene.parentLineVisual("1:1", "2:1")!.r, 1);
     assert.equal(scene.parentLineVisual("2:1", "4:1")!.r, 1);
@@ -134,13 +168,25 @@ test("floor family paths highlight every ancestor and descendant without sibling
       assert.equal(color.r, color.g);
       assert.equal(color.g, color.b);
     }
+    for (let i = 0; i < joints.count; i++) {
+      joints.getColorAt(i, color);
+      assert.ok(
+        Math.abs(color.r - 0.35) < 1e-7,
+        "clearing selection also resets round joins",
+      );
+    }
     let disposed = false;
+    let jointsDisposed = false;
     mesh.geometry.addEventListener("dispose", () => {
       disposed = true;
+    });
+    joints.geometry.addEventListener("dispose", () => {
+      jointsDisposed = true;
     });
     scene.rebuild({ ...data, visible: new Set(["1:1", "4:1", "5:1"]) }, null);
     scene.updateSelection(selection(1));
     assert.equal(disposed, true);
+    assert.equal(jointsDisposed, true);
     assert.equal(scene.parentLineVisual("1:1", "2:1"), null);
     assert.equal(scene.parentLineVisual("2:1", "4:1"), null);
     assert.equal(

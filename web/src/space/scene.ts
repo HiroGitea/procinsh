@@ -33,6 +33,10 @@ type ParentSegment = {
   end: T.Vector3;
   paths: number[];
 };
+type ParentJoint = {
+  position: T.Vector3;
+  paths: number[];
+};
 
 // Split collinear overlaps so each floor section has one mesh and all its owners.
 function parentSegments(paths: ParentPath[]): ParentSegment[] {
@@ -98,6 +102,25 @@ function parentSegments(paths: ParentPath[]): ParentSegment[] {
   return result;
 }
 
+// Round caps and joins share the highlight of every path meeting at that point.
+function parentJoints(sections: ParentSegment[]): ParentJoint[] {
+  const joints = new Map<string, { position: T.Vector3; paths: Set<number> }>();
+  for (const section of sections)
+    for (const position of [section.start, section.end]) {
+      const id = `${position.x}:${position.y}`;
+      let joint = joints.get(id);
+      if (!joint) {
+        joint = { position, paths: new Set() };
+        joints.set(id, joint);
+      }
+      for (const path of section.paths) joint.paths.add(path);
+    }
+  return [...joints.values()].map(({ position, paths }) => ({
+    position,
+    paths: [...paths],
+  }));
+}
+
 function disposeObject(object: T.Object3D) {
   if (
     object instanceof T.Mesh ||
@@ -121,8 +144,13 @@ export function createSpaceScene() {
     fileViews = new Map<string, FileView>();
   let parentViews: ParentPath[] = [],
     parentSections: ParentSegment[] = [],
+    parentCorners: ParentJoint[] = [],
     parentLines: T.InstancedMesh<T.PlaneGeometry, T.MeshBasicMaterial> | null =
-      null;
+      null,
+    parentLineJoints: T.InstancedMesh<
+      T.CircleGeometry,
+      T.MeshBasicMaterial
+    > | null = null;
   let geometryGroup = new T.Group(),
     fileGroup = new T.Group();
   scene.add(geometryGroup, fileGroup);
@@ -258,6 +286,11 @@ export function createSpaceScene() {
     parentLines.name = "parent-lines";
     parentLines.renderOrder = -1;
     const sectionTransform = new T.Object3D();
+    const parentColor = new T.Color().setRGB(
+      PARENT_LINE_BRIGHTNESS,
+      PARENT_LINE_BRIGHTNESS,
+      PARENT_LINE_BRIGHTNESS,
+    );
     for (let i = 0; i < parentSections.length; i++) {
       const { start, end } = parentSections[i];
       sectionTransform.position.copy(start).lerp(end, 0.5);
@@ -265,23 +298,29 @@ export function createSpaceScene() {
         end.y - start.y,
         end.x - start.x,
       );
-      sectionTransform.scale.set(
-        start.distanceTo(end) + PARENT_LINE_WIDTH,
-        PARENT_LINE_WIDTH,
-        1,
-      );
+      sectionTransform.scale.set(start.distanceTo(end), PARENT_LINE_WIDTH, 1);
       sectionTransform.updateMatrix();
       parentLines.setMatrixAt(i, sectionTransform.matrix);
-      parentLines.setColorAt(
-        i,
-        new T.Color().setRGB(
-          PARENT_LINE_BRIGHTNESS,
-          PARENT_LINE_BRIGHTNESS,
-          PARENT_LINE_BRIGHTNESS,
-        ),
-      );
+      parentLines.setColorAt(i, parentColor);
     }
     geometryGroup.add(parentLines);
+    parentCorners = parentJoints(parentSections);
+    parentLineJoints = new T.InstancedMesh(
+      new T.CircleGeometry(PARENT_LINE_WIDTH / 2, 24),
+      parentLines.material.clone(),
+      Math.max(1, parentCorners.length),
+    );
+    parentLineJoints.count = parentCorners.length;
+    parentLineJoints.name = "parent-line-joints";
+    sectionTransform.rotation.set(0, 0, 0);
+    sectionTransform.scale.set(1, 1, 1);
+    for (let i = 0; i < parentCorners.length; i++) {
+      sectionTransform.position.copy(parentCorners[i].position);
+      sectionTransform.updateMatrix();
+      parentLineJoints.setMatrixAt(i, sectionTransform.matrix);
+      parentLineJoints.setColorAt(i, parentColor);
+    }
+    geometryGroup.add(parentLineJoints);
     const linePos: number[] = [],
       lineColors: number[] = [],
       lineEdges: (ConnectionPick | null)[] = [],
@@ -601,14 +640,21 @@ export function createSpaceScene() {
     }
     for (const path of parentViews)
       path.active = active.has(`${path.parent}>${path.child}`);
-    for (let i = 0; i < parentSections.length; i++) {
-      const bright = parentSections[i].paths.some(
-        (index) => parentViews[index].active,
-      );
-      const level = bright ? 1 : PARENT_LINE_BRIGHTNESS;
-      parentLines.setColorAt(i, new T.Color().setRGB(level, level, level));
+    const color = new T.Color();
+    for (const [mesh, sections] of [
+      [parentLines, parentSections],
+      [parentLineJoints, parentCorners],
+    ] as const) {
+      if (!mesh?.instanceColor) continue;
+      for (let i = 0; i < sections.length; i++) {
+        const bright = sections[i].paths.some(
+          (index) => parentViews[index].active,
+        );
+        const level = bright ? 1 : PARENT_LINE_BRIGHTNESS;
+        mesh.setColorAt(i, color.setRGB(level, level, level));
+      }
+      mesh.instanceColor.needsUpdate = true;
     }
-    parentLines.instanceColor.needsUpdate = true;
   }
   function updateSelection(selectionState: SelectionState) {
     const n = nodes.get(selectionState.process ?? "");
@@ -672,7 +718,9 @@ export function createSpaceScene() {
         hullIds,
         hull,
         objects: [
-          ...geometryGroup.children.filter((object) => object !== parentLines),
+          ...geometryGroup.children.filter(
+            (object) => object !== parentLines && object !== parentLineJoints,
+          ),
           ...fileGroup.children,
         ],
       };
