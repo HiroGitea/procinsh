@@ -168,6 +168,7 @@ export function createSpaceDetails(
       process.hidden = false;
       connection.hidden = true;
       $("name").textContent = n.name;
+      $("cmdline").textContent = n.command_line?.join(" ") || "N/A";
       $("pid").replaceChildren(
         document.createTextNode(`PID ${n.identity.pid} · `),
       );

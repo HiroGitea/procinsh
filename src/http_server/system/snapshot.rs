@@ -18,6 +18,8 @@ pub(super) struct ProcessSnapshot {
     pub(super) identity: ProcessId,
     pub(super) parent_id: Option<ProcessId>,
     pub(super) name: String,
+    /// Complete argument vector from /proc; absent when it cannot be read.
+    pub(super) command_line: Option<Vec<String>>,
     pub(super) uid: Option<u32>,
     pub(super) username: Option<String>,
     pub(super) euid: Option<u32>,
@@ -95,6 +97,7 @@ pub(super) fn process_from_summary(
         identity: summary.identity,
         parent_id,
         name: summary.name,
+        command_line: summary.command_line,
         uid: summary.uid,
         username: summary.username,
         euid: summary.euid,

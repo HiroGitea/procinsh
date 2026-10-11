@@ -283,6 +283,7 @@ export interface Process {
   identity: ProcessId;
   parent_id: ProcessId | null;
   name: string;
+  command_line: string[] | null;
   uid: number | null;
   username: string | null;
   euid: number | null;

@@ -39,6 +39,7 @@ export function processInfo(extra: Partial<Process> = {}): Process {
     identity: { pid: 1, start_time_ticks: 1 },
     parent_id: null,
     name: "process",
+    command_line: null,
     uid: null,
     username: null,
     euid: null,
