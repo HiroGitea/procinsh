@@ -279,21 +279,29 @@ async fn api_explicit_identity_validation_and_removed_snapshot() {
             assert_eq!(response.headers()["cache-control"], "no-store");
         }
     }
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(format!(
-                    "/api/processes/memory?pid={}&start_time_ticks={}&address=0x{:x}&length=8",
-                    target.id.pid, target.id.start_time_ticks, target.address
-                ))
-                .header("host", "127.0.0.1:8080")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 404);
+    for (start, length, expected) in [
+        (target.id.start_time_ticks, 8, 200),
+        (target.id.start_time_ticks + 1, 8, 410),
+        (target.id.start_time_ticks, 0, 400),
+        (target.id.start_time_ticks, 65537, 400),
+    ] {
+        let uri = format!(
+            "/api/processes/memory?pid={}&start_time_ticks={start}&address=0x{:x}&length={length}",
+            target.id.pid, target.address
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .header("host", "127.0.0.1:8080")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), expected);
+    }
     let response = app
         .oneshot(
             Request::builder()

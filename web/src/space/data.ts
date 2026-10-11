@@ -1,6 +1,14 @@
 // System SSE, observed state, retained activity, and plain layout coordinates.
 import { Display } from "../shared/display.js";
-import { key, remoteLabel, ipcKey, fileLabel, PROCESS_SIDE } from "./model.js";
+import {
+  key,
+  remoteLabel,
+  ipcKey,
+  fileLabel,
+  PROCESS_SIDE,
+  layoutMaps,
+} from "./model.js";
+export { layoutMaps };
 import type {
   Position,
   TreePosition,
@@ -106,23 +114,6 @@ function networkLayout(
   return result;
 }
 
-function layoutMaps<M extends Pick<MemoryMap, "start" | "end">>(maps: M[]) {
-  const sorted = [...maps].sort((a, b) =>
-    BigInt(a.start) < BigInt(b.start) ? -1 : 1,
-  );
-  const sizes = sorted.map((m) => Number(BigInt(m.end) - BigInt(m.start)));
-  const total = sizes.reduce((a, b) => a + b, 0) || 1,
-    gap = 0.018;
-  let z = 0;
-  return sorted
-    .map((m, i) => {
-      const h = Math.max(0.008, (sizes[i] / total) * 7);
-      const result = { ...m, z, h };
-      z += h + gap;
-      return result;
-    })
-    .map((m, _, all) => ({ ...m, z: (m.z / z) * 8, h: (m.h / z) * 8 }));
-}
 function edgeDirection(
   edge: Pick<FdRelation, "endpoint" | "peer" | "shared">,
   event: Pick<IoActivity, "process_id" | "resource" | "write">,

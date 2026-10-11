@@ -8,11 +8,18 @@ import type {
   RecentFile,
   EdgeStat,
   RenderNode,
+  Region,
   EdgeView,
   NetworkView,
   FileView,
   HoverState,
 } from "./types.js";
+
+export interface RegionHoverTarget {
+  process: RenderNode;
+  region: Region | null;
+  hitPoint: T.Vector3;
+}
 
 export interface SelectionActions {
   process(id: string | null, focus?: boolean): void;
@@ -67,6 +74,9 @@ export interface SelectionBindings {
   read(): PickingInput;
   actions: SelectionActions;
   hover(state: HoverState): void;
+  onRegionHover?(target: RegionHoverTarget | null): void;
+  hitInspectionCard?(ray: T.Raycaster): boolean;
+  onInspectionCardClick?(): void;
 }
 /** Only geometry and label values consumed by the renderer; no scene operations. */
 export interface RenderView {

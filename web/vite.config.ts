@@ -43,6 +43,9 @@ export default defineConfig(({ mode }) => {
   return {
     appType: "mpa",
     define: { "import.meta.vitest": "undefined" },
+    resolve: {
+      dedupe: ["three"],
+    },
     plugins: [applicationPages()],
     build: {
       manifest: true,
