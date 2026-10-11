@@ -58,6 +58,7 @@ declare module "@glyph3d/core" {
     lines: string[];
     content: string;
     filename?: string;
+    _renderer?: InstancedField;
     _memoryEdges?: MemoryEdges;
     loadText(text: string, filename?: string): Promise<this>;
     loadFile(filename: string, text: string): Promise<this>;
@@ -134,6 +135,33 @@ declare module "@glyph3d/core" {
     ): void;
     clear(): void;
     dispose(): void;
+  }
+
+  export class InstancedSlotBuffer {
+    constructor(initialCapacity?: number);
+    _capacity: number;
+    _count: number;
+    buffer: ArrayBuffer;
+    ensureCapacity(minSlots: number): void;
+    createInterleavedBuffer(
+      usage?: THREE.Usage,
+    ): THREE.InstancedInterleavedBuffer;
+    static bindGeometryAttributes(
+      geometry: THREE.BufferGeometry,
+      interleavedBuffer: THREE.InterleavedBuffer,
+    ): void;
+  }
+
+  export class InstancedField {
+    constructor(
+      scene: THREE.Scene | null,
+      atlas?: GlyphAtlas,
+      options?: Record<string, unknown>,
+    );
+    geometry: THREE.InstancedBufferGeometry;
+    instanceMesh: THREE.Mesh;
+    _interleavedBuffer: THREE.InstancedInterleavedBuffer;
+    setSlots(slotBuffer: InstancedSlotBuffer, count: number): void;
   }
 
   export function bootGlyphEngine(

@@ -114,13 +114,59 @@ bindSelection($("world"), $("hover"), {
 });
 
 window.addEventListener("keydown", (e) => {
-  if (document.activeElement?.tagName === "INPUT") return;
-  if (e.key === "x" || e.key === "X" || e.key === "m" || e.key === "M") {
+  const isInput =
+    document.activeElement?.tagName === "INPUT" ||
+    document.activeElement?.tagName === "TEXTAREA";
+  if (isInput) return;
+
+  if (e.key === "x" || e.key === "X" || e.key === "d" || e.key === "D") {
+    inspectionCard?.keepAlive();
     inspectionCard?.toggleMode(camera.camera);
   } else if (e.key === "Escape") {
     inspectionCard?.unlock();
   } else if (e.key === "l" || e.key === "L") {
+    inspectionCard?.keepAlive();
     inspectionCard?.toggleLock();
+  } else if (
+    e.key === "+" ||
+    e.key === "=" ||
+    e.code === "Equal" ||
+    e.code === "NumpadAdd"
+  ) {
+    e.preventDefault();
+    inspectionCard?.keepAlive();
+    inspectionCard?.increaseSlicesPerPage(camera.camera);
+  } else if (
+    e.key === "-" ||
+    e.key === "_" ||
+    e.code === "Minus" ||
+    e.code === "NumpadSubtract"
+  ) {
+    e.preventDefault();
+    inspectionCard?.keepAlive();
+    inspectionCard?.decreaseSlicesPerPage(camera.camera);
+  } else if (e.key === "s" || e.key === "S" || e.code === "KeyS") {
+    e.preventDefault();
+    inspectionCard?.keepAlive();
+    if (e.shiftKey) {
+      inspectionCard?.decreaseSlicesPerPage(camera.camera);
+    } else {
+      inspectionCard?.increaseSlicesPerPage(camera.camera);
+    }
+  } else if (
+    e.key === "m" ||
+    e.key === "M" ||
+    e.code === "KeyM" ||
+    e.key === "h" ||
+    e.key === "H" ||
+    e.code === "KeyH" ||
+    e.key === "b" ||
+    e.key === "B" ||
+    e.code === "KeyB"
+  ) {
+    e.preventDefault();
+    inspectionCard?.keepAlive();
+    inspectionCard?.toggleMappingRows(camera.camera);
   } else if (
     e.key === "[" ||
     e.key === "PageUp" ||
@@ -128,10 +174,9 @@ window.addEventListener("keydown", (e) => {
     e.key === "k" ||
     e.key === "K"
   ) {
-    if (inspectionCard?.isInteractive()) {
-      e.preventDefault();
-      inspectionCard.scrollPages(-1);
-    }
+    e.preventDefault();
+    inspectionCard?.keepAlive();
+    inspectionCard?.scrollPages(-1);
   } else if (
     e.key === "]" ||
     e.key === "PageDown" ||
@@ -139,10 +184,9 @@ window.addEventListener("keydown", (e) => {
     e.key === "j" ||
     e.key === "J"
   ) {
-    if (inspectionCard?.isInteractive()) {
-      e.preventDefault();
-      inspectionCard.scrollPages(1);
-    }
+    e.preventDefault();
+    inspectionCard?.keepAlive();
+    inspectionCard?.scrollPages(1);
   }
 });
 
@@ -161,7 +205,15 @@ $("world").addEventListener(
     if (inspectionCard.hitTest(wheelRay)) {
       e.preventDefault();
       e.stopPropagation();
-      inspectionCard.scrollPages(e.deltaY > 0 ? 1 : -1);
+      if (e.shiftKey) {
+        if (e.deltaY > 0) {
+          inspectionCard.increaseSlicesPerPage(camera.camera);
+        } else {
+          inspectionCard.decreaseSlicesPerPage(camera.camera);
+        }
+      } else {
+        inspectionCard.scrollPages(e.deltaY > 0 ? 1 : -1);
+      }
     }
   },
   { passive: false },

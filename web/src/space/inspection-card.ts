@@ -6,6 +6,8 @@ import {
   CodeGrid,
   bytesToHexView,
   decorateMemoryGrid,
+  InstancedField,
+  InstancedSlotBuffer,
 } from "@glyph3d/core";
 import { api, errorMessage } from "../shared/api.js";
 import type { MemoryRead, MemoryMap } from "../shared/api-types.js";
@@ -13,6 +15,25 @@ import type { Region, RenderNode } from "./types.js";
 import type { RegionHoverTarget } from "./contracts.js";
 import { Display } from "../shared/display.js";
 import { layoutMaps, findNearestRegion } from "./model.js";
+
+// Invalidate Three.js cached VAO when InstancedField buffer capacity grows
+if (typeof InstancedField !== "undefined" && InstancedField.prototype) {
+  const origSetSlots = InstancedField.prototype.setSlots;
+  InstancedField.prototype.setSlots = function (
+    slotBuffer: InstancedSlotBuffer,
+    count: number,
+  ) {
+    const neededCapacity = Math.max(count, 1);
+    const needNew =
+      !this._interleavedBuffer ||
+      this._interleavedBuffer.array.buffer !== slotBuffer.buffer ||
+      this._interleavedBuffer.count < neededCapacity;
+    origSetSlots.call(this, slotBuffer, count);
+    if (needNew && this.geometry) {
+      this.geometry.dispose();
+    }
+  };
+}
 
 let sharedAtlas: GlyphAtlas | null = null;
 let initPromise: Promise<GlyphAtlas | null> | null = null;
@@ -487,6 +508,67 @@ export const CUBE_WIDTH = 4.2;
 export const CUBE_HEIGHT = 3.4;
 export const CUBE_DEPTH = 2.0;
 
+export const DEFAULT_SLICES_PER_PAGE = 3;
+export const MIN_SLICES_PER_PAGE = 1;
+export const MAX_SLICES_PER_PAGE = 16;
+
+const STORAGE_KEY_SLICES = "procinsh:inspection:slices_per_page";
+const STORAGE_KEY_MAPPING_ROWS = "procinsh:inspection:show_mapping_rows";
+
+function loadSavedSlices(): number {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const v = localStorage.getItem(STORAGE_KEY_SLICES);
+      if (v) {
+        const n = parseInt(v, 10);
+        if (!isNaN(n) && n >= MIN_SLICES_PER_PAGE && n <= MAX_SLICES_PER_PAGE) {
+          return n;
+        }
+      }
+    }
+  } catch {}
+  return DEFAULT_SLICES_PER_PAGE;
+}
+
+function saveSlices(count: number) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_SLICES, count.toString());
+    }
+  } catch {}
+}
+
+function loadSavedMappingRows(): boolean {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const v = localStorage.getItem(STORAGE_KEY_MAPPING_ROWS);
+      if (v !== null) return v === "true";
+    }
+  } catch {}
+  return true;
+}
+
+function saveMappingRows(show: boolean) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_MAPPING_ROWS, show.toString());
+    }
+  } catch {}
+}
+
+export function computeHeightForLines(lineCount: number): number {
+  return Math.max(1.8, lineCount * 0.095 + 0.9);
+}
+
+export function computeCubeHeight(
+  slicesPerPage: number,
+  showMappingRows: boolean = true,
+): number {
+  const rowsPerSlice = showMappingRows ? 9 : 7;
+  const estimatedRows = slicesPerPage * rowsPerSlice;
+  return computeHeightForLines(estimatedRows);
+}
+
 export class ProcessInspectionCard extends THREE.Group {
   public readonly grid: CodeGrid;
   public readonly cubeGroup: THREE.Group;
@@ -504,10 +586,17 @@ export class ProcessInspectionCard extends THREE.Group {
   public mode: InspectionMode = "hex";
   public locked = false;
 
+  public slicesPerPage: number = loadSavedSlices();
+  public showMappingRows: boolean = loadSavedMappingRows();
+  public currentCubeHeight: number = CUBE_HEIGHT;
+
+  public get SLICES_PER_PAGE(): number {
+    return this.slicesPerPage;
+  }
+
   public pageIndex = 0;
   public totalPages = 1;
   public readonly pageSize = 512;
-  public readonly SLICES_PER_PAGE = 3;
   public readonly ROWS_PER_SLICE = 7;
   public readonly BYTES_PER_SLICE = 128;
   public readonly MAX_READ_BYTES = 65536; // 64KB backend limit
@@ -581,11 +670,20 @@ export class ProcessInspectionCard extends THREE.Group {
   constructor(atlas: GlyphAtlas) {
     super();
 
+    this.currentCubeHeight = computeCubeHeight(
+      this.slicesPerPage,
+      this.showMappingRows,
+    );
+
     this.cubeGroup = new THREE.Group();
     this.add(this.cubeGroup);
 
     // 3D Chassis wireframe box
-    const boxGeo = new THREE.BoxGeometry(CUBE_WIDTH, CUBE_HEIGHT, CUBE_DEPTH);
+    const boxGeo = new THREE.BoxGeometry(
+      CUBE_WIDTH,
+      this.currentCubeHeight,
+      CUBE_DEPTH,
+    );
     const edgesGeo = new THREE.EdgesGeometry(boxGeo);
     this.chassisMat = new THREE.LineBasicMaterial({
       color: 0x4bd6bf,
@@ -609,7 +707,7 @@ export class ProcessInspectionCard extends THREE.Group {
     // Generous invisible hit volume (1.35x) for reliable wheel scrolling and raycast picking
     const hitBoxGeo = new THREE.BoxGeometry(
       CUBE_WIDTH * 1.35,
-      CUBE_HEIGHT * 1.35,
+      this.currentCubeHeight * 1.35,
       CUBE_DEPTH * 1.5,
     );
     const hitMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -620,7 +718,7 @@ export class ProcessInspectionCard extends THREE.Group {
     const pagePlatesGeo = new THREE.BufferGeometry();
     const platePositions: number[] = [];
     const halfW = CUBE_WIDTH * 0.46;
-    const halfH = CUBE_HEIGHT * 0.44;
+    const halfH = this.currentCubeHeight * 0.44;
     for (const zSlice of [0.4, 0.0, -0.4]) {
       platePositions.push(
         -halfW,
@@ -687,8 +785,13 @@ export class ProcessInspectionCard extends THREE.Group {
       showFilename: true,
       padding: 10,
     });
+    this.grid.frustumCulled = false;
     this.grid.scale.setScalar(0.062);
-    this.grid.position.set(-1.8, 1.45, CUBE_DEPTH * 0.5 + 0.02);
+    this.grid.position.set(
+      -1.8,
+      this.currentCubeHeight * 0.5 - 0.25,
+      CUBE_DEPTH * 0.5 + 0.02,
+    );
     this.cubeGroup.add(this.grid);
 
     // Leader line from pillar to cube left-anchor
@@ -891,6 +994,187 @@ export class ProcessInspectionCard extends THREE.Group {
     }
   }
 
+  /** Update dynamic 3D cube height and internal geometries. */
+  public updateCubeHeight(newHeight: number) {
+    if (Math.abs(this.currentCubeHeight - newHeight) < 0.02) return;
+    this.currentCubeHeight = newHeight;
+
+    const boxGeo = new THREE.BoxGeometry(CUBE_WIDTH, newHeight, CUBE_DEPTH);
+    const edgesGeo = new THREE.EdgesGeometry(boxGeo);
+
+    this.cubeFrame.geometry.dispose();
+    this.cubeFrame.geometry = edgesGeo;
+
+    this.cubeGlass.geometry.dispose();
+    this.cubeGlass.geometry = boxGeo;
+
+    this.hitMesh.geometry.dispose();
+    this.hitMesh.geometry = new THREE.BoxGeometry(
+      CUBE_WIDTH * 1.35,
+      newHeight * 1.35,
+      CUBE_DEPTH * 1.5,
+    );
+
+    const platePositions: number[] = [];
+    const halfW = CUBE_WIDTH * 0.46;
+    const halfH = newHeight * 0.44;
+    for (const zSlice of [0.4, 0.0, -0.4]) {
+      platePositions.push(
+        -halfW,
+        -halfH,
+        zSlice,
+        halfW,
+        -halfH,
+        zSlice,
+        halfW,
+        -halfH,
+        zSlice,
+        halfW,
+        halfH,
+        zSlice,
+        halfW,
+        halfH,
+        zSlice,
+        -halfW,
+        halfH,
+        zSlice,
+        -halfW,
+        halfH,
+        zSlice,
+        -halfW,
+        -halfH,
+        zSlice,
+      );
+    }
+    this.cubePagePlates.geometry.dispose();
+    const pagePlatesGeo = new THREE.BufferGeometry();
+    pagePlatesGeo.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(platePositions, 3),
+    );
+    this.cubePagePlates.geometry = pagePlatesGeo;
+
+    const indPos = new Float32Array([
+      -halfW,
+      halfH + 0.04,
+      0.0,
+      halfW,
+      halfH + 0.04,
+      0.0,
+    ]);
+    this.pageIndicator.geometry.dispose();
+    const indGeo = new THREE.BufferGeometry();
+    indGeo.setAttribute("position", new THREE.BufferAttribute(indPos, 3));
+    this.pageIndicator.geometry = indGeo;
+
+    this.grid.position.set(
+      -1.8,
+      newHeight * 0.5 - 0.25,
+      CUBE_DEPTH * 0.5 + 0.02,
+    );
+  }
+
+  /** Set slices per page with clamping, updating height and preserving current slice focus. */
+  public async setSlicesPerPage(count: number, camera?: THREE.Camera) {
+    const clamped = Math.max(
+      MIN_SLICES_PER_PAGE,
+      Math.min(MAX_SLICES_PER_PAGE, count),
+    );
+    if (clamped === this.slicesPerPage) return;
+
+    // Retain viewing focus by tracking currently focused slice index
+    const process = this.currentProcessNode;
+    let focusedIndex = this.pageIndex * this.slicesPerPage;
+    if (process && this.currentHoveredRegion) {
+      const idx = process.regions.findIndex(
+        (r) =>
+          r.start === this.currentHoveredRegion!.start &&
+          r.end === this.currentHoveredRegion!.end,
+      );
+      if (idx >= 0) focusedIndex = idx;
+    }
+
+    this.slicesPerPage = clamped;
+    saveSlices(this.slicesPerPage);
+
+    if (process && process.regions.length > 0) {
+      const totalRegions = process.regions.length;
+      this.totalPages = Math.max(
+        1,
+        Math.ceil(totalRegions / this.slicesPerPage),
+      );
+      this.pageIndex = Math.max(
+        0,
+        Math.min(
+          this.totalPages - 1,
+          Math.floor(focusedIndex / this.slicesPerPage),
+        ),
+      );
+      this.updatePageIndicator();
+    }
+
+    if (this.currentProcessNode) {
+      if (camera && this.lastHitPoint && !this.locked) {
+        this.updateAnchor(
+          this.lastHitPoint,
+          camera,
+          this.currentProcessNode ?? undefined,
+        );
+      }
+      await this.renderActivePage();
+    } else {
+      const newHeight = computeCubeHeight(
+        this.slicesPerPage,
+        this.showMappingRows,
+      );
+      this.updateCubeHeight(newHeight);
+      if (camera && this.lastHitPoint && !this.locked) {
+        this.updateAnchor(
+          this.lastHitPoint,
+          camera,
+          this.currentProcessNode ?? undefined,
+        );
+      }
+    }
+  }
+
+  public async increaseSlicesPerPage(camera?: THREE.Camera) {
+    await this.setSlicesPerPage(this.slicesPerPage + 1, camera);
+  }
+
+  public async decreaseSlicesPerPage(camera?: THREE.Camera) {
+    await this.setSlicesPerPage(this.slicesPerPage - 1, camera);
+  }
+
+  public async toggleMappingRows(camera?: THREE.Camera) {
+    this.showMappingRows = !this.showMappingRows;
+    saveMappingRows(this.showMappingRows);
+
+    if (this.currentProcessNode) {
+      if (camera && this.lastHitPoint && !this.locked) {
+        this.updateAnchor(
+          this.lastHitPoint,
+          camera,
+          this.currentProcessNode ?? undefined,
+        );
+      }
+      await this.renderActivePage();
+    } else {
+      const newHeight = computeCubeHeight(
+        this.slicesPerPage,
+        this.showMappingRows,
+      );
+      this.updateCubeHeight(newHeight);
+      if (camera && this.lastHitPoint && !this.locked) {
+        this.updateAnchor(
+          this.lastHitPoint,
+          camera,
+          this.currentProcessNode ?? undefined,
+        );
+      }
+    }
+  }
+
   /** Process region hover event from selection raycast. */
   public handleHover(target: RegionHoverTarget | null, camera: THREE.Camera) {
     if (this.locked) return; // When locked in space, ignore hover transitions!
@@ -933,17 +1217,14 @@ export class ProcessInspectionCard extends THREE.Group {
 
     // Calculate total pages for all regions of this process
     const totalRegions = process.regions.length;
-    this.totalPages = Math.max(
-      1,
-      Math.ceil(totalRegions / this.SLICES_PER_PAGE),
-    );
+    this.totalPages = Math.max(1, Math.ceil(totalRegions / this.slicesPerPage));
 
     // Find the page index containing the hovered region
     const hoveredIndex = process.regions.findIndex(
       (r) => r.start === region.start && r.end === region.end,
     );
     const targetPage =
-      hoveredIndex >= 0 ? Math.floor(hoveredIndex / this.SLICES_PER_PAGE) : 0;
+      hoveredIndex >= 0 ? Math.floor(hoveredIndex / this.slicesPerPage) : 0;
 
     const samePage = sameProcess && this.pageIndex === targetPage;
     const sameHovered =
@@ -1082,15 +1363,12 @@ export class ProcessInspectionCard extends THREE.Group {
     const totalRegions = process.regions.length;
     if (totalRegions === 0) return;
 
-    this.totalPages = Math.max(
-      1,
-      Math.ceil(totalRegions / this.SLICES_PER_PAGE),
-    );
+    this.totalPages = Math.max(1, Math.ceil(totalRegions / this.slicesPerPage));
     this.pageIndex = Math.max(0, Math.min(this.totalPages - 1, this.pageIndex));
     this.updatePageIndicator();
 
-    const startIndex = this.pageIndex * this.SLICES_PER_PAGE;
-    const endIndex = Math.min(totalRegions, startIndex + this.SLICES_PER_PAGE);
+    const startIndex = this.pageIndex * this.slicesPerPage;
+    const endIndex = Math.min(totalRegions, startIndex + this.slicesPerPage);
     const pageRegions = process.regions.slice(startIndex, endIndex);
 
     this.visible = true;
@@ -1348,57 +1626,83 @@ export class ProcessInspectionCard extends THREE.Group {
       const name = rawName.startsWith("/")
         ? rawName.split("/").pop() || rawName
         : rawName;
-      const tag = slice.isHovered
-        ? `►►► [HOVERED ${slice.globalIndex + 1}/${total}]`
-        : `─── [MAPPING ${slice.globalIndex + 1}/${total}]`;
-      const bannerPrefix = `${tag} 0x${slice.address.toString(16)} · ${perms} · ${name} (${sizeStr}) `;
-      const banner = bannerPrefix.padEnd(76, "─");
-      const bannerLineIdx = lines.length;
-      lines.push(banner);
+      if (this.showMappingRows) {
+        const tag = slice.isHovered
+          ? `►►► [HOVERED ${slice.globalIndex + 1}/${total}]`
+          : `─── [MAPPING ${slice.globalIndex + 1}/${total}]`;
+        const bannerPrefix = `${tag} 0x${slice.address.toString(16)} · ${perms} · ${name} (${sizeStr}) `;
+        const banner = bannerPrefix.padEnd(76, "─");
+        const bannerLineIdx = lines.length;
+        lines.push(banner);
 
-      if (slice.isHovered) {
-        highlights.push({
-          line: bannerLineIdx,
-          startCol: 0,
-          endCol: banner.length,
-          color: { r: 1.0, g: 0.82, b: 0.2 },
-        });
-      } else if (r.executable) {
-        highlights.push({
-          line: bannerLineIdx,
-          startCol: 0,
-          endCol: banner.length,
-          color: { r: 0.3, g: 0.85, b: 1.0 },
-        });
-      } else if (slice.guard) {
-        highlights.push({
-          line: bannerLineIdx,
-          startCol: 0,
-          endCol: banner.length,
-          color: { r: 0.95, g: 0.45, b: 0.45 },
-        });
-      } else {
-        highlights.push({
-          line: bannerLineIdx,
-          startCol: 0,
-          endCol: banner.length,
-          color: { r: 0.4, g: 0.85, b: 0.65 },
-        });
+        if (slice.isHovered) {
+          highlights.push({
+            line: bannerLineIdx,
+            startCol: 0,
+            endCol: banner.length,
+            color: { r: 1.0, g: 0.82, b: 0.2 },
+          });
+        } else if (r.executable) {
+          highlights.push({
+            line: bannerLineIdx,
+            startCol: 0,
+            endCol: banner.length,
+            color: { r: 0.3, g: 0.85, b: 1.0 },
+          });
+        } else if (slice.guard) {
+          highlights.push({
+            line: bannerLineIdx,
+            startCol: 0,
+            endCol: banner.length,
+            color: { r: 0.95, g: 0.45, b: 0.45 },
+          });
+        } else {
+          highlights.push({
+            line: bannerLineIdx,
+            startCol: 0,
+            endCol: banner.length,
+            color: { r: 0.4, g: 0.85, b: 0.65 },
+          });
+        }
       }
 
       if (slice.guard) {
-        lines.push(
-          "  [PROT_NONE guard / memory reservation: non-readable mapping]",
-        );
-        lines.push(`  Virtual range: ${r.start} → ${r.end}`);
-        lines.push(
-          `  Pathname:      ${r.pathname || "anonymous guard region"}`,
-        );
+        if (this.showMappingRows) {
+          lines.push(
+            "  [PROT_NONE guard / memory reservation: non-readable mapping]",
+          );
+          lines.push(`  Virtual range: ${r.start} → ${r.end}`);
+          lines.push(
+            `  Pathname:      ${r.pathname || "anonymous guard region"}`,
+          );
+        } else {
+          const guardLine = `-- [PROT_NONE 0x${startAddr.toString(16)}..0x${endAddr.toString(16)}: ${r.pathname || "guard"}] --`;
+          const lineIdx = lines.length;
+          lines.push(guardLine);
+          highlights.push({
+            line: lineIdx,
+            startCol: 0,
+            endCol: guardLine.length,
+            color: { r: 0.95, g: 0.45, b: 0.45 },
+          });
+        }
       } else if (slice.error) {
-        lines.push(
-          `  [Read Fault at 0x${slice.address.toString(16)}: ${slice.error}]`,
-        );
-        lines.push(`  Mapping:       ${r.start} → ${r.end} (${perms})`);
+        if (this.showMappingRows) {
+          lines.push(
+            `  [Read Fault at 0x${slice.address.toString(16)}: ${slice.error}]`,
+          );
+          lines.push(`  Mapping:       ${r.start} → ${r.end} (${perms})`);
+        } else {
+          const errLine = `-- [Fault 0x${slice.address.toString(16)}: ${slice.error}] --`;
+          const lineIdx = lines.length;
+          lines.push(errLine);
+          highlights.push({
+            line: lineIdx,
+            startCol: 0,
+            endCol: errLine.length,
+            color: { r: 0.95, g: 0.45, b: 0.45 },
+          });
+        }
       } else if (slice.bytes && slice.bytes.length > 0) {
         const bytes = slice.bytes;
         const sliceAddr = slice.address;
@@ -1411,6 +1715,7 @@ export class ProcessInspectionCard extends THREE.Group {
           this.currentAddress = sliceAddr;
         }
 
+        const startLineIdx = lines.length;
         if (this.mode === "disasm" && r.pathname === "[stack]") {
           this.appendStackRows(
             lines,
@@ -1429,24 +1734,44 @@ export class ProcessInspectionCard extends THREE.Group {
           );
         } else {
           this.appendHexRows(lines, bytes, sliceAddr);
+          if (slice.isHovered && !this.showMappingRows) {
+            highlights.push({
+              line: startLineIdx,
+              startCol: 0,
+              endCol: 13,
+              color: { r: 1.0, g: 0.85, b: 0.2 },
+            });
+          }
         }
       } else {
-        lines.push("  [Zero bytes returned or empty memory region]");
+        if (this.showMappingRows) {
+          lines.push("  [Zero bytes returned or empty memory region]");
+        } else {
+          lines.push(`-- [Empty 0x${startAddr.toString(16)}] --`);
+        }
       }
 
-      if (si < slices.length - 1) {
+      if (this.showMappingRows && si < slices.length - 1) {
         lines.push("");
       }
     }
 
-    const lockTag = this.locked
-      ? "🔒 LOCKED [Scroll/Wheel/[ ] to page · Click/ESC to unlock]"
-      : "[Click to Lock · Scroll to page]";
+    // Height adapts dynamically to the visible lines actually rendered on this page + padding,
+    // avoiding large empty whitespace underneath unreadable or short blocks.
+    const neededHeight = computeHeightForLines(lines.length);
+    this.updateCubeHeight(neededHeight);
+
+    const lockTag = this.locked ? "🔒 LOCKED [Click/ESC]" : "[Click to Lock]";
     const pageTag = `PAGE ${this.pageIndex + 1}/${this.totalPages} (${total} slices)`;
-    const modeTag = this.mode === "disasm" ? "DISASM" : "HEX";
-    const header = `${node.name} [PID ${node.identity.pid}] · ${pageTag} · ${modeTag} · ${lockTag}`;
+    const modeTag = this.mode === "disasm" ? "DISASM [x]" : "HEX [x]";
+    const sliceTag = `${this.slicesPerPage} slices [+/-/s]`;
+    const mapsTag = this.showMappingRows ? "maps:ON [m/h]" : "maps:OFF [m/h]";
+    const header = `${node.name} [PID ${node.identity.pid}] · ${pageTag} · ${sliceTag} · ${mapsTag} · ${modeTag} · ${lockTag}`;
 
     await this.grid.loadFile(header, lines.join("\n"));
+    if (this.grid._renderer?.instanceMesh) {
+      this.grid._renderer.instanceMesh.frustumCulled = false;
+    }
 
     for (const h of highlights) {
       this.grid.highlightRange(h.line, h.startCol, h.line, h.endCol, h.color);
@@ -1465,7 +1790,11 @@ export class ProcessInspectionCard extends THREE.Group {
       message,
       ...(details ? ["", ...details] : []),
     ];
+    this.updateCubeHeight(computeHeightForLines(lines.length));
     await this.grid.loadFile(`NOTICE: ${title}`, lines.join("\n"));
+    if (this.grid._renderer?.instanceMesh) {
+      this.grid._renderer.instanceMesh.frustumCulled = false;
+    }
     this.grid.highlightRange(0, 0, 0, lines[0].length, {
       r: 1.0,
       g: 0.65,

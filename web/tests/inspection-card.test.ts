@@ -5,6 +5,11 @@ import * as T from "three";
 import {
   decodeX86_64,
   ProcessInspectionCard,
+  computeCubeHeight,
+  computeHeightForLines,
+  DEFAULT_SLICES_PER_PAGE,
+  MIN_SLICES_PER_PAGE,
+  MAX_SLICES_PER_PAGE,
 } from "../src/space/inspection-card.js";
 import { findNearestRegion } from "../src/space/selection.js";
 import type { Region } from "../src/space/types.js";
@@ -12,6 +17,9 @@ import type { GlyphAtlas } from "@glyph3d/core";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  try {
+    localStorage.clear();
+  } catch {}
 });
 
 test("decodeX86_64 instruction decoder", () => {
@@ -408,6 +416,191 @@ test("ProcessInspectionCard multi-slice region concatenation into grid pages", a
   assert.equal(card.pageIndex, 1); // clamped to totalPages - 1
   card.scrollPages(-10);
   assert.equal(card.pageIndex, 0); // clamped to 0
+
+  card.dispose();
+});
+
+test("ProcessInspectionCard slicesPerPage adjustment and dynamic height calculation", async () => {
+  const mockAtlas = {
+    fontFamily: "monospace",
+    fontSize: 48,
+    atlasSize: 2048,
+    dispose() {},
+  } as unknown as GlyphAtlas;
+
+  const card = new ProcessInspectionCard(mockAtlas);
+  assert.equal(card.slicesPerPage, DEFAULT_SLICES_PER_PAGE);
+  assert.equal(card.showMappingRows, true);
+
+  const initialHeight = card.currentCubeHeight;
+  assert.ok(initialHeight >= 3.4 && initialHeight <= 3.6);
+
+  // Increase slices per page
+  await card.increaseSlicesPerPage();
+  assert.equal(card.slicesPerPage, 4);
+  assert.ok(card.currentCubeHeight > initialHeight);
+
+  // Increase again
+  await card.increaseSlicesPerPage();
+  assert.equal(card.slicesPerPage, 5);
+
+  // Decrease slices per page
+  await card.decreaseSlicesPerPage();
+  assert.equal(card.slicesPerPage, 4);
+
+  // Clamp at max (16)
+  await card.setSlicesPerPage(100);
+  assert.equal(card.slicesPerPage, MAX_SLICES_PER_PAGE);
+
+  // Clamp at min (1)
+  await card.setSlicesPerPage(0);
+  assert.equal(card.slicesPerPage, MIN_SLICES_PER_PAGE);
+
+  // computeCubeHeight sanity checks
+  const h1 = computeCubeHeight(1, true);
+  const h3 = computeCubeHeight(3, true);
+  const h6 = computeCubeHeight(6, true);
+  assert.ok(h1 < h3 && h3 < h6);
+
+  // Height without mapping rows should be smaller than with mapping rows for same slices
+  const h3NoMaps = computeCubeHeight(3, false);
+  assert.ok(h3NoMaps < h3);
+
+  // Toggle mapping rows
+  await card.toggleMappingRows();
+  assert.equal(card.showMappingRows, false);
+  await card.toggleMappingRows();
+  assert.equal(card.showMappingRows, true);
+
+  card.dispose();
+});
+
+test("ProcessInspectionCard preserves viewing slice focus across slicesPerPage changes", async () => {
+  const mockAtlas = {
+    fontFamily: "monospace",
+    fontSize: 48,
+    atlasSize: 2048,
+    dispose() {},
+  } as unknown as GlyphAtlas;
+
+  const card = new ProcessInspectionCard(mockAtlas);
+  const camera = new T.PerspectiveCamera(45, 1, 0.1, 100);
+
+  const regions: Region[] = Array.from({ length: 12 }, (_, i) => ({
+    start: `0x${(i * 0x1000).toString(16)}`,
+    end: `0x${((i + 1) * 0x1000).toString(16)}`,
+    readable: true,
+    writable: false,
+    executable: false,
+    private: true,
+    file_offset: "0",
+    device: { major: 0, minor: 0 },
+    inode: "0",
+    pathname: `/bin/lib${i}.so`,
+    z: i * 1.0,
+    h: 1.0,
+  }));
+
+  const mockNode = {
+    identity: { pid: 99, start_time_ticks: 1 },
+    name: "focus-proc",
+    pos: new T.Vector3(0, 0, 0),
+    regions,
+  } as any;
+
+  // Hover region 7 (index 7). With 3 slices per page: page index 2 (slices 6, 7, 8)
+  card.handleHover(
+    {
+      process: mockNode,
+      region: regions[7],
+      hitPoint: new T.Vector3(0, 0, 7.0),
+    },
+    camera,
+  );
+  assert.equal(card.pageIndex, 2);
+  assert.equal(card.totalPages, 4);
+
+  // Change slicesPerPage to 4. Region 7 should now be on page Math.floor(7 / 4) = 1 (slices 4, 5, 6, 7)
+  await card.setSlicesPerPage(4);
+  assert.equal(card.pageIndex, 1);
+  assert.equal(card.totalPages, 3);
+
+  // Change slicesPerPage to 6. Region 7 should now be on page Math.floor(7 / 6) = 1 (slices 6..11)
+  await card.setSlicesPerPage(6);
+  assert.equal(card.pageIndex, 1);
+  assert.equal(card.totalPages, 2);
+
+  // Change slicesPerPage to 8. Region 7 should now be on page Math.floor(7 / 8) = 0 (slices 0..7)
+  await card.setSlicesPerPage(8);
+  assert.equal(card.pageIndex, 0);
+  assert.equal(card.totalPages, 2);
+
+  card.dispose();
+});
+
+test("ProcessInspectionCard dynamically sizes cube height to visible lines on unreadable/short blocks", async () => {
+  const mockAtlas = {
+    fontFamily: "monospace",
+    fontSize: 48,
+    atlasSize: 2048,
+    dispose() {},
+  } as unknown as GlyphAtlas;
+
+  const card = new ProcessInspectionCard(mockAtlas);
+  const camera = new T.PerspectiveCamera(45, 1, 0.1, 100);
+
+  // 4 unreadable/guard regions
+  const guardRegions: Region[] = Array.from({ length: 4 }, (_, i) => ({
+    start: `0x${(i * 0x1000).toString(16)}`,
+    end: `0x${((i + 1) * 0x1000).toString(16)}`,
+    readable: false,
+    writable: false,
+    executable: false,
+    private: true,
+    file_offset: "0",
+    device: { major: 0, minor: 0 },
+    inode: "0",
+    pathname: "[guard]",
+    z: i * 1.0,
+    h: 1.0,
+  }));
+
+  const mockNode = {
+    identity: { pid: 42, start_time_ticks: 1 },
+    name: "test-proc",
+    pos: new T.Vector3(0, 0, 0),
+    regions: guardRegions,
+  } as any;
+
+  await card.setSlicesPerPage(4);
+  card.handleHover(
+    {
+      process: mockNode,
+      region: guardRegions[0],
+      hitPoint: new T.Vector3(0, 0, 0),
+    },
+    camera,
+  );
+
+  // Wait for debounce render
+  await new Promise((r) => setTimeout(r, 80));
+
+  // The guard slices only have ~3 lines each instead of 9 lines each.
+  // The height should match computeHeightForLines for the actual lines, significantly smaller than theoretical 4 * 9 rows
+  const theoreticalFullHeight = computeCubeHeight(4, true);
+  assert.ok(
+    card.currentCubeHeight < theoreticalFullHeight,
+    `Current height ${card.currentCubeHeight} should be smaller than full theoretical height ${theoreticalFullHeight}`,
+  );
+
+  // Test showNotice shrinks cube to notice lines
+  await card.showNotice("Notice Title", "Short message", ["Line 1"]);
+  const noticeHeight = card.currentCubeHeight;
+  assert.ok(
+    noticeHeight < theoreticalFullHeight,
+    `Notice height ${noticeHeight} should shrink to fit notice lines`,
+  );
+  assert.ok(noticeHeight >= 1.8 && noticeHeight <= 2.0);
 
   card.dispose();
 });
