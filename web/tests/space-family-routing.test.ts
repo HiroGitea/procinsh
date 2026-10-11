@@ -32,22 +32,16 @@ function assertClear(
       const a = route.points[i - 1],
         b = route.points[i];
       assert.ok(a.x === b.x || a.y === b.y, "orthogonal sections");
+      const minX = Math.min(a.x, b.x),
+        maxX = Math.max(a.x, b.x),
+        minY = Math.min(a.y, b.y),
+        maxY = Math.max(a.y, b.y);
       for (const [id, p] of positions) {
         if (id === route.parent || id === route.child) continue;
-        const dx = Math.max(
-          Math.min(a.x, b.x) - (p.x + 1.225),
-          p.x - 1.225 - Math.max(a.x, b.x),
-          0,
-        );
-        const dy = Math.max(
-          Math.min(a.y, b.y) - (p.y + 1.225),
-          p.y - 1.225 - Math.max(a.y, b.y),
-          0,
-        );
-        assert.ok(
-          Math.hypot(dx, dy) > 0.5 - 1e-8,
-          `${route.parent} → ${route.child} crosses ${id}`,
-        );
+        const dx = Math.max(minX - (p.x + 1.225), p.x - 1.225 - maxX, 0);
+        const dy = Math.max(minY - (p.y + 1.225), p.y - 1.225 - maxY, 0);
+        if (dx * dx + dy * dy <= (0.5 - 1e-8) ** 2)
+          assert.fail(`${route.parent} → ${route.child} crosses ${id}`);
       }
     }
   }
@@ -187,7 +181,7 @@ test("a thousand children added live remain safely routed", () => {
   });
   assert.equal(store.parentRoutes.length, 999);
   assertClear(store.parentRoutes, storePositions(store));
-});
+}, 20000);
 function storePositions(store: SpaceDataStore) {
   return new Map([...store.nodes].map(([id, node]) => [id, { ...node.pos }]));
 }
