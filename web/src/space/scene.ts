@@ -16,11 +16,21 @@ import type {
   RenderView,
   PickingView,
 } from "./contracts.js";
+import type { FdEndpoint } from "../shared/api-types.js";
 
 const PARENT_LINE_WIDTH = 0.6;
 const PARENT_LINE_Z = 0.06;
 const PARENT_LINE_BRIGHTNESS = 0.22;
 const SOCKET_HEIGHT = 4;
+
+// The lower endpoint attaches to +X regardless of the snapshot's orientation.
+function socketFaceOffset(endpoint: FdEndpoint, peer: FdEndpoint): number {
+  const order =
+    endpoint.process_id.pid - peer.process_id.pid ||
+    endpoint.process_id.start_time_ticks - peer.process_id.start_time_ticks ||
+    endpoint.fd - peer.fd;
+  return order <= 0 ? 1.12 : -1.12;
+}
 
 type ParentPath = {
   parent: string;
@@ -480,15 +490,17 @@ export function createSpaceScene() {
       )
         continue;
       const socket = e.endpoint.resource.kind === "socket";
+      const faceOffset =
+        socket && e.peer ? socketFaceOffset(e.endpoint, e.peer) : 1.12;
       const height = (fd: number) =>
         socket
           ? SOCKET_HEIGHT + ((fd % 12) - 5.5) * 0.11
           : 1 + (fd % 12) * 0.11;
       const start = a.pos
         .clone()
-        .add(new T.Vector3(1.12, 0, height(e.endpoint.fd)));
+        .add(new T.Vector3(faceOffset, 0, height(e.endpoint.fd)));
       const end = b
-        ? b.pos.clone().add(new T.Vector3(-1.12, 0, height(e.peer!.fd)))
+        ? b.pos.clone().add(new T.Vector3(-faceOffset, 0, height(e.peer!.fd)))
         : start.clone().add(new T.Vector3(3.5, -2.5, socket ? 0 : -0.6));
       const mid = start.clone().lerp(end, 0.5);
       if (!socket) mid.z = 0.22;
@@ -497,7 +509,8 @@ export function createSpaceScene() {
       const pts = curve.getPoints(16);
       for (let j = 0; j < 16; j++) {
         if (e.candidate || e.shared) {
-          if (j % 2 === 0) {
+          // Keep the dash phase anchored to the lower socket endpoint.
+          if (j % 2 === (faceOffset < 0 ? 1 : 0)) {
             dashedPos.push(...pts[j], ...pts[j + 1]);
             dashedEdges.push(e);
           }
