@@ -1,6 +1,6 @@
 // Build and update Three.js geometry from data and selection state.
 import * as T from "three";
-import { key, processColors } from "./model.js";
+import { key, processColors, PROCESS_SIDE } from "./model.js";
 import type {
   Region,
   RenderNode,
@@ -214,7 +214,7 @@ export function createSpaceScene() {
     const visible = input.visible;
     hullIds = [...visible];
     hull = new T.InstancedMesh(
-      new T.BoxGeometry(2.2, 2.2, 8),
+      new T.BoxGeometry(PROCESS_SIDE, PROCESS_SIDE, 8),
       new T.MeshBasicMaterial({
         color: 0x4bd6bf,
         transparent: true,

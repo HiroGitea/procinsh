@@ -1,4 +1,4 @@
-// Pure identity, resource labels, and process colors shared by SPACE components.
+// Pure identity, resource labels, process dimensions and colors for SPACE.
 import { Display } from "../shared/display.js";
 import type {
   ProcessId,
@@ -7,6 +7,7 @@ import type {
   IpcIdentity,
   FileIdentity,
 } from "../shared/api-types.js";
+export const PROCESS_SIDE = 2.2;
 export const remoteLabel = (socket: SocketEndpoint | null | undefined) =>
   socket?.remote_hostname && socket.remote
     ? `${socket.remote_hostname}:${socket.remote.port}`
