@@ -11,7 +11,7 @@ pub(in crate::http_server) struct ProcessSummary {
     pub(in crate::http_server) parent_pid: i32,
     pub(in crate::http_server) name: String,
     pub(super) executable: Option<String>,
-    pub(super) command_line: Option<Vec<String>>,
+    pub(in crate::http_server) command_line: Option<Vec<String>>,
     pub(in crate::http_server) uid: Option<u32>,
     pub(in crate::http_server) username: Option<String>,
     pub(in crate::http_server) euid: Option<u32>,

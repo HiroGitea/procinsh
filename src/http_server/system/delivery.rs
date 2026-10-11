@@ -21,6 +21,7 @@ struct ProcessPayload<'a> {
     identity: &'a ProcessId,
     parent_id: &'a Option<ProcessId>,
     name: &'a String,
+    command_line: &'a Option<Vec<String>>,
     uid: &'a Option<u32>,
     username: &'a Option<String>,
     euid: &'a Option<u32>,
@@ -124,6 +125,7 @@ impl SnapshotEncoder {
                     identity: &p.identity,
                     parent_id: &p.parent_id,
                     name: &p.name,
+                    command_line: &p.command_line,
                     uid: &p.uid,
                     username: &p.username,
                     euid: &p.euid,
@@ -205,6 +207,7 @@ mod tests {
                 },
                 parent_id: None,
                 name: "test".into(),
+                command_line: Some(vec!["/usr/bin/test".into(), "--worker".into()]),
                 uid: None,
                 username: None,
                 euid: None,
@@ -238,6 +241,29 @@ mod tests {
         now: Instant,
     ) -> serde_json::Value {
         serde_json::from_str(&delivery.encode(data, full, now).unwrap()).unwrap()
+    }
+    #[test]
+    fn command_line_is_included_in_full_and_delta_snapshots() {
+        let now = Instant::now();
+        let mut delivery = SnapshotEncoder::default();
+        let first = payload(&mut delivery, fixture(1, true, 10), false, now);
+        assert_eq!(
+            first["processes"][0]["command_line"],
+            serde_json::json!(["/usr/bin/test", "--worker"])
+        );
+        let mut updated = (*fixture(1, true, 20)).clone();
+        let arguments = vec!["/usr/bin/test".to_string(), "long argument ".repeat(100)];
+        updated.processes[0].command_line = Some(arguments.clone());
+        let next = payload(&mut delivery, Arc::new(updated.clone()), false, now);
+        assert_eq!(next["kind"], "delta");
+        assert!(next["processes"][0].get("maps").is_none());
+        assert_eq!(
+            next["processes"][0]["command_line"],
+            serde_json::json!(arguments)
+        );
+        updated.processes[0].command_line = None;
+        let unavailable = payload(&mut delivery, Arc::new(updated), false, now);
+        assert!(unavailable["processes"][0]["command_line"].is_null());
     }
     #[test]
     fn unchanged_maps_are_omitted_until_refresh_or_gap() {

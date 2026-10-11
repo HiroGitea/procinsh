@@ -541,12 +541,29 @@ test("space-components regression", async () => {
       edgeStats: new Map(),
       files: new Map([["file", file]]),
     };
+    const commandLine = ["/usr/bin/writer", "<b>literal</b>", "x".repeat(1000)];
+    nodes.get("101:1")!.command_line = commandLine;
     details.update(data, { ...emptySelection(), process: "101:1" });
     assert.equal(get("name").textContent, "writer");
+    assert.equal(get("cmdline").textContent, commandLine.join(" "));
+    assert.equal(get("cmdline").children.length, 0);
+    assert.equal(get("inspect").textContent, "DETAILS");
+    assert.equal(
+      get("inspect").parentElement?.firstElementChild?.textContent,
+      "SELECTED PROCESS",
+    );
     assert.equal(
       get("inspect").getAttribute("href"),
       "/process/101?start_time_ticks=1",
     );
+    for (const command_line of [null, [], ["/usr/bin/writer", "--updated"]]) {
+      nodes.get("101:1")!.command_line = command_line;
+      details.update(data, { ...emptySelection(), process: "101:1" });
+      assert.equal(
+        get("cmdline").textContent,
+        command_line?.join(" ") || "N/A",
+      );
+    }
     details.update(data, { ...emptySelection(), file: "file" });
     assert.match(
       get("connection-facts").textContent!,

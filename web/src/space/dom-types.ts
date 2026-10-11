@@ -13,6 +13,7 @@ export interface SpaceElements {
   "process-details": HTMLElement;
   name: HTMLElement;
   pid: HTMLElement;
+  cmdline: HTMLElement;
   inspect: HTMLAnchorElement;
   "connection-details": HTMLElement;
   "connection-kind": HTMLElement;
