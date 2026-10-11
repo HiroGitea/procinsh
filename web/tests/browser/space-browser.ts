@@ -524,18 +524,8 @@ try {
     const allRestored=[root,child,sibling].every(n=>m.cpuGlowVisual(model.key(n.identity))!==null);
     m.selectProcess('800002:1',true);
     const before=coords([root,child,sibling]),view=m.cameraView();
-    let siblingRows=true,nodes;
-    for(let i=0;i<4;i++) {
-      const added=make(800010+i,800001);
-      nodes=[added,sibling,child,{...root,name:"updated-root"}];
-      render(nodes);
-      const positions=coords([added,sibling,child]);
-      siblingRows&&=positions.every(p=>p.y===positions[0].y);
-    }
-    const rootAnchored=before[0].x===coords([root])[0].x;
-    const updated=coords([root,child,sibling]);
-    render([...nodes].reverse());
-    const stable=JSON.stringify(updated)===JSON.stringify(coords([root,child,sibling]));
+    for(let i=0;i<4;i++) render([make(800010+i,800001),sibling,child,{...root,name:"updated-root"}]);
+    const stable=JSON.stringify(before)===JSON.stringify(coords([root,child,sibling]));
     const cameraStable=JSON.stringify(view)===JSON.stringify(m.cameraView());
     m.selectProcess('800001:1');
     const freshDetails=document.getElementById('name').textContent==='updated-root';
@@ -555,7 +545,7 @@ try {
     const resetCleared=document.getElementById('search').value===''&&document.getElementById('details').hidden;
     m.selectProcess('800002:1');document.getElementById('rearrange').click();
     const processKept=!document.getElementById('details').hidden&&document.getElementById('name').textContent==='stable-800002';
-    return {pidFiltered,filterSurvivesUpdate,noMatches,allRestored,siblingRows,rootAnchored,stable,cameraStable,freshDetails,arranged,selectionKept,searchKept,linesKept,resetStable,resetCleared,processKept};
+    return {pidFiltered,filterSurvivesUpdate,noMatches,allRestored,stable,cameraStable,freshDetails,arranged,selectionKept,searchKept,linesKept,resetStable,resetCleared,processKept};
   })()`);
   for (const [check, passed] of Object.entries(stableChecks))
     assert.equal(passed, true, check);
@@ -588,34 +578,6 @@ try {
     repositoryPath("target/browser-space-family.png"),
     Buffer.from(familyPng.data, "base64"),
   );
-  const rowChecks = await evaluate<Record<string, boolean>>(`(async()=>{
-    const m=await import(window.spaceTestModule);
-    document.getElementById('reset').click();
-    const make=(pid,parent=null)=>({identity:{pid,start_time_ticks:1},parent_id:parent&&{pid:parent,start_time_ticks:1},name:'row-'+pid,uid:1000,maps_epoch:1,maps:[]});
-    const root=make(830001),siblings=Array.from({length:80},(_,i)=>make(830002+i,830001));
-    const grandchildren=siblings.flatMap((parent,i)=>Array.from({length:i%4},(_,j)=>make(831000+i*4+j,parent.identity.pid)));
-    const position=node=>m.processPosition(m.key(node.identity));
-    const rows=nodes=>nodes.every(node=>!node.parent_id||position(node).y===m.processPosition(m.key(node.parent_id)).y+6.5);
-    const render=nodes=>m.renderSystemSnapshot({processes:nodes,fd_relations:[]});
-    let nodes=[root,...siblings,...grandchildren];
-    render(nodes);
-    const initialRows=rows(nodes);
-    const xs=siblings.map(node=>position(node).x);
-    const wide=Math.max(...xs)-Math.min(...xs)>=79*4.8;
-    const buses=siblings.every(node=>{
-      const line=m.parentLineVisual(m.key(root.identity),m.key(node.identity));
-      return line.points[1][1]===3.25&&line.points[2][1]===3.25;
-    });
-    const added=make(839999,830001);
-    nodes=[added,...nodes];render(nodes);
-    const addedRow=rows(nodes)&&position(added).y===position(siblings[0]).y;
-    nodes=nodes.filter(node=>node!==siblings[1]).map(node=>node.parent_id?.pid===830003?{...node,parent_id:siblings[2].identity}:node);
-    render(nodes);
-    const reparentedRows=rows(nodes);
-    return {initialRows,wide,buses,addedRow,reparentedRows};
-  })()`);
-  for (const [check, passed] of Object.entries(rowChecks))
-    assert.equal(passed, true, check);
   await evaluate(`(async()=>{
     const m=await import(window.spaceTestModule);
     document.getElementById('reset').click();

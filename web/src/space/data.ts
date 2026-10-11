@@ -33,6 +33,7 @@ interface TreeNode {
 interface PackedTree {
   positions: Map<string, TreePosition>;
   width: number;
+  height: number;
 }
 
 function networkGroups(fd_relations: FdRelation[]) {
@@ -186,19 +187,38 @@ function treeLayout(processes: TreeNode[], xGap = 4.8, yGap = 6.5) {
     .map((node) => key(node.identity))
     .filter((id) => !parents.get(id));
   const pack = (layouts: PackedTree[], gap: number): PackedTree => {
+    if (!layouts.length) return { positions: new Map(), width: 0, height: 0 };
+    const area = layouts.reduce(
+      (sum, layout) => sum + (layout.width + gap) * (layout.height + gap),
+      0,
+    );
+    const target = Math.max(
+      40,
+      ...layouts.map((layout) => layout.width),
+      Math.sqrt(area) * 1.4,
+    );
     const positions = new Map<string, TreePosition>();
-    let width = 0;
-    // Separate complete subtrees horizontally; every sibling starts on one row.
+    let cursorX = 0,
+      cursorY = 0,
+      rowHeight = 0,
+      width = 0;
     for (const layout of layouts) {
-      const offsetX = width ? width + gap : 0;
+      if (cursorX && cursorX + layout.width > target) {
+        cursorX = 0;
+        cursorY += rowHeight + gap;
+        rowHeight = 0;
+      }
       for (const [id, position] of layout.positions)
         positions.set(id, {
           ...position,
-          x: position.x + offsetX,
+          x: position.x + cursorX,
+          y: position.y + cursorY,
         });
-      width = offsetX + layout.width;
+      cursorX += layout.width + gap;
+      width = Math.max(width, cursorX - gap);
+      rowHeight = Math.max(rowHeight, layout.height);
     }
-    return { positions, width };
+    return { positions, width, height: cursorY + rowHeight };
   };
   const build = (id: string): PackedTree => {
     const packed = pack(children.get(id)!.map(build), 3);
@@ -214,7 +234,11 @@ function treeLayout(processes: TreeNode[], xGap = 4.8, yGap = 6.5) {
         y: position.y + yGap,
         depth: position.depth + 1,
       });
-    return { positions, width };
+    return {
+      positions,
+      width,
+      height: packed.height ? packed.height + yGap : yGap,
+    };
   };
   const forest = pack(roots.map(build), 9),
     result = forest.positions;
@@ -228,18 +252,77 @@ function treeLayout(processes: TreeNode[], xGap = 4.8, yGap = 6.5) {
   return result;
 }
 
-// Anchor the first surviving identity horizontally while keeping subtrees apart.
+// Keep live identities anchored; only newcomers consume vacant space.
 function stableLayout(
   processes: TreeNode[],
   previous: ReadonlyMap<string, Pick<Position, "x" | "y">> = new Map(),
   xGap = 4.8,
   yGap = 6.5,
 ) {
-  const result = treeLayout(processes, xGap, yGap);
-  const anchor = [...result].find(([id]) => previous.has(id));
-  if (!anchor) return result;
-  const offsetX = previous.get(anchor[0])!.x - anchor[1].x;
-  for (const place of result.values()) place.x += offsetX;
+  const initial = treeLayout(processes, xGap, yGap),
+    result = new Map<string, TreePosition>();
+  for (const [id, place] of initial) {
+    const old = previous.get(id);
+    if (old) result.set(id, { ...place, x: old.x, y: old.y });
+  }
+  if (!result.size) return initial;
+  const buckets = new Map<string, TreePosition[]>(),
+    cell = (x: number, y: number) => `${x}:${y}`;
+  const occupy = (place: TreePosition) => {
+    const id = cell(Math.floor(place.x / xGap), Math.floor(place.y / yGap));
+    if (!buckets.has(id)) buckets.set(id, []);
+    buckets.get(id)!.push(place);
+  };
+  const vacant = (x: number, y: number) => {
+    const cx = Math.floor(x / xGap),
+      cy = Math.floor(y / yGap);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++) {
+        for (const p of buckets.get(cell(cx + dx, cy + dy)) || []) {
+          if (
+            Math.abs(p.x - x) < xGap - 1e-9 &&
+            Math.abs(p.y - y) < yGap - 1e-9
+          )
+            return false;
+        }
+      }
+    return true;
+  };
+  for (const place of result.values()) occupy(place);
+  const existing = [...result.values()];
+  const outside = {
+    x: Math.max(...existing.map((p) => p.x)) + xGap,
+    y: Math.min(...existing.map((p) => p.y)),
+  };
+  // Normalized tree depth also gives a finite, deterministic order for cycles.
+  const newcomers = [...initial]
+    .filter(([id]) => !result.has(id))
+    .sort(
+      (a, b) =>
+        a[1].depth - b[1].depth ||
+        Number(a[0].split(":")[0]) - Number(b[0].split(":")[0]) ||
+        a[0].localeCompare(b[0]),
+    );
+  for (const [id, place] of newcomers) {
+    const parent = place.parent ? result.get(place.parent) : undefined;
+    const origin = parent ? { x: parent.x, y: parent.y + yGap } : outside;
+    let found = null;
+    // Expand square rings below the anchor, keeping children below their parent.
+    for (let radius = 0; !found; radius++) {
+      for (let dy = 0; dy <= radius && !found; dy++)
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.max(Math.abs(dx), dy) !== radius) continue;
+          const x = origin.x + dx * xGap,
+            y = origin.y + dy * yGap;
+          if (vacant(x, y)) {
+            found = { ...place, x, y };
+            break;
+          }
+        }
+    }
+    result.set(id, found);
+    occupy(found);
+  }
   return result;
 }
 
@@ -712,38 +795,6 @@ if (import.meta.vitest) {
       parent_id:
         parent !== null ? { pid: parent, start_time_ticks: parent * 10 } : null,
     });
-    const familyRows = (layout: ReadonlyMap<string, TreePosition>) => {
-      const children = new Map<string | null, string[]>();
-      for (const [id, place] of layout) {
-        assert.equal(place.y, place.depth * 6.5, "one row per generation");
-        if (place.parent)
-          assert.equal(place.y, layout.get(place.parent)!.y + 6.5);
-        const siblings = children.get(place.parent) || [];
-        siblings.push(id);
-        children.set(place.parent, siblings);
-      }
-      const bounds = (id: string): { min: number; max: number } => {
-        const x = layout.get(id)!.x;
-        const branches = (children.get(id) || []).map(bounds);
-        return {
-          min: Math.min(x, ...branches.map((b) => b.min)),
-          max: Math.max(x, ...branches.map((b) => b.max)),
-        };
-      };
-      for (const siblings of children.values()) {
-        assert.equal(
-          new Set(siblings.map((id) => layout.get(id)!.y)).size,
-          1,
-          "siblings always share y",
-        );
-        const branches = siblings.map(bounds).sort((a, b) => a.min - b.min);
-        for (let i = 1; i < branches.length; i++)
-          assert.ok(
-            branches[i].min - branches[i - 1].max >= 4.8 - 1e-9,
-            "complete sibling subtrees occupy separate horizontal intervals",
-          );
-      }
-    };
     const tree = treeLayout([
       processNode(1),
       processNode(2, 1),
@@ -759,12 +810,6 @@ if (import.meta.vitest) {
       (tree.get("2:20")!.x + tree.get("3:30")!.x) / 2,
     );
     assert.equal(tree.get("8:80")!.y, 0, "missing parent becomes a root");
-    familyRows(tree);
-    const uneven = Array.from({ length: 120 }, (_, i) =>
-      processNode(i + 1, i === 0 ? null : Math.floor(i / 4) + 1),
-    );
-    const unevenTree = treeLayout(uneven);
-    familyRows(unevenTree);
     const cyclic = treeLayout([
       {
         identity: { pid: 10, start_time_ticks: 1 },
@@ -777,7 +822,6 @@ if (import.meta.vitest) {
     ]);
     assert.equal(cyclic.size, 2);
     assert.ok([...cyclic.values()].some((v) => v.parent === null));
-    familyRows(cyclic);
     assert.deepEqual(
       [
         ...treeLayout([
@@ -801,11 +845,13 @@ if (import.meta.vitest) {
     const fanoutX = [...fanout.values()].map((v) => v.x),
       fanoutY = [...fanout.values()].map((v) => v.y);
     assert.ok(
-      Math.max(...fanoutX) - Math.min(...fanoutX) >= 399 * 4.8,
-      "large sibling groups expand horizontally",
+      Math.max(...fanoutX) - Math.min(...fanoutX) < 400,
+      "large sibling groups wrap instead of becoming one long row",
     );
-    assert.equal(Math.max(...fanoutY), 6.5, "siblings never wrap");
-    familyRows(fanout);
+    assert.ok(
+      Math.max(...fanoutY) > 20,
+      "wrapped sibling groups use the plane",
+    );
     const originalNodes = [
       processNode(1),
       processNode(2, 1),
@@ -826,13 +872,8 @@ if (import.meta.vitest) {
       processNode(6),
     ];
     const grown = stableLayout(grownNodes, anchored);
-    assert.deepEqual(grown.get("1:10"), anchored.get("1:10"));
-    familyRows(grown);
-    assert.deepEqual(
-      coordinates(stableLayout(grownNodes, grown)),
-      coordinates(grown),
-      "unchanged topology preserves every position",
-    );
+    for (const [id, p] of anchored)
+      assert.deepEqual(grown.get(id), p, "existing nodes stay anchored");
     assert.deepEqual(
       coordinates(stableLayout([...grownNodes].reverse(), anchored)),
       coordinates(grown),
@@ -841,10 +882,11 @@ if (import.meta.vitest) {
       [processNode(2, 99), processNode(3, 2), processNode(4, 2)],
       grown,
     );
-    familyRows(changed);
-    assert.equal(changed.get("2:20")!.y, 0);
-    assert.equal(changed.get("3:30")!.y, changed.get("4:40")!.y);
-    assert.equal(changed.get("2:20")!.x, grown.get("2:20")!.x);
+    for (const [id, p] of changed)
+      assert.deepEqual(
+        { x: p.x, y: p.y },
+        { x: grown.get(id)!.x, y: grown.get(id)!.y },
+      );
     assert.equal(changed.has("1:10"), false, "removed identities are released");
     const reused = stableLayout(
       [
@@ -859,7 +901,6 @@ if (import.meta.vitest) {
     );
     assert.equal(reused.has("3:30"), false);
     assert.ok(reused.has("3:999"), "PID reuse is a new identity");
-    familyRows(reused);
     const vacant = stableLayout(
       originalNodes.filter((n) => n.identity.pid !== 5),
       grown,
@@ -868,8 +909,6 @@ if (import.meta.vitest) {
       [...originalNodes, processNode(7, 1)],
       vacant,
     );
-    familyRows(vacant);
-    familyRows(refilled);
     assert.deepEqual(
       { x: refilled.get("7:70")!.x, y: refilled.get("7:70")!.y },
       { x: grown.get("5:50")!.x, y: grown.get("5:50")!.y },
@@ -883,7 +922,6 @@ if (import.meta.vitest) {
       stableLayout([processNode(1)]),
     );
     const places = [...large.values()];
-    familyRows(large);
     for (let i = 0; i < places.length; i++)
       for (let j = i + 1; j < places.length; j++) {
         assert.ok(
@@ -898,19 +936,11 @@ if (import.meta.vitest) {
       anchored,
     );
     assert.equal(stableCycle.size, 3);
-    familyRows(stableCycle);
     assert.ok(
       [...stableCycle.values()].every(
         (p) => Number.isFinite(p.x) && Number.isFinite(p.y),
       ),
     );
-    const stalePositions = new Map(
-      [...unevenTree].map(([id, place], i) => [
-        id,
-        { x: place.x, y: place.y + (i % 3) * 20 },
-      ]),
-    );
-    familyRows(stableLayout(uneven, stalePositions));
   });
   test("network grouping and layout", async () => {
     const assert: typeof import("node:assert/strict") = (
