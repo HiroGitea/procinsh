@@ -61,12 +61,6 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      fs: {
-        allow: [
-          resolve(import.meta.dirname, ".."),
-          resolve(import.meta.dirname, "../../../glyph3d-js"),
-        ],
-      },
       proxy: {
         "/api": {
           target: backend,
