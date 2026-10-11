@@ -378,6 +378,15 @@ try {
     ),
     "selected direct child is highlighted",
   );
+  const socketHeights = await evaluate<Record<string, boolean>>(`(async()=>{
+    const m=await import(window.spaceTestModule);
+    return {
+      socketsAtMiddle:['unix-exact','tcp-candidate','external'].every(id=>m.connectionVisual(id).points.every(p=>p[2]>3.3&&p[2]<4.7)),
+      pipeStaysLow:m.connectionVisual('pipe-shared').points.every(p=>p[2]<2.3),
+    };
+  })()`);
+  for (const [check, passed] of Object.entries(socketHeights))
+    assert.equal(passed, true, check);
   await evaluate(
     "import(window.spaceTestModule).then(m=>m.selectProcess('424242:7',true))",
   );
@@ -540,6 +549,35 @@ try {
   })()`);
   for (const [check, passed] of Object.entries(stableChecks))
     assert.equal(passed, true, check);
+  const familyChecks = await evaluate<Record<string, boolean>>(`(async()=>{
+    const m=await import(window.spaceTestModule);
+    document.getElementById('reset').click();
+    const make=(pid,parent=null)=>({identity:{pid,start_time_ticks:1},parent_id:parent&&{pid:parent,start_time_ticks:1},name:'family-'+pid,uid:1000,maps_epoch:1,maps:[]});
+    m.renderSystemSnapshot({processes:[make(820001),make(820002,820001),make(820003,820001),make(820004,820002),make(820005,820004),make(820006),make(820007,820006)],fd_relations:[]},true);
+    const line=(parent,child)=>m.parentLineVisual(parent+':1',child+':1');
+    const links=[[820001,820002],[820002,820004],[820004,820005]];
+    const floorGeometry=links.every(([a,b])=>{
+      const path=line(a,b);
+      return path.width===0.12&&path.points.every(p=>p[2]===0.06)&&path.points.slice(1).every((p,i)=>p[0]===path.points[i][0]||p[1]===path.points[i][1]);
+    });
+    m.selectProcess('820002:1');
+    const entireFamily=links.every(([a,b])=>line(a,b).r===1&&line(a,b).g===1&&line(a,b).b===1);
+    const siblingsMuted=line(820001,820003).r===0.35&&line(820006,820007).r===0.35;
+    document.getElementById('close').click();
+    const cleared=links.every(([a,b])=>line(a,b).r===0.35);
+    m.selectProcess('820005:1');
+    const allAncestors=links.every(([a,b])=>line(a,b).r===1);
+    m.selectProcess('820002:1');m.fitScene();
+    return {floorGeometry,entireFamily,siblingsMuted,cleared,allAncestors};
+  })()`);
+  for (const [check, passed] of Object.entries(familyChecks))
+    assert.equal(passed, true, check);
+  await delay(150);
+  const familyPng = await cdp("Page.captureScreenshot", { format: "png" });
+  await writeFile(
+    repositoryPath("target/browser-space-family.png"),
+    Buffer.from(familyPng.data, "base64"),
+  );
   await evaluate(`(async()=>{
     const m=await import(window.spaceTestModule);
     document.getElementById('reset').click();
