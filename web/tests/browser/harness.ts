@@ -73,7 +73,7 @@ export async function connectPage(url: string, errors: string[] = []) {
         !entry.url?.endsWith("/favicon.ico") &&
         !entry.text.includes("favicon.ico")
       )
-        errors.push(entry.text);
+        errors.push(`${entry.text} (${entry.url ?? "unknown URL"})`);
     }
   });
   socket.addEventListener("close", () => {
