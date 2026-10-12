@@ -14,7 +14,9 @@ const networkVisuals = renderer.networkVisuals,
   networkParticles = renderer.networkParticles,
   signalVisuals = renderer.signalVisuals,
   fileVisuals = renderer.fileVisuals,
-  fileParticles = renderer.fileParticles;
+  fileParticles = renderer.fileParticles,
+  netlinkVisuals = renderer.netlinkVisuals,
+  netlinkParticles = renderer.netlinkParticles;
 const cameraView = camera.view;
 function processPosition(id: string) {
   const pos = data.nodes.get(id)?.pos;
@@ -28,6 +30,9 @@ function connectionVisual(id: string) {
   };
 }
 export {
+  selectNetlink,
+  netlinkVisuals,
+  netlinkParticles,
   selectFile,
   fileVisuals,
   fileParticles,

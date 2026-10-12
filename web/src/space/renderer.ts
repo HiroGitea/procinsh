@@ -102,6 +102,7 @@ type Particle = {
   color: number;
   networkId?: string;
   fileId?: string;
+  netlinkId?: string;
 } & (
   | { curve: T.QuadraticBezierCurve3; direction: number | null; pos?: never }
   | { pos: T.Vector3; curve?: never; direction?: never }
@@ -213,14 +214,17 @@ export function createSpaceRenderer({
     labelContext.setTransform(ratio, 0, 0, ratio, 0, 0);
   }
   function drawLabels(now: number) {
-    const { nodes, hullIds, networkViews, fileViews } = readView();
+    const { nodes, hullIds, networkViews, fileViews, netlinkViews } =
+      readView();
     const {
       process: selected,
       connection: selectedEdge,
       network: selectedNetwork,
       file: selectedFile,
+      netlink: selectedNetlink,
       hoveredNetwork,
       hoveredFile,
+      hoveredNetlink,
     } = readSelection();
     labelContext.clearRect(0, 0, innerWidth, innerHeight);
     labelContext.font =
@@ -269,6 +273,13 @@ export function createSpaceRenderer({
         v.file.label,
         v.pos.clone().add(new graphics.Vector3(0, 0, 0.7)),
         v.file.id === selectedFile || v.file.id === hoveredFile,
+        true,
+      );
+    for (const v of netlinkViews.values())
+      add(
+        v.socket.label,
+        v.pos.clone().add(new graphics.Vector3(0, 0, 0.7)),
+        v.socket.id === selectedNetlink || v.socket.id === hoveredNetlink,
         true,
       );
     for (const flight of signalFlights.slice(-12)) {
@@ -343,7 +354,9 @@ export function createSpaceRenderer({
       const path =
         route.kind === "file"
           ? view.fileViews.get(route.id)
-          : view.edgeViews.find((v) => v.e.id === route.id);
+          : route.kind === "netlink"
+            ? view.netlinkViews.get(route.id)
+            : view.edgeViews.find((v) => v.e.id === route.id);
       if (!path) continue;
       const networkId =
         route.kind === "connection" && "networkId" in path
@@ -356,6 +369,7 @@ export function createSpaceRenderer({
           curve: path.curve,
           direction: route.direction ?? null,
           fileId: route.kind === "file" ? route.id : undefined,
+          netlinkId: route.kind === "netlink" ? route.id : undefined,
           networkId,
           color: 0xffffff,
         });
@@ -401,6 +415,7 @@ export function createSpaceRenderer({
     particles = particles.filter(
       (p) =>
         (!p.fileId || view.fileViews.has(p.fileId)) &&
+        (!p.netlinkId || view.netlinkViews.has(p.netlinkId)) &&
         (!p.networkId || networkIds.has(p.networkId)),
     );
   }
@@ -529,6 +544,20 @@ export function createSpaceRenderer({
       .filter((p) => p.fileId)
       .map((p) => ({ id: p.fileId, direction: p.direction, color: p.color }));
   }
+  function netlinkVisuals() {
+    return [...readView().netlinkViews.values()].map((v) => ({
+      id: v.socket.id,
+      label: v.socket.label,
+      position: v.pos.toArray(),
+      screen: v.pos.clone().project(camera).toArray(),
+      pathScreen: v.curve.getPoint(0.5).project(camera).toArray(),
+    }));
+  }
+  function netlinkParticles() {
+    return particles
+      .filter((p) => p.netlinkId)
+      .map((p) => ({ id: p.netlinkId, direction: p.direction }));
+  }
   function resetRenderSampling() {
     frames = 0;
     frameTime = performance.now();
@@ -554,6 +583,8 @@ export function createSpaceRenderer({
     networkParticles,
     fileVisuals,
     fileParticles,
+    netlinkVisuals,
+    netlinkParticles,
     resetSampling: resetRenderSampling,
     clearParticles() {
       particles = [];

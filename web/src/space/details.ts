@@ -21,11 +21,13 @@ export function createSpaceDetails(
     snapshot: DetailsInput["snapshot"],
     network: DetailsInput["network"],
     edgeStats: DetailsInput["edgeStats"],
-    recentFiles: DetailsInput["files"];
+    recentFiles: DetailsInput["files"],
+    recentNetlink: DetailsInput["netlink"];
   let selected: string | null = null,
     selectedEdge: string | null = null,
     selectedNetwork: string | null = null,
-    selectedFile: string | null = null;
+    selectedFile: string | null = null,
+    selectedNetlink: string | null = null;
   const selectConnection = actions.connection,
     selectNetwork = actions.network;
   function networkDetails() {
@@ -87,6 +89,28 @@ export function createSpaceDetails(
     link.textContent = "Open process details ↗";
     updateConnectionEndpoints([path, identity, link]);
   }
+  function netlinkDetails() {
+    const socket = recentNetlink.get(selectedNetlink ?? "");
+    if (!socket) return;
+    $("process-details").hidden = true;
+    $("connection-details").hidden = false;
+    $("connection-label").textContent = socket.label;
+    $("connection-state").textContent = "Kernel-facing Netlink interface";
+    $("connection-facts").textContent =
+      `Observed SEND: ${socket.writeBytes} bytes / ${socket.writeCount} operations · RECEIVE: ${socket.readBytes} bytes / ${socket.readCount} operations`;
+    const note = document.createElement("p");
+    note.textContent =
+      "The plate represents a kernel-facing Netlink interface. The actual peer address is not observed.";
+    const children: HTMLElement[] = [endpoint(socket.endpoint, "OWNER"), note];
+    for (const holder of socket.holders)
+      if (
+        holder.process_id.pid !== socket.endpoint.process_id.pid ||
+        holder.process_id.start_time_ticks !==
+          socket.endpoint.process_id.start_time_ticks
+      )
+        children.push(endpoint(holder, "SHARED HOLDER"));
+    updateConnectionEndpoints(children);
+  }
   function endpoint(
     fdEndpoint: FdEndpoint | null,
     title: string,
@@ -136,22 +160,37 @@ export function createSpaceDetails(
     }
   }
   function details(data: DetailsInput, selection: SelectionState) {
-    ({ nodes, snapshot, network, edgeStats, files: recentFiles } = data);
+    ({
+      nodes,
+      snapshot,
+      network,
+      edgeStats,
+      files: recentFiles,
+      netlink: recentNetlink,
+    } = data);
     selected = selection.process;
     selectedEdge = selection.connection;
     selectedNetwork = selection.network;
     selectedFile = selection.file;
+    selectedNetlink = selection.netlink;
     const active = !!(
       selected ||
       selectedEdge ||
       selectedNetwork ||
-      selectedFile
+      selectedFile ||
+      selectedNetlink
     );
     $("details").hidden = !active;
     if (!active) return;
-    $("connection-kind").textContent = selectedFile
-      ? "SELECTED FILE"
-      : "SELECTED CONNECTION";
+    $("connection-kind").textContent = selectedNetlink
+      ? "SELECTED NETLINK SOCKET"
+      : selectedFile
+        ? "SELECTED FILE"
+        : "SELECTED CONNECTION";
+    if (selectedNetlink) {
+      netlinkDetails();
+      return;
+    }
     if (selectedFile) {
       fileDetails();
       return;

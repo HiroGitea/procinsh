@@ -1,5 +1,6 @@
 // Build and update Three.js geometry from data and selection state.
 import * as T from "three";
+import { isKernelNetlink } from "./netlink.js";
 import { key, processColors, PROCESS_SIDE } from "./model.js";
 import type {
   Region,
@@ -7,6 +8,7 @@ import type {
   EdgeView,
   NetworkView,
   FileView,
+  NetlinkView,
   ConnectionPick,
   SelectionState,
 } from "./types.js";
@@ -151,7 +153,8 @@ export function createSpaceScene() {
   let nodes = new Map<string, RenderNode>();
   let edgeViews: EdgeView[] = [],
     networkViews: NetworkView[] = [],
-    fileViews = new Map<string, FileView>();
+    fileViews = new Map<string, FileView>(),
+    netlinkViews = new Map<string, NetlinkView>();
   let parentViews: ParentPath[] = [],
     parentSections: ParentSegment[] = [],
     parentCorners: ParentJoint[] = [],
@@ -480,7 +483,7 @@ export function createSpaceScene() {
     const dashedPos = [],
       dashedEdges = [];
     for (const e of snapshot.fd_relations) {
-      if (grouped.has(e.id)) continue;
+      if (grouped.has(e.id) || isKernelNetlink(e.socket)) continue;
       const a = nodes.get(key(e.endpoint.process_id)),
         b = e.peer && nodes.get(key(e.peer.process_id));
       if (
@@ -555,7 +558,12 @@ export function createSpaceScene() {
   }
   function refreshFileScene(input: FileSceneInput) {
     syncNodes(input);
-    const { files: recentFiles, filePositions } = input;
+    const {
+      files: recentFiles,
+      filePositions,
+      netlink,
+      netlinkPositions,
+    } = input;
     fileGroup.traverse(disposeObject);
     scene.remove(fileGroup);
     fileGroup = new T.Group();
@@ -615,6 +623,69 @@ export function createSpaceScene() {
     );
     lines.userData.filePaths = paths;
     fileGroup.add(lines);
+    netlinkViews = new Map();
+    const sockets = [...netlink.values()].filter(
+      (socket) =>
+        visible.has(key(socket.endpoint.process_id)) &&
+        netlinkPositions.has(socket.id),
+    );
+    const plateMaterial = new T.MeshBasicMaterial({
+      color: 0xf5a45d,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const plates = new T.InstancedMesh(
+      new T.CylinderGeometry(0.85, 0.85, 0.16, 6).rotateX(Math.PI / 2),
+      [
+        new T.MeshBasicMaterial({ color: 0xad6c38 }),
+        plateMaterial,
+        new T.MeshBasicMaterial({ color: 0xe49252 }),
+      ],
+      Math.max(1, sockets.length),
+    );
+    plates.count = sockets.length;
+    plates.userData.netlink = sockets;
+    fileGroup.add(plates);
+    const socketVertices: number[] = [],
+      socketPaths: string[] = [];
+    for (let i = 0; i < sockets.length; i++) {
+      const socket = sockets[i],
+        p = netlinkPositions.get(socket.id)!,
+        owner = nodes.get(key(socket.endpoint.process_id))!,
+        pos = new T.Vector3(p.x, p.y, p.z);
+      dummy.position.copy(pos);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      plates.setMatrixAt(i, dummy.matrix);
+      const start = owner.pos.clone().setZ(0.5),
+        mid = start.clone().lerp(pos, 0.5);
+      mid.y -= 1.5;
+      const curve = new T.QuadraticBezierCurve3(start, mid, pos);
+      netlinkViews.set(socket.id, { socket, pos, curve });
+      const points = curve.getPoints(16);
+      for (let j = 0; j < 16; j++) {
+        socketVertices.push(...points[j], ...points[j + 1]);
+        socketPaths.push(socket.id);
+      }
+    }
+    dummy.rotation.set(0, 0, 0);
+    const socketGeometry = new T.BufferGeometry();
+    socketGeometry.setAttribute(
+      "position",
+      new T.Float32BufferAttribute(socketVertices, 3),
+    );
+    const socketLines = new T.LineSegments(
+      socketGeometry,
+      new T.LineBasicMaterial({
+        color: 0xf5a45d,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+      }),
+    );
+    socketLines.userData.netlinkPaths = socketPaths;
+    fileGroup.add(socketLines);
   }
   function updateParentSelection(selectionState: SelectionState) {
     if (!parentLines?.instanceColor) return;
@@ -673,11 +744,13 @@ export function createSpaceScene() {
     const n = nodes.get(selectionState.process ?? "");
     selection.visible = !!n;
     if (n) selection.position.set(n.pos.x, n.pos.y, 4);
-    const view = selectionState.file
-      ? fileViews.get(selectionState.file)
-      : selectionState.network
-        ? networkViews.find((v) => v.group.id === selectionState.network)
-        : edgeViews.find((v) => v.e.id === selectionState.connection);
+    const view = selectionState.netlink
+      ? netlinkViews.get(selectionState.netlink)
+      : selectionState.file
+        ? fileViews.get(selectionState.file)
+        : selectionState.network
+          ? networkViews.find((v) => v.group.id === selectionState.network)
+          : edgeViews.find((v) => v.e.id === selectionState.connection);
     edgeSelection.visible = !!view;
     if (view) edgeSelection.geometry.setFromPoints(view.curve.getPoints(32));
     updateParentSelection(selectionState);
@@ -720,6 +793,7 @@ export function createSpaceScene() {
         hullIds,
         networkViews,
         fileViews,
+        netlinkViews,
         edgeViews,
         baseGlow,
         haloGlow,

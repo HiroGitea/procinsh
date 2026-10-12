@@ -103,12 +103,14 @@ test.each([...cases, { value: null, label: "Socket · Type unavailable" }])(
       snapshot: { processes: [], fd_relations: [edge] },
       network: new Map(),
       edgeStats: new Map(),
+      netlink: new Map(),
       files: new Map(),
     };
     const selection: SelectionState = {
       process: null,
       connection: edge.id,
       network: null,
+      netlink: null,
       file: null,
     };
     createSpaceDetails({ connection() {}, network() {} }, spaceElement).update(

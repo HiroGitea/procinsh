@@ -10,6 +10,7 @@ import {
 export { findNearestRegion };
 import type {
   RecentFile,
+  RecentNetlinkSocket,
   NetworkGroup,
   ConnectionPick,
   PickResult,
@@ -27,16 +28,29 @@ export class SpaceSelection implements SelectionState, HoverState {
   connection: string | null = null;
   network: string | null = null;
   file: string | null = null;
+  netlink: string | null = null;
   hoveredNetwork: string | null = null;
   hoveredFile: string | null = null;
+  hoveredNetlink: string | null = null;
   get active() {
-    return !!(this.process || this.connection || this.network || this.file);
+    return !!(
+      this.process ||
+      this.connection ||
+      this.network ||
+      this.file ||
+      this.netlink
+    );
   }
   clear() {
-    this.process = this.connection = this.network = this.file = null;
+    this.process =
+      this.connection =
+      this.network =
+      this.file =
+      this.netlink =
+        null;
   }
   choose(
-    kind: "process" | "connection" | "network" | "file",
+    kind: "process" | "connection" | "network" | "file" | "netlink",
     id: string | null,
   ) {
     this.clear();
@@ -47,7 +61,8 @@ export class SpaceSelection implements SelectionState, HoverState {
       (this.process && !targets.processes.has(this.process)) ||
       (this.connection && !targets.connections.has(this.connection)) ||
       (this.network && !targets.networks.has(this.network)) ||
-      (this.file && !targets.files.has(this.file))
+      (this.file && !targets.files.has(this.file)) ||
+      (this.netlink && !targets.netlink.has(this.netlink))
     )
       this.clear();
   }
@@ -56,6 +71,8 @@ export class SpaceSelection implements SelectionState, HoverState {
 // written by scene.ts; narrow at the boundary instead of leaking it into UI state.
 interface PickData {
   files?: RecentFile[];
+  netlink?: RecentNetlinkSocket[];
+  netlinkPaths?: string[];
   filePaths?: string[];
   network?: NetworkGroup[];
   fd_relations?: (ConnectionPick | null)[];
@@ -97,6 +114,16 @@ export function bindSelection(
     ray.params.Line.threshold = 0.25;
     for (const result of ray.intersectObjects(view.objects)) {
       const data = pickData(result.object);
+      const socket =
+        result.instanceId === undefined
+          ? undefined
+          : data.netlink?.[result.instanceId];
+      if (socket) return { netlinkId: socket.id };
+      const netlinkId =
+        result.index === undefined
+          ? undefined
+          : data.netlinkPaths?.[Math.floor(result.index / 2)];
+      if (netlinkId) return { netlinkId };
       const file =
         result.instanceId === undefined
           ? undefined
@@ -141,7 +168,8 @@ export function bindSelection(
     } else {
       const edge = edgeHit(e, view);
       if (edge) {
-        if ("fileId" in edge) actions.file(edge.fileId);
+        if ("netlinkId" in edge) actions.netlink(edge.netlinkId);
+        else if ("fileId" in edge) actions.file(edge.fileId);
         else if (edge.networkId) actions.network(edge.networkId);
         else actions.connection(edge.id);
       } else actions.clear();
@@ -155,8 +183,9 @@ export function bindSelection(
   };
   const pointermove = (e: PointerEvent) => {
     let hoveredNetwork: string | null = null,
-      hoveredFile: string | null = null;
-    const { view, edgeStats, files } = read();
+      hoveredFile: string | null = null,
+      hoveredNetlink: string | null = null;
+    const { view, edgeStats, files, netlink } = read();
     const hullIds = view.hullIds,
       nodes = view.nodes;
     const h = hit(e, view);
@@ -175,7 +204,11 @@ export function bindSelection(
         onRegionHover?.(null);
       }
       const edge = edgeHit(e, view);
-      if (edge && "fileId" in edge) {
+      if (edge && "netlinkId" in edge) {
+        hoveredNetlink = edge.netlinkId;
+        const socket = netlink.get(edge.netlinkId)!;
+        text = `${socket.label}\nPID ${socket.endpoint.process_id.pid} · SEND ${socket.writeBytes} bytes · RECEIVE ${socket.readBytes} bytes`;
+      } else if (edge && "fileId" in edge) {
         hoveredFile = edge.fileId;
         const f = files.get(edge.fileId)!;
         text = `${f.path || fileLabel(f.file)}\nPID ${f.process_id.pid} · READ ${f.readBytes} bytes · WRITE ${f.writeBytes} bytes`;
@@ -185,7 +218,7 @@ export function bindSelection(
         text = `${edge.label}${edge.candidate ? " · Candidate peer" : ""}${edge.shared ? " · Shared FD" : ""}\nPID ${edge.endpoint.process_id.pid} / FD ${edge.endpoint.fd}${edge.endpoint.fd_count > 1 ? ` (+${edge.endpoint.fd_count - 1} shared FDs)` : ""} ↔ ${edge.peer ? `PID ${edge.peer.process_id.pid} / FD ${edge.peer.fd}` : edge.socket?.network_peer ? remoteLabel(edge.socket) : connectionState(edge)}${stat ? `\nLatest window: ${stat.bytes} bytes / ${stat.count} operations (${((performance.now() - stat.time) / 1000).toFixed(1)}s ago)` : ""}`;
       }
     }
-    changedHover({ hoveredNetwork, hoveredFile });
+    changedHover({ hoveredNetwork, hoveredFile, hoveredNetlink });
     hover.hidden = !text;
     if (text) {
       hover.textContent = text;
@@ -196,7 +229,11 @@ export function bindSelection(
   const pointerleave = () => {
     onRegionHover?.(null);
     hover.hidden = true;
-    changedHover({ hoveredNetwork: null, hoveredFile: null });
+    changedHover({
+      hoveredNetwork: null,
+      hoveredFile: null,
+      hoveredNetlink: null,
+    });
   };
 
   canvas.addEventListener("pointerdown", pointerdown);

@@ -1,5 +1,6 @@
 // Compose SPACE data, rendering, and user actions; own page lifecycle events.
 import * as T from "three";
+import { isKernelNetlink } from "./netlink.js";
 import { SpaceDataStore } from "./data.js";
 import type { ActivityUpdate } from "./types.js";
 import type { SystemSnapshot, SpaceActivity } from "../shared/api-types.js";
@@ -86,6 +87,7 @@ const actions: SelectionActions = {
   connection: selectConnection,
   network: selectNetwork,
   file: selectFile,
+  netlink: selectNetlink,
   clear: clearSelection,
 };
 const details = createSpaceDetails(actions);
@@ -95,6 +97,7 @@ bindSelection($("world"), $("hover"), {
     view: scene.pickingView(),
     edgeStats: data.edgeStats,
     files: data.recentFiles.entries,
+    netlink: data.recentNetlink.entries,
   }),
   actions,
   hover(state) {
@@ -229,7 +232,9 @@ function sceneInput(): SceneInput {
     network: data.network,
     networkPositions: data.networkPositions,
     files: data.recentFiles.entries,
+    netlink: data.recentNetlink.entries,
     filePositions: data.filePositions,
+    netlinkPositions: data.netlinkPositions,
     visible: search.visibleIds(),
   };
 }
@@ -240,6 +245,7 @@ function detailsInput(): DetailsInput {
     network: data.network,
     edgeStats: data.edgeStats,
     files: data.recentFiles.entries,
+    netlink: data.recentNetlink.entries,
   };
 }
 function worldPositions(): WorldPositions {
@@ -247,14 +253,20 @@ function worldPositions(): WorldPositions {
     processes: [...data.nodes.values()].map((n) => n.pos),
     networks: data.networkPositions.values(),
     files: data.filePositions.values(),
+    netlink: data.netlinkPositions.values(),
   };
 }
 function retainSelection() {
   selection.retain({
     processes: new Set(data.nodes.keys()),
-    connections: new Set(data.snapshot.fd_relations.map((e) => e.id)),
+    connections: new Set(
+      data.snapshot.fd_relations
+        .filter((e) => !isKernelNetlink(e.socket))
+        .map((e) => e.id),
+    ),
     networks: new Set(data.network.keys()),
     files: new Set(data.recentFiles.entries.keys()),
+    netlink: new Set(data.recentNetlink.entries.keys()),
   });
 }
 function retainParticles() {
@@ -326,8 +338,12 @@ function refreshFiles() {
   adaptCamera();
   updateDetails();
 }
+function selectNetlink(id: string | null) {
+  selection.choose("netlink", id);
+  updateSelection();
+}
 function updateActivity(update: ActivityUpdate) {
-  if (update.filesChanged) refreshFiles();
+  if (update.filesChanged || update.netlinkChanged) refreshFiles();
   renderer.activity(update);
   updateDetails();
 }

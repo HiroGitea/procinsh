@@ -76,7 +76,9 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
       snapshot: { processes: [...nodes.values()], fd_relations: [] },
       network: new Map(),
       networkPositions: new Map(),
+      netlink: new Map(),
       files: new Map(),
+      netlinkPositions: new Map(),
       filePositions: new Map(),
       visible: new Set(nodes.keys()),
     };
@@ -198,7 +200,9 @@ test("pipe and external socket attachments keep their existing offsets", async (
       snapshot: { processes: [node, peer], fd_relations: [pipe, external] },
       network: new Map(),
       networkPositions: new Map(),
+      netlink: new Map(),
       files: new Map(),
+      netlinkPositions: new Map(),
       filePositions: new Map(),
       visible: new Set(["10:1", "2:1"]),
     },
@@ -254,6 +258,7 @@ test("space-components regression", async () => {
             "./types.js",
             "./contracts.js",
             "./model.js",
+            "./netlink.js",
             "./dom-types.js",
           ].includes(path) ||
             (name === "data.ts" && path === "./process-layout.js"),
@@ -266,6 +271,7 @@ test("space-components regression", async () => {
     process: null,
     connection: null,
     network: null,
+    netlink: null,
     file: null,
   });
   const identity = { pid: 101, start_time_ticks: 1 };
@@ -298,7 +304,9 @@ test("space-components regression", async () => {
       snapshot: { processes: [node], fd_relations: [] },
       network: new Map(),
       networkPositions: new Map(),
+      netlink: new Map(),
       files: new Map([["file", file]]),
+      netlinkPositions: new Map(),
       filePositions: new Map([["file", { x: 3, y: 0, z: -3 }]]),
       visible: new Set(nodes.keys()),
     };
@@ -330,7 +338,9 @@ test("space-components regression", async () => {
     scene.refreshFiles({
       nodes,
       visible: input.visible,
+      netlink: new Map(),
       files: new Map(),
+      netlinkPositions: new Map(),
       filePositions: new Map(),
     });
     scene.updateSelection(emptySelection());
@@ -348,11 +358,13 @@ test("space-components regression", async () => {
       ["connection", "connections"],
       ["network", "networks"],
       ["file", "files"],
+      ["netlink", "netlink"],
     ] as const) {
       const targets = {
         processes: new Set<string>(),
         connections: new Set<string>(),
         networks: new Set<string>(),
+        netlink: new Set<string>(),
         files: new Set<string>(),
       };
       selection.choose(kind, "id");
@@ -405,6 +417,7 @@ test("space-components regression", async () => {
         nodes: new Map([["101:1", { ...node, pos: new T.Vector3() }]]),
         objects: [],
       },
+      netlink: new Map(),
       files: new Map(),
       edgeStats: new Map(),
     };
@@ -416,6 +429,7 @@ test("space-components regression", async () => {
         process: (...args) => events.push(["process", ...args]),
         connection: (id) => events.push(["connection", id]),
         network: (id) => events.push(["network", id]),
+        netlink: (id) => events.push(["netlink", id]),
         file: (id) => events.push(["file", id]),
         clear: () => events.push(["clear"]),
       },
@@ -442,6 +456,7 @@ test("space-components regression", async () => {
     input = {
       ...input,
       view: { ...input.view, hull: null, objects: [marker] },
+      netlink: new Map(),
       files: new Map([["file", file]]),
     };
     pointer(canvas, "pointerdown");
@@ -453,7 +468,7 @@ test("space-components regression", async () => {
     );
     assert.deepEqual(events.at(-1), [
       "hover",
-      { hoveredNetwork: null, hoveredFile: "file" },
+      { hoveredNetwork: null, hoveredFile: "file", hoveredNetlink: null },
     ]);
     assert.match(hover.textContent!, /READ 8 bytes · WRITE 12 bytes/);
     input = { ...input, view: { ...input.view, objects: [] } };
@@ -461,7 +476,7 @@ test("space-components regression", async () => {
     assert.equal(hover.hidden, true);
     assert.deepEqual(events.at(-1), [
       "hover",
-      { hoveredNetwork: null, hoveredFile: null },
+      { hoveredNetwork: null, hoveredFile: null, hoveredNetlink: null },
     ]);
     unbind();
     const count = events.length;
@@ -481,6 +496,7 @@ test("space-components regression", async () => {
       processes: [{ x: 0, y: 0, z: 0 }],
       networks: [{ x: 1000, y: 0, z: 12 }],
       files: [{ x: -100, y: 0, z: -3 }],
+      netlink: [],
     };
     const density = camera.adaptWorld(positions);
     assert.equal(camera.camera.far, 4400);
@@ -495,7 +511,7 @@ test("space-components regression", async () => {
     camera.focus({ x: 7, y: 8, z: 0 });
     assert.deepEqual(camera.view().target, [7, 8, 4]);
     const before = camera.view();
-    camera.fit({ processes: [], networks: [], files: [] });
+    camera.fit({ processes: [], networks: [], files: [], netlink: [] });
     assert.deepEqual(
       camera.view(),
       before,
@@ -539,6 +555,7 @@ test("space-components regression", async () => {
       snapshot: { processes: [], fd_relations: [] },
       network: new Map(),
       edgeStats: new Map(),
+      netlink: new Map(),
       files: new Map([["file", file]]),
     };
     const commandLine = ["/usr/bin/writer", "<b>literal</b>", "x".repeat(1000)];
@@ -630,6 +647,7 @@ test("space-components regression", async () => {
       nodes: new Map(),
       hullIds: [],
       networkViews: [],
+      netlinkViews: new Map(),
       fileViews: new Map(),
       edgeViews: [],
       baseGlow: null,
@@ -659,6 +677,7 @@ test("space-components regression", async () => {
         ...emptySelection(),
         hoveredNetwork: null,
         hoveredFile: null,
+        hoveredNetlink: null,
       }),
       cpuGlows: new Map(),
       beforeFrame: (now) => {
@@ -667,6 +686,7 @@ test("space-components regression", async () => {
     });
     view = {
       ...view,
+      netlinkViews: new Map(),
       fileViews: new Map([["file", { file, pos: new T.Vector3(), curve }]]),
       edgeViews: [
         { e: fdRelation({ id: "connection" }), networkId: "network", curve },
@@ -675,6 +695,7 @@ test("space-components regression", async () => {
     renderer.activity({
       now: 1000,
       filesChanged: false,
+      netlinkChanged: false,
       routes: [
         { kind: "file", id: "file", direction: 1, count: 1 },
         { kind: "connection", id: "connection", direction: -1, count: 1 },
@@ -743,7 +764,13 @@ test("space-components regression", async () => {
       destination_id: destination.identity,
     };
     const emit = (signals = [signal], now = 5000) =>
-      renderer.activity({ now, filesChanged: false, routes: [], signals });
+      renderer.activity({
+        now,
+        filesChanged: false,
+        netlinkChanged: false,
+        routes: [],
+        signals,
+      });
     emit();
     const flight = renderer.signalVisuals()[0];
     assert.equal(flight.label, "SIGUSR1");

@@ -1,4 +1,5 @@
 // System SSE, observed state, retained activity, and plain layout coordinates.
+import { RecentNetlinkSockets, isKernelNetlink } from "./netlink.js";
 import { Display } from "../shared/display.js";
 import { key, remoteLabel, ipcKey, fileLabel, layoutMaps } from "./model.js";
 export { layoutMaps };
@@ -183,7 +184,7 @@ class RecentFiles {
   }
 }
 function fileLayout(
-  files: ReadonlyMap<string, RecentFile>,
+  files: ReadonlyMap<string, Pick<RecentFile, "process_id">>,
   positions: ReadonlyMap<string, Pick<Position, "x" | "y">>,
   previous: ReadonlyMap<string, Position> = new Map(),
 ) {
@@ -271,9 +272,11 @@ export class SpaceDataStore {
   readonly cpuGlows = new Map<string, CpuGlow>();
   readonly edgeStats = new Map<string, EdgeStat>();
   readonly recentFiles = new RecentFiles();
+  readonly recentNetlink = new RecentNetlinkSockets();
   network = new Map<string, NetworkGroup>();
   networkPositions = new Map<string, Position>();
   filePositions = new Map<string, Position>();
+  netlinkPositions = new Map<string, Position>();
   private source: EventSource | null = null;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private running = false;
@@ -322,23 +325,38 @@ export class SpaceDataStore {
       });
     }
     this.recentFiles.prune(now, live);
+    this.recentNetlink.sync(snapshot.fd_relations, now, live);
     this.network = networkGroups(snapshot.fd_relations);
     this.networkPositions = networkLayout(
       this.network,
       this.positions(),
       rearrange ? new Map() : this.networkPositions,
     );
-    if (rearrange) this.filePositions.clear();
+    if (rearrange) {
+      this.filePositions.clear();
+      this.netlinkPositions.clear();
+    }
     this.layoutFiles();
   }
   private positions() {
     return new Map([...this.nodes].map(([id, n]) => [id, n.pos]));
   }
   private layoutFiles() {
-    this.filePositions = fileLayout(
+    const resources = new Map<string, Pick<RecentFile, "process_id">>(
       this.recentFiles.entries,
+    );
+    for (const [id, socket] of this.recentNetlink.entries)
+      resources.set(id, { process_id: socket.endpoint.process_id });
+    const positions = fileLayout(
+      resources,
       this.positions(),
-      this.filePositions,
+      new Map([...this.filePositions, ...this.netlinkPositions]),
+    );
+    this.filePositions = new Map(
+      [...positions].filter(([id]) => this.recentFiles.entries.has(id)),
+    );
+    this.netlinkPositions = new Map(
+      [...positions].filter(([id]) => this.recentNetlink.entries.has(id)),
     );
   }
 
@@ -368,7 +386,8 @@ export class SpaceDataStore {
       now,
       new Set(this.nodes.keys()),
     );
-    if (filesChanged) this.layoutFiles();
+    const live = new Set(this.nodes.keys());
+    let netlinkChanged = this.recentNetlink.prune(now, live);
     const routes: ActivityRoute[] = [];
     for (const e of activity.files || []) {
       const id = fileKey(e);
@@ -396,7 +415,21 @@ export class SpaceDataStore {
     }
     const relations = this.visibleRelations(visible);
     for (const e of activity.ipc || []) {
-      const links = relations.filter((r) => edgeDirection(r, e) !== null);
+      const netlink = this.recentNetlink.ingest(e, now, live);
+      if (netlink) {
+        netlinkChanged ||= netlink.changed;
+        if (netlink.observed && visible.has(key(e.process_id)))
+          routes.push({
+            kind: "netlink",
+            id: netlink.id,
+            direction: e.write ? 1 : -1,
+            count: e.count,
+          });
+        continue;
+      }
+      const links = relations.filter(
+        (r) => !isKernelNetlink(r.socket) && edgeDirection(r, e) !== null,
+      );
       const exact = links.filter((r) => !r.candidate);
       const candidates = exact.length ? exact : links;
       if (candidates.length !== 1) {
@@ -430,12 +463,17 @@ export class SpaceDataStore {
         );
       })
       .slice(-256);
-    return { now, filesChanged, routes, signals };
+    if (filesChanged || netlinkChanged) this.layoutFiles();
+    return { now, filesChanged, netlinkChanged, routes, signals };
   }
   pruneFiles(now = performance.now()) {
     const changed = this.recentFiles.prune(now, new Set(this.nodes.keys()));
-    if (changed) this.layoutFiles();
-    return changed;
+    const netlinkChanged = this.recentNetlink.prune(
+      now,
+      new Set(this.nodes.keys()),
+    );
+    if (changed || netlinkChanged) this.layoutFiles();
+    return changed || netlinkChanged;
   }
   start() {
     this.running = true;
@@ -482,6 +520,7 @@ export class SpaceDataStore {
     this.source = null;
     this.cpuGlows.clear();
     this.recentFiles.clear();
+    this.recentNetlink.clear();
     this.layoutFiles();
     this.events.reset();
   }
