@@ -57,6 +57,20 @@ fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
         })
         .collect();
     let id = process::identity(std::process::id() as i32).unwrap();
+    let metadata_available = process::metadata_available(id, sockets[0].as_raw_fd());
+    // A bound Netlink socket stays visible through procfs when duplication is denied.
+    let mut address: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
+    address.nl_family = libc::AF_NETLINK as u16;
+    assert_eq!(
+        unsafe {
+            libc::bind(
+                sockets[2].as_raw_fd(),
+                (&address as *const libc::sockaddr_nl).cast(),
+                std::mem::size_of_val(&address) as _,
+            )
+        },
+        0
+    );
     let snapshot = snapshot::collect(&mut Default::default());
     let fds = serde_json::to_value(process::fds(id).unwrap()).unwrap();
     for (socket, &(_, _, _, protocol)) in sockets.iter().zip(&definitions) {
@@ -66,16 +80,33 @@ fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
             .iter()
             .find(|r| r.endpoint.process_id == id && r.endpoint.fd == fd)
             .expect("unconnected socket retains a relation");
-        assert!(relation.peer.is_none());
-        assert!(!relation.socket.as_ref().unwrap().network_peer);
-        assert_eq!(relation.socket.as_ref().unwrap().protocol, protocol);
-        assert!(relation.label.starts_with(&protocol.to_string()));
         let entry = fds["entries"]
             .as_array()
             .unwrap()
             .iter()
             .find(|e| e["fd"] == fd)
             .unwrap();
+        assert!(relation.peer.is_none());
+        if !metadata_available && protocol.is_tcp_or_udp() {
+            assert!(relation.socket.is_none());
+            assert_eq!(relation.label, "Socket · Type unavailable");
+            assert!(entry["protocol"].is_null());
+            assert!(entry["state"].is_null());
+            assert!(entry["peers"].as_array().unwrap().is_empty());
+            continue;
+        }
+        let protocol = if !metadata_available && matches!(protocol, SocketProtocol::Other { .. }) {
+            SocketProtocol::Other {
+                family: 16,
+                socket_type: None,
+                protocol: 15,
+            }
+        } else {
+            protocol
+        };
+        assert!(!relation.socket.as_ref().unwrap().network_peer);
+        assert_eq!(relation.socket.as_ref().unwrap().protocol, protocol);
+        assert!(relation.label.starts_with(&protocol.to_string()));
         assert_eq!(entry["protocol"], serde_json::to_value(protocol).unwrap());
         assert!(entry["peers"].as_array().unwrap().is_empty());
         if protocol.is_tcp_or_udp() {

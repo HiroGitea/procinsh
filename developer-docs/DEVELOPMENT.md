@@ -231,6 +231,8 @@ FD 情報の収集、通信相手の候補の照合、候補を所有するプ�
 
 種類が取得できれば、未接続でも `TCP`、`NETLINK KOBJECT_UEVENT`、`VSOCK STREAM` などを表示します。TCP・UDP・UNIX 以外の API の protocol は `kind: "other"` と Linux の `family`・`socket_type`・`protocol` 番号で表し、未認識の番号も保持します。Netlink の procfs 表だけでは socket type は分からないため、その場合は `socket_type: null` です。接続状態が未取得なら `state: null` とし、種類から接続状態や相手の PID を推測しません。種類も未取得の socket は `Socket · Type unavailable` と表示し、走査結果の警告にも含めます。
 
+`dev_test.sh` は `PROCINSH_REQUIRE_SOCKET_METADATA=1` を設定し、pidfd による種類取得の権限不足・非対応によるテストのスキップを禁止します。通常の `cargo test` は、コンテナなどで FD の複製が制限されている場合にも procfs の種類取得と種類未取得の部分結果を検証します。
+
 ### 環境変数・補助ベクトル
 
 いずれも識別子・生存を確認して要求時に取得します。定期観測に含めて再収集するものではありません。

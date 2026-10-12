@@ -188,6 +188,32 @@ fn parse_table(text: &str, name: &str) -> HashMap<u64, SocketInfo> {
         .collect()
 }
 
+/// Probe the target's access policy for privileged tests. Ordinary test runs
+/// allow permission/unsupported errors; dev_test requires real metadata access.
+#[cfg(test)]
+pub(in crate::http_server) fn metadata_available(id: ProcessId, fd: i32) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let meta = std::fs::metadata(format!("/proc/{}/fd/{fd}", id.pid)).unwrap();
+    match SocketMetadataReader::new(id).read(fd as u32, meta.dev(), meta.ino()) {
+        Ok(_) => true,
+        Err(error) => {
+            let restricted = error.downcast_ref::<std::io::Error>().is_some_and(|error| {
+                matches!(
+                    error.raw_os_error(),
+                    Some(libc::EPERM | libc::EACCES | libc::ENOSYS)
+                )
+            });
+            assert!(
+                restricted
+                    && std::env::var("PROCINSH_REQUIRE_SOCKET_METADATA").as_deref() != Ok("1"),
+                "socket metadata access is required: {error:#}"
+            );
+            eprintln!("socket metadata access is unavailable in this test environment: {error}");
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,6 +238,12 @@ mod tests {
             unsafe { libc::socket(libc::AF_INET6, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
         assert!(tcp >= 0);
         let tcp = unsafe { OwnedFd::from_raw_fd(tcp) };
+        if !metadata_available(
+            super::super::identity(std::process::id() as i32).unwrap(),
+            tcp.as_raw_fd(),
+        ) {
+            return;
+        }
         let udp = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC, 0) };
         assert!(udp >= 0);
         let udp = unsafe { OwnedFd::from_raw_fd(udp) };
@@ -254,6 +286,9 @@ mod tests {
     #[test]
     fn another_process_socket_kind_is_read_without_attaching() {
         let target = super::super::test_support::Target::new("ipc");
+        if !metadata_available(target.id, 61) {
+            return;
+        }
         let meta = fs::metadata(format!("/proc/{}/fd/61", target.id.pid)).unwrap();
         let protocol = SocketMetadataReader::new(target.id)
             .read(61, meta.dev(), meta.ino())
@@ -270,6 +305,12 @@ mod tests {
     #[test]
     fn changed_process_and_descriptor_identities_are_rejected() {
         let socket = UnixDatagram::unbound().unwrap();
+        if !metadata_available(
+            super::super::identity(std::process::id() as i32).unwrap(),
+            socket.as_raw_fd(),
+        ) {
+            return;
+        }
         let meta = fs::metadata(format!("/proc/self/fd/{}", socket.as_raw_fd())).unwrap();
         let mut reader = reader();
         assert!(

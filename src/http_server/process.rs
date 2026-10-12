@@ -74,6 +74,8 @@ pub(super) use sockets::SocketInfo;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
+pub(super) use socket_metadata::metadata_available;
+#[cfg(test)]
 pub(super) use test_support::Target as TestTarget;
 #[cfg(test)]
 mod tests;
