@@ -16,7 +16,7 @@ fn app() -> Router {
 async fn headers_report_the_binary_revision_on_all_pages() {
     let sha = env!("PROCINSH_BUILD_GIT_SHA");
     let dirty = env!("PROCINSH_BUILD_GIT_DIRTY") == "true";
-    for path in ["/list", "/process/1", "/space"] {
+    for path in ["/", "/list", "/process/1", "/space"] {
         let response = app()
             .oneshot(
                 Request::builder()
@@ -32,6 +32,13 @@ async fn headers_report_the_binary_revision_on_all_pages() {
             .unwrap();
         let html = std::str::from_utf8(&body).unwrap();
         assert!(html.contains(&format!("procinsh v{}", env!("CARGO_PKG_VERSION"))));
+        assert!(html.contains("href=\"/\" id=\"brand\""));
+        if path == "/" || path == "/space" {
+            assert!(html.contains("id=\"world\""), "{path} displays SPACE");
+            assert!(!html.contains("id=\"process-list\""));
+        } else if path == "/list" {
+            assert!(html.contains("id=\"process-list\""));
+        }
         if sha.is_empty() {
             assert!(!html.contains("id=\"build-commit\""));
         } else {

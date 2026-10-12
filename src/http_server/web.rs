@@ -1,4 +1,4 @@
-//! Embedded list, process details, and SPACE pages and their static assets.
+//! Embedded SPACE home page, process list, process details, and static assets.
 //!
 //! # Interface
 //! - [`router`]: `pub(super) fn router() -> Router<Arc<AppState>>`; supplies the
@@ -71,7 +71,7 @@ fn embedded_asset(path: &str) -> Response {
 
 pub(super) fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/", get(|| async { embedded_asset("list/index.html") }))
+        .route("/", get(|| async { embedded_asset("space/index.html") }))
         .route("/list", get(|| async { embedded_asset("list/index.html") }))
         .route(
             "/process/{pid}",
@@ -147,7 +147,7 @@ mod tests {
         for template in templates() {
             let html = build_html(&template, SHA, false);
             assert!(html.contains(&format!("procinsh v{}", env!("CARGO_PKG_VERSION"))));
-            assert!(html.contains("href=\"/list\" id=\"brand\""));
+            assert!(html.contains("href=\"/\" id=\"brand\""));
             assert!(html.contains(&format!(
                 "href=\"https://github.com/akawashiro/procinsh/commit/{SHA}\""
             )));
@@ -174,7 +174,7 @@ mod tests {
             assert!(!gitless.contains("/commit/"));
             assert!(!gitless.contains("{{PROCINSH_"));
             assert!(gitless.contains(&format!(
-                "<div class=\"brand\"><a href=\"/list\" id=\"brand\">procinsh v{}</a></div>",
+                "<div class=\"brand\"><a href=\"/\" id=\"brand\">procinsh v{}</a></div>",
                 env!("CARGO_PKG_VERSION")
             )));
         }

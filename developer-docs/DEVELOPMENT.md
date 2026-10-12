@@ -297,7 +297,7 @@ watch channelは接続ごとに独立し、遅い購読者へ古い状態を蓄�
 
 | 場所・ファイル | 役割 |
 |---|---|
-| [list/index.html](../web/list/index.html)、[list/style.css](../web/src/list/style.css)、[list/app.ts](../web/src/list/app.ts) | `/`・`/list` の HTML/CSS と起動処理。`app.ts` がデータ・検索・表示を接続し、Vite が `list/app.ts` をバンドルする |
+| [list/index.html](../web/list/index.html)、[list/style.css](../web/src/list/style.css)、[list/app.ts](../web/src/list/app.ts) | `/list` の HTML/CSS と起動処理。`app.ts` がデータ・検索・表示を接続し、Vite が `list/app.ts` をバンドルする |
 | [list/data.ts](../web/src/list/data.ts) | 一覧と更新間隔の取得、観測状態、定期更新、ページ離脱時の要求キャンセル・古い応答の破棄 |
 | [list/search.ts](../web/src/list/search.ts) | PID・名前・コマンドラインの検索、CPU/RSS/PID の並べ替えと操作イベント |
 | [list/renderer.ts](../web/src/list/renderer.ts) | 一覧表、詳細への識別子付きリンク、件数、取得エラーの DOM 更新 |
@@ -309,7 +309,7 @@ watch channelは接続ごとに独立し、遅い購読者へ古い状態を蓄�
 | [process/history.ts](../web/src/process/history.ts) | 履歴データから Canvas 2D に CPU/RSS のグラフと軸・凡例を描画 |
 | [process/details.ts](../web/src/process/details.ts) | Environment・Auxiliary Vector・Pipe / Socket の DOM 更新、パネルの開閉イベント |
 | [process/search.ts](../web/src/process/search.ts) | 保持済みの環境変数・FD の検索と入力イベント |
-| [space/index.html](../web/space/index.html)、[space/style.css](../web/src/space/style.css)、[space/app.ts](../web/src/space/app.ts) | `/space` の HTML/CSS と起動処理。`app.ts` がデータ・描画・操作の部品を接続し、Vite が `space/app.ts` をバンドルする |
+| [space/index.html](../web/space/index.html)、[space/style.css](../web/src/space/style.css)、[space/app.ts](../web/src/space/app.ts) | `/`・`/space` の HTML/CSS と起動処理。`app.ts` がデータ・描画・操作の部品を接続し、Vite が `space/app.ts` をバンドルする |
 | [space/types.ts](../web/src/space/types.ts)、[space/contracts.ts](../web/src/space/contracts.ts) | 配置・活動・選択・描画の共有データ型と、各部品に渡す入力・コールバックの契約 |
 | [space/model.ts](../web/src/space/model.ts) | プロセス・リソースの識別子、表示ラベル、UID の色を計算する純粋関数 |
 | [space/data.ts](../web/src/space/data.ts) | SSE、観測・活動の状態管理、構造イベントのマージ、配置済み状態の保持。Three.js・DOM に依存しない |
@@ -330,7 +330,7 @@ watch channelは接続ごとに独立し、遅い購読者へ古い状態を蓄�
 
 TypeScript のビルド設定は [tsconfig.json](../web/tsconfig.json)、実行コマンドは [package.json](../web/package.json) にあります。生成 HTML は `web/dist/{list,process,space}/index.html`、JS/CSS は `web/dist/assets/` に出力されます。ブラウザの `/`・`/list`・`/process/{pid}`・`/space` は対応する生成 HTML を配信し、アセットの URL は HTML が参照する `/assets/` 配下です。変更した画面を確認するには、[ビルドと実行環境](#ビルドと実行環境)の手順で Web と Rust バイナリをビルドします。
 
-### プロセス一覧 `/list`（`/` も同じ一覧を表示）
+### プロセス一覧 `/list`
 
 [list/app.ts](../web/src/list/app.ts) が `ListDataStore` と検索・表の表示を接続します。通信と状態は [`ListDataStore.start`](../web/src/list/data.ts#L49)・[`ListDataStore.refresh`](../web/src/list/data.ts#L23)、検索と並べ替えは [`matchingProcesses`](../web/src/list/search.ts#L3)、DOM 更新は [`renderProcesses`](../web/src/list/renderer.ts#L8) を参照してください。データの生成だけでは通信を開始せず、データ更新時・検索操作時に表示対象を計算して表へ反映します。
 
@@ -379,7 +379,7 @@ Environment・Auxiliary Vector・Pipe / Socket はパネルを開くたびに単
 | CPU/RSS の軸・スケール、サンプル欠落、描画倍率 | [history.ts の in-source test](../web/src/process/history.ts) | `npm --prefix web test` |
 | 一覧から詳細への遷移、追加パネル、サンプル表示、モバイル、ページキャッシュ・終了 | [browser.ts](../web/tests/browser/browser.ts) | [ブラウザテスト](#ブラウザテスト)の準備後に `npm --prefix web run test:browser:list` |
 
-### SPACE `/space`
+### SPACE `/`・`/space`
 
 SPACE はシステム全体のプロセス、仮想アドレス空間、親子関係、IPC・ネットワーク接続、ファイル I/O を3D表示します。[space/app.ts](../web/src/space/app.ts) が各部品の生成・接続とページの起動・停止を担当します。データは `data.ts` → `scene.ts` → `renderer.ts` の順に反映し、検索は表示対象、選択は強調表示と詳細パネル、カメラは視点を更新します。
 

@@ -26,7 +26,7 @@ export async function checkBuildHeader(evaluate: Evaluate) {
         visible: bounds.width>0 && bounds.left>=0 && bounds.right<=innerWidth && bounds.top>=0}};
   })()`);
   assert.match(build.brand, /^procinsh v\d+\.\d+\.\d+$/);
-  assert.equal(build.brandHref, "/list", "brand remains a list link");
+  assert.equal(build.brandHref, "/", "brand links to the home page");
   assert.equal(build.unresolved, false);
   if (!build.commit) {
     assert.equal(
