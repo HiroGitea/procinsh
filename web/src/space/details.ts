@@ -100,7 +100,7 @@ export function createSpaceDetails(
       `Observed SEND: ${socket.writeBytes} bytes / ${socket.writeCount} operations · RECEIVE: ${socket.readBytes} bytes / ${socket.readCount} operations`;
     const note = document.createElement("p");
     note.textContent =
-      "The chip represents a kernel-facing Netlink interface. The actual peer address is not observed.";
+      "The plate represents a kernel-facing Netlink interface. The actual peer address is not observed.";
     const children: HTMLElement[] = [endpoint(socket.endpoint, "OWNER"), note];
     for (const holder of socket.holders)
       if (

@@ -629,27 +629,23 @@ export function createSpaceScene() {
         visible.has(key(socket.endpoint.process_id)) &&
         netlinkPositions.has(socket.id),
     );
-    const chipMaterial = new T.MeshBasicMaterial({
+    const plateMaterial = new T.MeshBasicMaterial({
       color: 0xf5a45d,
       transparent: true,
       opacity: 0.85,
     });
-    const chips = new T.InstancedMesh(
-      new T.BoxGeometry(1.2, 1.2, 0.3),
-      chipMaterial,
+    const plates = new T.InstancedMesh(
+      new T.CylinderGeometry(0.85, 0.85, 0.16, 6).rotateX(Math.PI / 2),
+      [
+        new T.MeshBasicMaterial({ color: 0xad6c38 }),
+        plateMaterial,
+        new T.MeshBasicMaterial({ color: 0xe49252 }),
+      ],
       Math.max(1, sockets.length),
     );
-    chips.count = sockets.length;
-    chips.userData.netlink = sockets;
-    fileGroup.add(chips);
-    const pins = new T.InstancedMesh(
-      new T.BoxGeometry(0.3, 0.12, 0.12),
-      new T.MeshBasicMaterial({ color: 0xffd2a6 }),
-      Math.max(1, sockets.length * 12),
-    );
-    pins.count = sockets.length * 12;
-    pins.userData.netlink = sockets.flatMap((socket) => Array(12).fill(socket));
-    fileGroup.add(pins);
+    plates.count = sockets.length;
+    plates.userData.netlink = sockets;
+    fileGroup.add(plates);
     const socketVertices: number[] = [],
       socketPaths: string[] = [];
     for (let i = 0; i < sockets.length; i++) {
@@ -661,19 +657,7 @@ export function createSpaceScene() {
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
-      chips.setMatrixAt(i, dummy.matrix);
-      for (let side = 0; side < 4; side++)
-        for (let pin = 0; pin < 3; pin++) {
-          const offset = new T.Vector3(
-            0.72,
-            (pin - 1) * 0.35,
-            0,
-          ).applyAxisAngle(new T.Vector3(0, 0, 1), (side * Math.PI) / 2);
-          dummy.position.copy(pos).add(offset);
-          dummy.rotation.set(0, 0, (side * Math.PI) / 2);
-          dummy.updateMatrix();
-          pins.setMatrixAt(i * 12 + side * 3 + pin, dummy.matrix);
-        }
+      plates.setMatrixAt(i, dummy.matrix);
       const start = owner.pos.clone().setZ(0.5),
         mid = start.clone().lerp(pos, 0.5);
       mid.y -= 1.5;

@@ -71,7 +71,7 @@ test("kernel-facing classification leaves USERSOCK and other socket families unc
   expect(isKernelNetlink(null)).toBe(false);
 });
 
-test("traffic creates directional chip routes once, accumulates totals and expires after the last observation", () => {
+test("traffic creates directional plate routes once, accumulates totals and expires after the last observation", () => {
   const fd = endpoint("1");
   const data = store([relation(fd)]);
   expect(data.recentNetlink.entries.size).toBe(0);
@@ -137,7 +137,7 @@ test("shared relations and duplicate FDs normalize owners without duplicating tr
   expect(owned.holders).toHaveLength(3);
 });
 
-test("file and chip positions share collision-free slots and survive structural updates", () => {
+test("file and plate positions share collision-free slots and survive structural updates", () => {
   const fd = endpoint("1"),
     data = store([relation(fd)]);
   data.ingestActivity(
@@ -159,12 +159,12 @@ test("file and chip positions share collision-free slots and survive structural 
     10,
   );
   const filePosition = [...data.filePositions.values()][0],
-    chipPosition = [...data.netlinkPositions.values()][0];
-  expect(chipPosition.z).toBeLessThan(0);
-  expect(chipPosition).not.toEqual(filePosition);
+    platePosition = [...data.netlinkPositions.values()][0];
+  expect(platePosition.z).toBeLessThan(0);
+  expect(platePosition).not.toEqual(filePosition);
   data.replaceSnapshot(data.snapshot, false, 20);
   expect([...data.filePositions.values()][0]).toEqual(filePosition);
-  expect([...data.netlinkPositions.values()][0]).toEqual(chipPosition);
+  expect([...data.netlinkPositions.values()][0]).toEqual(platePosition);
 });
 
 test("socket closure retains recent traffic, while FD and PID reuse do not inherit totals", () => {
@@ -271,7 +271,7 @@ test("per-owner and total retention limits evict the least recently observed soc
   ).toBe(false);
 });
 
-test("the scene suppresses generic netlink relations and renders body, pins and selectable paths", () => {
+test("the scene suppresses generic netlink relations and renders plates and selectable paths", () => {
   const fd = endpoint("1"),
     usersock = endpoint("2", 4),
     data = store([relation(fd), relation(usersock, 2)]);
@@ -296,7 +296,7 @@ test("the scene suppresses generic netlink relations and renders body, pins and 
   scene.refreshFiles(input());
   expect(scene.renderView().netlinkViews.size).toBe(1);
   const markers = scene.pickingView().objects.filter((o) => o.userData.netlink);
-  expect(markers.map((o) => o.userData.netlink.length)).toEqual([1, 12]);
+  expect(markers.map((o) => o.userData.netlink.length)).toEqual([1]);
   expect(
     scene
       .pickingView()

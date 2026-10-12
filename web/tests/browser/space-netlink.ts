@@ -118,9 +118,9 @@ export async function checkNetlinkSpace(
   assert.equal(
     await evaluate("document.getElementById('details').hidden"),
     true,
-    "process exit clears chip selection",
+    "process exit clears plate selection",
   );
   console.log(
-    "Netlink browser checks passed: chips, picking, directions, totals, USERSOCK, filtering, stable layout, expiry.",
+    "Netlink browser checks passed: plates, picking, directions, totals, USERSOCK, filtering, stable layout, expiry.",
   );
 }
