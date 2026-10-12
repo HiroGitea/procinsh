@@ -36,12 +36,11 @@ export interface NetlinkSocketInfo {
   holders: FdEndpoint[];
   label: string;
 }
-export interface RecentNetlinkSocket extends NetlinkSocketInfo {
+export interface NetlinkSocketStats extends NetlinkSocketInfo {
   readBytes: number;
   writeBytes: number;
   readCount: number;
   writeCount: number;
-  last: number;
 }
 export interface RecentFile {
   id: string;
@@ -125,7 +124,7 @@ export interface FileView {
 }
 
 export interface NetlinkView {
-  socket: RecentNetlinkSocket;
+  socket: NetlinkSocketStats;
   pos: T.Vector3;
   curve: T.QuadraticBezierCurve3;
 }

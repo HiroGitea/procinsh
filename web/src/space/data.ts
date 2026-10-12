@@ -1,5 +1,5 @@
 // System SSE, observed state, retained activity, and plain layout coordinates.
-import { RecentNetlinkSockets, isKernelNetlink } from "./netlink.js";
+import { NetlinkSocketStore, isKernelNetlink } from "./netlink.js";
 import { Display } from "../shared/display.js";
 import {
   key,
@@ -284,7 +284,7 @@ export class SpaceDataStore {
   readonly cpuGlows = new Map<string, CpuGlow>();
   readonly edgeStats = new Map<string, EdgeStat>();
   readonly recentFiles = new RecentFiles();
-  readonly recentNetlink = new RecentNetlinkSockets();
+  readonly netlinkSockets = new NetlinkSocketStore();
   network = new Map<string, NetworkGroup>();
   networkPositions = new Map<string, Position>();
   filePositions = new Map<string, Position>();
@@ -349,7 +349,7 @@ export class SpaceDataStore {
       });
     }
     this.recentFiles.prune(now, live);
-    this.recentNetlink.sync(relations, now, live, this.suppressedSocketOwners);
+    this.netlinkSockets.sync(relations, live);
     this.network = networkGroups(relations);
     this.networkPositions = networkLayout(
       this.network,
@@ -369,7 +369,7 @@ export class SpaceDataStore {
     const resources = new Map<string, Pick<RecentFile, "process_id">>(
       this.recentFiles.entries,
     );
-    for (const [id, socket] of this.recentNetlink.entries)
+    for (const [id, socket] of this.netlinkSockets.entries)
       resources.set(id, { process_id: socket.endpoint.process_id });
     const positions = fileLayout(
       resources,
@@ -380,7 +380,7 @@ export class SpaceDataStore {
       [...positions].filter(([id]) => this.recentFiles.entries.has(id)),
     );
     this.netlinkPositions = new Map(
-      [...positions].filter(([id]) => this.recentNetlink.entries.has(id)),
+      [...positions].filter(([id]) => this.netlinkSockets.entries.has(id)),
     );
   }
 
@@ -411,7 +411,6 @@ export class SpaceDataStore {
       new Set(this.nodes.keys()),
     );
     const live = new Set(this.nodes.keys());
-    let netlinkChanged = this.recentNetlink.prune(now, live);
     const routes: ActivityRoute[] = [];
     for (const e of activity.files || []) {
       const id = fileKey(e);
@@ -442,9 +441,8 @@ export class SpaceDataStore {
       const owner =
         e.resource.kind === "socket" ? socketOwnerKey(e) : undefined;
       if (owner && this.suppressedSocketOwners.has(owner)) continue;
-      const netlink = this.recentNetlink.ingest(e, now, live);
+      const netlink = this.netlinkSockets.ingest(e, live);
       if (netlink) {
-        netlinkChanged ||= netlink.changed;
         if (netlink.observed && visible.has(key(e.process_id)))
           routes.push({
             kind: "netlink",
@@ -496,17 +494,13 @@ export class SpaceDataStore {
         );
       })
       .slice(-256);
-    if (filesChanged || netlinkChanged) this.layoutFiles();
-    return { now, filesChanged, netlinkChanged, routes, signals };
+    if (filesChanged) this.layoutFiles();
+    return { now, filesChanged, netlinkChanged: false, routes, signals };
   }
   pruneFiles(now = performance.now()) {
     const changed = this.recentFiles.prune(now, new Set(this.nodes.keys()));
-    const netlinkChanged = this.recentNetlink.prune(
-      now,
-      new Set(this.nodes.keys()),
-    );
-    if (changed || netlinkChanged) this.layoutFiles();
-    return changed || netlinkChanged;
+    if (changed) this.layoutFiles();
+    return changed;
   }
   start() {
     this.running = true;
@@ -553,7 +547,7 @@ export class SpaceDataStore {
     this.source = null;
     this.cpuGlows.clear();
     this.recentFiles.clear();
-    this.recentNetlink.clear();
+    this.netlinkSockets.clear();
     this.layoutFiles();
     this.events.reset();
   }

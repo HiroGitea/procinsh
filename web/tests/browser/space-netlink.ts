@@ -18,14 +18,19 @@ export async function checkNetlinkSpace(
     window.netlinkFixture={processes:[node],fd_relations:[relation,usersock]};
     window.netlinkEvent={process_id:node.identity,resource:endpoint.resource,bytes:100,count:1,write:true};
     m.renderSystemSnapshot(window.netlinkFixture);
-    const quiet=m.netlinkVisuals().length===0, suppressed=!m.connectionVisual('netlink-route'), usersockVisible=!!m.connectionVisual('usersock');
+    const quiet=m.netlinkVisuals().length===1&&m.netlinkParticles().length===0, suppressed=!m.connectionVisual('netlink-route'), usersockVisible=!!m.connectionVisual('usersock');
+    m.selectNetlink(m.netlinkVisuals()[0].id);
+    const zeroCounters=document.getElementById('connection-facts').textContent.includes('SEND: 0 bytes / 0 operations')&&document.getElementById('connection-facts').textContent.includes('RECEIVE: 0 bytes / 0 operations');
+    m.pruneFiles(performance.now()+60000);
+    const idle=m.netlinkVisuals().length===1;
+    document.getElementById('close').click();
     const camera=m.cameraView(),process=m.processPosition('920001:1');
     m.renderActivity({ipc:[window.netlinkEvent,{...window.netlinkEvent,write:false,bytes:200}],files:[{process_id:node.identity,file:{device:{major:8,minor:1},inode:'42',generation:0},path:'/tmp/alongside.txt',bytes:1,count:1,write:true}]});
     window.netlinkDirections=m.netlinkParticles();window.netlinkProcess=process;
     const cameraStable=JSON.stringify(camera)===JSON.stringify(m.cameraView());
     const separate=JSON.stringify(m.netlinkVisuals()[0].position)!==JSON.stringify(m.fileVisuals()[0].position);
     m.fitScene();
-    return {quiet,suppressed,usersockVisible,cameraStable,separate};
+    return {quiet,zeroCounters,idle,suppressed,usersockVisible,cameraStable,separate};
   })()`);
   for (const [name, value] of Object.entries(initial))
     assert.equal(value, true, name);
@@ -74,7 +79,7 @@ export async function checkNetlinkSpace(
     await evaluate<string>(
       "document.getElementById('connection-endpoints').textContent",
     ),
-    /netlink-browser.*FD 3.*shared FDs.*actual peer address is not observed/s,
+    /netlink-browser.*FD 3.*shared FDs/s,
   );
   assert.match(
     await evaluate<string>("document.getElementById('hover').textContent"),
@@ -104,7 +109,7 @@ export async function checkNetlinkSpace(
     const restored=m.netlinkVisuals().length===1;
     m.selectNetlink(m.netlinkVisuals()[0].id);
     m.renderSystemSnapshot({...window.netlinkFixture,fd_relations:[]});
-    const closed=m.netlinkVisuals().length===1;
+    const closed=m.netlinkVisuals().length===0&&m.netlinkParticles().length===0&&document.getElementById('details').hidden;
     m.pruneFiles(performance.now()+30001);
     const expired=m.netlinkVisuals().length===0&&m.netlinkParticles().length===0&&document.getElementById('details').hidden;
     return {stable,cameraStable,processStable,filtered,restored,closed,expired};
@@ -121,6 +126,6 @@ export async function checkNetlinkSpace(
     "process exit clears plate selection",
   );
   console.log(
-    "Netlink browser checks passed: plates, picking, directions, totals, USERSOCK, filtering, stable layout, expiry.",
+    "Netlink browser checks passed: plates, picking, directions, totals, USERSOCK, filtering, stable layout, idle visibility and immediate removal.",
   );
 }

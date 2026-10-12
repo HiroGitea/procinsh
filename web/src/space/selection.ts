@@ -10,7 +10,7 @@ import {
 export { findNearestRegion };
 import type {
   RecentFile,
-  RecentNetlinkSocket,
+  NetlinkSocketStats,
   NetworkGroup,
   ConnectionPick,
   PickResult,
@@ -71,7 +71,7 @@ export class SpaceSelection implements SelectionState, HoverState {
 // written by scene.ts; narrow at the boundary instead of leaking it into UI state.
 interface PickData {
   files?: RecentFile[];
-  netlink?: RecentNetlinkSocket[];
+  netlink?: NetlinkSocketStats[];
   netlinkPaths?: string[];
   filePaths?: string[];
   network?: NetworkGroup[];
