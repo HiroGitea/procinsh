@@ -95,13 +95,10 @@ export function createSpaceDetails(
     $("process-details").hidden = true;
     $("connection-details").hidden = false;
     $("connection-label").textContent = socket.label;
-    $("connection-state").textContent = "Kernel-facing Netlink interface";
+    $("connection-state").textContent = "";
     $("connection-facts").textContent =
       `Observed SEND: ${socket.writeBytes} bytes / ${socket.writeCount} operations · RECEIVE: ${socket.readBytes} bytes / ${socket.readCount} operations`;
-    const note = document.createElement("p");
-    note.textContent =
-      "The plate represents a kernel-facing Netlink interface. The actual peer address is not observed.";
-    const children: HTMLElement[] = [endpoint(socket.endpoint, "OWNER"), note];
+    const children: HTMLElement[] = [endpoint(socket.endpoint, "OWNER")];
     for (const holder of socket.holders)
       if (
         holder.process_id.pid !== socket.endpoint.process_id.pid ||
@@ -182,6 +179,7 @@ export function createSpaceDetails(
     );
     $("details").hidden = !active;
     if (!active) return;
+    $("connection-state").hidden = !!selectedNetlink;
     $("connection-kind").textContent = selectedNetlink
       ? "SELECTED NETLINK SOCKET"
       : selectedFile
