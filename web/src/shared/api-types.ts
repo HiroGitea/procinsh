@@ -131,14 +131,6 @@ export interface SmapsEntry extends MemoryMap {
   rss_bytes: number | null;
   pss_bytes: number | null;
 }
-export interface MemoryRead {
-  process_id: ProcessId;
-  address: string;
-  requested_length: number;
-  bytes: number[];
-  partial: boolean;
-  captured_at: number;
-}
 export interface ThreadObservation {
   tid: number;
   name: string;
