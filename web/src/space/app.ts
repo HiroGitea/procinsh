@@ -227,7 +227,7 @@ let lastFilePrune = 0;
 
 function sceneInput(): SceneInput {
   return {
-    snapshot: data.snapshot,
+    snapshot: data.displaySnapshot,
     nodes: data.nodes,
     network: data.network,
     networkPositions: data.networkPositions,
@@ -241,7 +241,7 @@ function sceneInput(): SceneInput {
 function detailsInput(): DetailsInput {
   return {
     nodes: data.nodes,
-    snapshot: data.snapshot,
+    snapshot: data.displaySnapshot,
     network: data.network,
     edgeStats: data.edgeStats,
     files: data.recentFiles.entries,
@@ -260,7 +260,7 @@ function retainSelection() {
   selection.retain({
     processes: new Set(data.nodes.keys()),
     connections: new Set(
-      data.snapshot.fd_relations
+      data.displaySnapshot.fd_relations
         .filter((e) => !isKernelNetlink(e.socket))
         .map((e) => e.id),
     ),
@@ -270,7 +270,10 @@ function retainSelection() {
   });
 }
 function retainParticles() {
-  renderer.retainParticles(new Set(data.network.keys()));
+  renderer.retainParticles(
+    new Set(data.network.keys()),
+    data.suppressedSocketOwners,
+  );
 }
 function rebuildScene() {
   scene.rebuild(sceneInput(), selection.process);

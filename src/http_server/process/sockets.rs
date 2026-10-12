@@ -10,7 +10,9 @@
 //! | [`parse_unix`] | `pub(super)` | `fn parse_unix(text: &`[`str`]`) -> `[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>` |
 //! | [`unix_diag`] | `pub(super)` | `fn unix_diag(deadline: `[`Instant`]`) -> `[`Result`]`<`[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>>` |
 
-use crate::http_server::socket_types::{SocketProtocol, SocketState, SocketType};
+use crate::http_server::socket_types::{
+    SocketConnectionStatus, SocketProtocol, SocketState, SocketType,
+};
 // Visibility is scoped to the consumers of the parent process façade.
 use anyhow::{Context, Result, bail, ensure};
 use std::{
@@ -32,6 +34,30 @@ pub(in crate::http_server) struct SocketInfo {
     pub(in crate::http_server) remote: Option<SocketAddr>,
     pub(in crate::http_server) path: Option<String>,
     pub(in crate::http_server) peer_inode: Option<u64>,
+}
+
+impl SocketInfo {
+    /// Preserve direct observations; table fallbacks only confirm positive facts.
+    /// CLOSE, zero addresses, and UNIX state names never prove ENOTCONN.
+    pub(in crate::http_server) fn connection_status(
+        &self,
+        observed: SocketConnectionStatus,
+    ) -> SocketConnectionStatus {
+        if observed != SocketConnectionStatus::Unknown {
+            observed
+        } else if self.state == Some(SocketState::Listen) {
+            SocketConnectionStatus::Listening
+        } else if self.peer_inode.is_some()
+            || (self.protocol.is_tcp_or_udp()
+                && self
+                    .remote
+                    .is_some_and(|remote| remote.port() != 0 && !remote.ip().is_unspecified()))
+        {
+            SocketConnectionStatus::PeerPresent
+        } else {
+            SocketConnectionStatus::Unknown
+        }
+    }
 }
 
 pub(super) fn read_text(path: &str) -> Result<String> {
@@ -316,6 +342,36 @@ pub(super) fn unix_diag(deadline: Instant) -> Result<HashMap<u64, SocketInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn socket_connection_fallback_requires_positive_table_evidence() {
+        use crate::http_server::socket_types::AddressFamily;
+        use SocketConnectionStatus::*;
+        let mut info = SocketInfo {
+            protocol: SocketProtocol::Udp {
+                family: AddressFamily::Ipv4,
+            },
+            state: Some(SocketState::Close),
+            local: None,
+            remote: Some("0.0.0.0:0".parse().unwrap()),
+            path: None,
+            peer_inode: None,
+        };
+        assert_eq!(info.connection_status(Unknown), Unknown);
+        info.remote = Some("127.0.0.1:54321".parse().unwrap());
+        assert_eq!(info.connection_status(Unknown), PeerPresent);
+        assert_eq!(info.connection_status(Unconnected), Unconnected);
+        info.state = Some(SocketState::Listen);
+        assert_eq!(info.connection_status(Unknown), Listening);
+        assert_eq!(info.connection_status(Unconnected), Unconnected);
+        info.protocol = SocketProtocol::Unix {
+            socket_type: SocketType::Dgram,
+        };
+        info.state = Some(SocketState::Connected);
+        assert_eq!(info.connection_status(Unknown), Unknown);
+        info.peer_inode = Some(42);
+        assert_eq!(info.connection_status(Unknown), PeerPresent);
+    }
 
     #[test]
     fn parses_ipv4_ipv6_and_mapped_addresses() {

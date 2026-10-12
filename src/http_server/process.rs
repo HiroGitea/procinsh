@@ -14,6 +14,7 @@
 //! | [`SubscribeError`] | `pub(super)` | `enum `[`SubscribeError`] |
 //! | [`SocketInfo`] | `pub(super)` | `struct `[`SocketInfo`] |
 //! | [`SocketMetadataReader`] | `pub(super)` | `struct `[`SocketMetadataReader`] |
+//! | [`SocketMetadata`] | `pub(super)` | `struct `[`SocketMetadata`] |
 //!
 //! ## Constants
 //!
@@ -69,7 +70,7 @@ pub(super) use resources::{
     memory_maps, observation, socket_text, threads, ticks_per_second, timestamp_ms,
     unix_socket_peers, unix_sockets,
 };
-pub(super) use socket_metadata::{SocketMetadataReader, additional_sockets};
+pub(super) use socket_metadata::{SocketMetadata, SocketMetadataReader, additional_sockets};
 pub(super) use sockets::SocketInfo;
 #[cfg(test)]
 mod test_support;

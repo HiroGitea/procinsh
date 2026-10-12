@@ -15,7 +15,7 @@ impl Drop for Child {
 fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
     use crate::http_server::{
         process,
-        socket_types::{AddressFamily, SocketProtocol},
+        socket_types::{AddressFamily, SocketConnectionStatus, SocketProtocol},
     };
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     let definitions = [
@@ -108,11 +108,72 @@ fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
         assert_eq!(relation.socket.as_ref().unwrap().protocol, protocol);
         assert!(relation.label.starts_with(&protocol.to_string()));
         assert_eq!(entry["protocol"], serde_json::to_value(protocol).unwrap());
+        let expected = if metadata_available {
+            if matches!(protocol, SocketProtocol::Other { family: 16, .. }) {
+                SocketConnectionStatus::PeerPresent
+            } else {
+                SocketConnectionStatus::Unconnected
+            }
+        } else {
+            SocketConnectionStatus::Unknown
+        };
+        assert_eq!(relation.endpoint.connection_status, Some(expected));
+        assert_eq!(
+            entry["connection_status"],
+            serde_json::to_value(expected).unwrap()
+        );
         assert!(entry["peers"].as_array().unwrap().is_empty());
         if protocol.is_tcp_or_udp() {
             assert!(relation.socket.as_ref().unwrap().state.is_none());
             assert!(entry["state"].is_null());
         }
+    }
+}
+
+#[test]
+fn socket_connection_status_is_retained_for_shared_listening_and_unconnected_fds() {
+    use crate::http_server::{process, socket_types::SocketConnectionStatus};
+    use std::{
+        net::{TcpListener, UdpSocket},
+        os::fd::AsRawFd,
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener_duplicate = listener.try_clone().unwrap();
+    let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let udp_duplicate = udp.try_clone().unwrap();
+    let id = process::identity(std::process::id() as i32).unwrap();
+    if !process::metadata_available(id, listener.as_raw_fd()) {
+        return;
+    }
+    let snapshot = snapshot::collect(&mut Default::default());
+    let fds = serde_json::to_value(process::fds(id).unwrap()).unwrap();
+    for (fd, expected) in [
+        (listener.as_raw_fd(), SocketConnectionStatus::Listening),
+        (udp.as_raw_fd(), SocketConnectionStatus::Unconnected),
+    ] {
+        let metadata = std::fs::metadata(format!("/proc/self/fd/{fd}")).unwrap();
+        use std::os::unix::fs::MetadataExt;
+        let relation = snapshot
+            .fd_relations
+            .iter()
+            .find(|r| r.endpoint.process_id == id && r.endpoint.resource.inode == metadata.ino())
+            .unwrap();
+        assert_eq!(relation.endpoint.connection_status, Some(expected));
+        assert_eq!(relation.endpoint.fd_count, 2);
+    }
+    for (fd, expected) in [
+        (listener.as_raw_fd(), "listening"),
+        (listener_duplicate.as_raw_fd(), "listening"),
+        (udp.as_raw_fd(), "unconnected"),
+        (udp_duplicate.as_raw_fd(), "unconnected"),
+    ] {
+        let entry = fds["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["fd"] == fd)
+            .unwrap();
+        assert_eq!(entry["connection_status"], expected);
     }
 }
 

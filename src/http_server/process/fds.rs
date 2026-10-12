@@ -14,7 +14,9 @@ use super::{
     sockets::{self, SocketInfo},
     timestamp_ms,
 };
-use crate::http_server::socket_types::{AddressFamily, SocketProtocol, SocketState, SocketType};
+use crate::http_server::socket_types::{
+    AddressFamily, SocketConnectionStatus, SocketProtocol, SocketState, SocketType,
+};
 use crate::http_server::socket_types::{FdAccess, FdKind, InetAddress};
 use anyhow::Result;
 use serde::Serialize;
@@ -50,6 +52,8 @@ pub(super) struct Descriptor {
     pub(super) access: FdAccess,
     pub(super) protocol: Option<SocketProtocol>,
     pub(super) state: Option<SocketState>,
+    /// Socket listener/peer availability; null for non-socket descriptors.
+    pub(super) connection_status: Option<SocketConnectionStatus>,
     pub(super) local: Option<InetAddress>,
     pub(super) remote: Option<InetAddress>,
     pub(super) path: Option<String>,
@@ -353,6 +357,8 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
             access: access(mode),
             protocol: None,
             state: None,
+            connection_status: (key.kind == FdKind::Socket)
+                .then_some(SocketConnectionStatus::Unknown),
             local: None,
             remote: None,
             path: None,
@@ -386,33 +392,41 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
         socket_table(id.pid, &needed, deadline, &mut warnings)
     };
     let mut metadata_reader = super::SocketMetadataReader::new(id);
-    let mut unavailable = 0;
+    let mut metadata = HashMap::new();
     for entry in &entries {
-        let known = sockets.get(&entry.key.inode);
-        if entry.kind != FdKind::Socket
-            || known.is_some_and(|info| {
-                !matches!(
-                    info.protocol,
-                    SocketProtocol::Other {
-                        socket_type: None,
-                        ..
-                    }
-                )
-            })
-        {
+        if entry.kind != FdKind::Socket {
             continue;
         }
         if Instant::now() >= deadline {
-            warnings.push("Socket kind scan time limit reached. Showing partial results.".into());
+            warnings
+                .push("Socket metadata scan time limit reached. Showing partial results.".into());
             break;
         }
-        let protocol = entry
-            .socket_device
-            .and_then(|device| metadata_reader.read(entry.fd, device, entry.key.inode).ok());
-        if let Some(protocol) = protocol {
+        if let Some(device) = entry.socket_device {
+            let key = (device, entry.key.inode);
+            if !metadata.contains_key(&key)
+                && let Ok(observed) = metadata_reader.read(entry.fd, device, entry.key.inode)
+                && observed.has_observation()
+            {
+                metadata.insert(key, observed);
+            }
+        }
+    }
+    for (&(_, inode), observed) in &metadata {
+        if let Some(protocol) = observed.protocol {
             sockets
-                .entry(entry.key.inode)
-                .and_modify(|info| info.protocol = protocol)
+                .entry(inode)
+                .and_modify(|info| {
+                    if matches!(
+                        info.protocol,
+                        SocketProtocol::Other {
+                            socket_type: None,
+                            ..
+                        }
+                    ) {
+                        info.protocol = protocol;
+                    }
+                })
                 .or_insert(SocketInfo {
                     protocol,
                     state: None,
@@ -421,14 +435,31 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
                     path: None,
                     peer_inode: None,
                 });
-        } else if !sockets.contains_key(&entry.key.inode) {
-            unavailable += 1;
         }
+    }
+    let mut unavailable = 0;
+    let mut unknown_statuses = 0;
+    for entry in &mut entries {
+        if entry.kind != FdKind::Socket {
+            continue;
+        }
+        let observed = entry
+            .socket_device
+            .and_then(|device| metadata.get(&(device, entry.key.inode)))
+            .map_or(SocketConnectionStatus::Unknown, |m| m.connection_status);
+        let info = sockets.get(&entry.key.inode);
+        let status = info.map_or(observed, |info| info.connection_status(observed));
+        entry.connection_status = Some(status);
+        unavailable += usize::from(info.is_none());
+        unknown_statuses += usize::from(status == SocketConnectionStatus::Unknown);
     }
     if unavailable > 0 {
         warnings.push(format!(
             "Socket type unavailable for {unavailable} FDs (closed, unsupported, or access denied)."
         ));
+    }
+    if unknown_statuses > 0 {
+        warnings.push(format!("Socket connection status unavailable for {unknown_statuses} FDs (closed, unobserved, unsupported, or access denied)."));
     }
     let mut reversed: HashMap<InetKey, Vec<u64>> = HashMap::new();
     for (&inode, info) in &sockets {

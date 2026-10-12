@@ -366,6 +366,7 @@ mod tests {
                     },
                     kind: crate::http_server::socket_types::FdKind::Pipe,
                     access: crate::http_server::socket_types::FdAccess::Read,
+                    connection_status: None,
                 },
                 peer: None,
                 label: "pipe".into(),
@@ -374,6 +375,11 @@ mod tests {
                 shared: false,
             })
             .collect();
+        initial.fd_relations[2].endpoint.kind = crate::http_server::socket_types::FdKind::Socket;
+        initial.fd_relations[2].endpoint.resource.kind =
+            crate::http_server::resource::IpcKind::Socket;
+        initial.fd_relations[2].endpoint.connection_status =
+            Some(crate::http_server::socket_types::SocketConnectionStatus::Unknown);
         let mut delivery = SnapshotEncoder::default();
         let full = payload(&mut delivery, Arc::new(initial.clone()), false, now);
         assert_eq!(full["kind"], "full");
@@ -386,6 +392,9 @@ mod tests {
         current.processes[0].maps.push(added_map);
         current.processes[0].maps_epoch = 2;
         current.fd_relations[0].label = "changed".into();
+        // A status-only change must upsert a relation even when its label is stable.
+        current.fd_relations[2].endpoint.connection_status =
+            Some(crate::http_server::socket_types::SocketConnectionStatus::Unconnected);
         current.fd_relations.remove(1);
         let mut added_relation = current.fd_relations[0].clone();
         added_relation.id = "new-edge".into();

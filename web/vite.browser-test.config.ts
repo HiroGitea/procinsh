@@ -18,6 +18,12 @@ const networkVisuals = renderer.networkVisuals,
   netlinkVisuals = renderer.netlinkVisuals,
   netlinkParticles = renderer.netlinkParticles;
 const cameraView = camera.view;
+const socketVisibilityState = () => ({
+  raw: data.snapshot.fd_relations.length,
+  shown: scene.renderView().edgeViews.map(view => view.e.id),
+  selected: selection.connection,
+  particles: renderer.socketParticles(),
+});
 function processPosition(id: string) {
   const pos = data.nodes.get(id)?.pos;
   return pos && { x: pos.x, y: pos.y, z: pos.z };
@@ -30,6 +36,7 @@ function connectionVisual(id: string) {
   };
 }
 export {
+  socketVisibilityState,
   selectNetlink,
   netlinkVisuals,
   netlinkParticles,
@@ -73,6 +80,16 @@ export default defineConfig((environment) =>
         enforce: "pre",
         transform(source, id) {
           const inspection = inspections.get(id);
+          if (
+            inspection &&
+            id === resolve(import.meta.dirname, "src/space/renderer.ts")
+          ) {
+            source = source.replace(
+              "    networkParticles,",
+              `    networkParticles,
+    socketParticles: () => particles.filter(p => p.socketOwnerKey).map(p => ({connectionId:p.connectionId, socketOwnerKey:p.socketOwnerKey})),`,
+            );
+          }
           return inspection
             ? { code: `${source}\n${inspection}`, map: null }
             : undefined;

@@ -2,6 +2,7 @@
 import { Display } from "../shared/display.js";
 import type {
   ProcessId,
+  FdEndpoint,
   SocketEndpoint,
   FdRelation,
   IpcIdentity,
@@ -31,6 +32,24 @@ export function connectionState(
     return "No destination set";
   return "Unknown destination";
 }
+
+/** Positive exclusion only: missing/unknown observations remain visible. */
+export function excludedSocket(endpoint: FdEndpoint | null) {
+  return (
+    endpoint?.resource.kind === "socket" &&
+    (endpoint.connection_status === "listening" ||
+      endpoint.connection_status === "unconnected")
+  );
+}
+
+export function isSpaceRelationVisible(relation: FdRelation) {
+  return !excludedSocket(relation.endpoint) && !excludedSocket(relation.peer);
+}
+
+/** Process identity plus the complete resource identity, shared with IPC events. */
+export const socketOwnerKey = (
+  endpoint: Pick<FdEndpoint, "process_id" | "resource">,
+) => JSON.stringify([key(endpoint.process_id), ipcKey(endpoint.resource)]);
 
 export function userColor(uid: number | null | undefined) {
   if (uid === null || uid === undefined) return "#889299";

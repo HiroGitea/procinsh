@@ -274,6 +274,7 @@ export interface FileDescriptors extends ProcessDetail {
     access: FdAccess;
     protocol: SocketProtocol | null;
     state: SocketState | null;
+    connection_status?: SocketConnectionStatus | null;
     local: InetAddress | null;
     remote: InetAddress | null;
     path: string | null;
@@ -308,7 +309,11 @@ export interface FdEndpoint {
   resource: IpcIdentity;
   kind: FdKind;
   access: FdAccess;
+  /** Absent on older servers; null for non-socket descriptors. */
+  connection_status?: SocketConnectionStatus | null;
 }
+export type SocketConnectionStatus =
+  "listening" | "unconnected" | "peer_present" | "unknown";
 export interface SocketEndpoint {
   protocol: SocketProtocol;
   /** Null when only the kind was observed. Peer identification is independent. */

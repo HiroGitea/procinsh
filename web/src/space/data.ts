@@ -1,7 +1,16 @@
 // System SSE, observed state, retained activity, and plain layout coordinates.
 import { RecentNetlinkSockets, isKernelNetlink } from "./netlink.js";
 import { Display } from "../shared/display.js";
-import { key, remoteLabel, ipcKey, fileLabel, layoutMaps } from "./model.js";
+import {
+  key,
+  remoteLabel,
+  ipcKey,
+  fileLabel,
+  layoutMaps,
+  excludedSocket,
+  isSpaceRelationVisible,
+  socketOwnerKey,
+} from "./model.js";
 export { layoutMaps };
 import { treeLayout, stableLayout } from "./process-layout.js";
 import type {
@@ -268,6 +277,9 @@ const quietEvents: DataEvents = {
 /** Owns the system subscription, observations, retained activity, and layout. */
 export class SpaceDataStore {
   snapshot: SystemSnapshot = { processes: [], fd_relations: [] };
+  /** Raw observations remain in snapshot; this view is used throughout SPACE. */
+  displaySnapshot: SystemSnapshot = this.snapshot;
+  readonly suppressedSocketOwners = new Set<string>();
   readonly nodes = new Map<string, PlacedProcess>();
   readonly cpuGlows = new Map<string, CpuGlow>();
   readonly edgeStats = new Map<string, EdgeStat>();
@@ -295,25 +307,37 @@ export class SpaceDataStore {
     now = performance.now(),
   ) {
     this.snapshot = snapshot;
+    const relations = snapshot.fd_relations.filter(isSpaceRelationVisible);
+    this.displaySnapshot = { ...snapshot, fd_relations: relations };
+    this.suppressedSocketOwners.clear();
+    const visibleOwners = new Set<string>();
+    const excludedOwners = new Set<string>();
+    for (const relation of snapshot.fd_relations) {
+      const shown = isSpaceRelationVisible(relation);
+      for (const endpoint of [relation.endpoint, relation.peer]) {
+        if (!endpoint || endpoint.resource.kind !== "socket") continue;
+        const owner = socketOwnerKey(endpoint);
+        if (excludedSocket(endpoint)) this.suppressedSocketOwners.add(owner);
+        (shown ? visibleOwners : excludedOwners).add(owner);
+      }
+    }
+    // A relation removed because of its other endpoint must not create a port fallback.
+    for (const owner of excludedOwners)
+      if (!visibleOwners.has(owner)) this.suppressedSocketOwners.add(owner);
     const live = new Set(snapshot.processes.map((p) => key(p.identity)));
     for (const id of this.nodes.keys())
       if (!live.has(id)) this.cpuGlows.delete(id);
-    const edges = new Set(snapshot.fd_relations.map((e) => e.id));
+    const edges = new Set(relations.map((e) => e.id));
     for (const id of this.edgeStats.keys())
       if (!edges.has(id)) this.edgeStats.delete(id);
     const layout = rearrange
-      ? treeLayout(
-          snapshot.processes,
-          undefined,
-          undefined,
-          snapshot.fd_relations,
-        )
+      ? treeLayout(snapshot.processes, undefined, undefined, relations)
       : stableLayout(
           snapshot.processes,
           this.positions(),
           undefined,
           undefined,
-          snapshot.fd_relations,
+          relations,
         );
     this.nodes.clear();
     for (const p of snapshot.processes) {
@@ -325,8 +349,8 @@ export class SpaceDataStore {
       });
     }
     this.recentFiles.prune(now, live);
-    this.recentNetlink.sync(snapshot.fd_relations, now, live);
-    this.network = networkGroups(snapshot.fd_relations);
+    this.recentNetlink.sync(relations, now, live, this.suppressedSocketOwners);
+    this.network = networkGroups(relations);
     this.networkPositions = networkLayout(
       this.network,
       this.positions(),
@@ -365,7 +389,7 @@ export class SpaceDataStore {
     const grouped = new Set(
       [...this.network.values()].flatMap((g) => g.members.map((e) => e.id)),
     );
-    return this.snapshot.fd_relations.filter((e) => {
+    return this.displaySnapshot.fd_relations.filter((e) => {
       if (
         !visible.has(key(e.endpoint.process_id)) ||
         !this.nodes.has(key(e.endpoint.process_id))
@@ -415,6 +439,9 @@ export class SpaceDataStore {
     }
     const relations = this.visibleRelations(visible);
     for (const e of activity.ipc || []) {
+      const owner =
+        e.resource.kind === "socket" ? socketOwnerKey(e) : undefined;
+      if (owner && this.suppressedSocketOwners.has(owner)) continue;
       const netlink = this.recentNetlink.ingest(e, now, live);
       if (netlink) {
         netlinkChanged ||= netlink.changed;
@@ -434,7 +461,12 @@ export class SpaceDataStore {
       const candidates = exact.length ? exact : links;
       if (candidates.length !== 1) {
         if (this.nodes.has(key(e.process_id)))
-          routes.push({ kind: "port", id: key(e.process_id), count: e.count });
+          routes.push({
+            kind: "port",
+            id: key(e.process_id),
+            count: e.count,
+            socketOwnerKey: owner,
+          });
         continue;
       }
       const relation = candidates[0],
@@ -446,6 +478,7 @@ export class SpaceDataStore {
       });
       routes.push({
         kind: "connection",
+        socketOwnerKey: owner,
         id: relation.id,
         direction: edgeDirection(relation, e),
         count: e.count,
