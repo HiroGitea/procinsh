@@ -23,6 +23,7 @@ import type { FdEndpoint } from "../shared/api-types.js";
 const PARENT_LINE_WIDTH = 0.6;
 const PARENT_LINE_Z = 0.06;
 const PARENT_LINE_BRIGHTNESS = 0.22;
+const PROCESS_HEIGHT = 8;
 const SOCKET_HEIGHT = 4;
 
 // The lower endpoint attaches to +X regardless of the snapshot's orientation.
@@ -227,7 +228,7 @@ export function createSpaceScene() {
     const visible = input.visible;
     hullIds = [...visible];
     hull = new T.InstancedMesh(
-      new T.BoxGeometry(PROCESS_SIDE, PROCESS_SIDE, 8),
+      new T.BoxGeometry(PROCESS_SIDE, PROCESS_SIDE, PROCESS_HEIGHT),
       new T.MeshBasicMaterial({
         color: 0x4bd6bf,
         transparent: true,
@@ -354,7 +355,7 @@ export function createSpaceScene() {
       const n = nodes.get(hullIds[i])!,
         p = n.pos,
         userColors = processColors(n);
-      dummy.position.set(p.x, p.y, 4);
+      dummy.position.set(p.x, p.y, PROCESS_HEIGHT / 2);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       hull.setMatrixAt(i, dummy.matrix);
@@ -462,7 +463,7 @@ export function createSpaceScene() {
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       markers.setMatrixAt(i, dummy.matrix);
-      const start = owner.pos.clone().setZ(SOCKET_HEIGHT),
+      const start = owner.pos.clone().setZ(PROCESS_HEIGHT),
         mid = start.clone().lerp(pos, 0.5);
       mid.z += 2;
       const curve = new T.QuadraticBezierCurve3(start, mid, pos);

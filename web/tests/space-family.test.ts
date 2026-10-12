@@ -262,7 +262,7 @@ test("partially shared trunks only brighten the sections on the selected route",
   }
 });
 
-test("socket curves stay at the middle of process blocks while pipe curves stay low", () => {
+test("process sockets attach at mid-height, network connections at the roof and pipes low", () => {
   const scene = createSpaceScene();
   try {
     const data = input([process(1, 0, 0), process(2, 6, 10)]);
@@ -336,10 +336,11 @@ test("socket curves stay at the middle of process blocks while pipe curves stay 
     data.networkPositions = new Map([["network", { x: 3, y: -3, z: 12 }]]);
     scene.rebuild(data, null);
     const network = scene.renderView().networkViews[0];
-    assert.equal(network.curve.v0.z, 4);
+    const owner = data.nodes.get("1:1")!;
+    assert.deepEqual(network.curve.v0.toArray(), [owner.pos.x, owner.pos.y, 8]);
     assert.deepEqual(network.pos.toArray(), [3, -3, 12]);
     assert.equal(network.curve.v2.z, 12);
-    assert.ok(network.curve.getPoints(24).every((point) => point.z >= 4));
+    assert.ok(network.curve.getPoints(24).every((point) => point.z >= 8));
     assert.equal(
       scene.renderView().edgeViews.find((view) => view.e.id === "external")!
         .curve,
