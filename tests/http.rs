@@ -158,11 +158,14 @@ fn binary_serves_assets_process_api_and_sse_and_shuts_down() {
     }
     let list = server.get("/list").2;
     let process = server.get("/process/1").2;
+    let space = server.get("/space").2;
     assert!(list.contains("id=\"explorer\""));
     assert!(!list.contains("id=\"inspector\""));
     assert!(process.contains("id=\"inspector\""));
     assert!(!process.contains("id=\"explorer\""));
-    assert_eq!(server.get("/").2, list);
+    assert!(space.contains("id=\"world\""));
+    assert!(!space.contains("id=\"explorer\""));
+    assert_eq!(server.get("/").2, space);
     for path in [
         "/app.js",
         "/display.js",
