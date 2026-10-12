@@ -619,6 +619,31 @@ tail -f /tmp/procinsh-chrome-load.log
 kill -TERM "$(cat /tmp/procinsh-chrome-load.pid)"
 ```
 
+### 接続先が不明なソケットの診断
+
+`scripts/diagnose_socket_peers.py` は `/api/system/events` のスナップショットから、相手 FD も既知の TCP/UDP 接続先もないソケットを選び、`pidfd_getfd` の一時複製に `getsockname`・`getpeername` を実行します。Linux x86-64 / aarch64 と Python 3.9 以降が必要です。対象への ptrace アクセスが必要で、一般ユーザーで `EPERM` になる場合はホスト上で sudo を使います。
+
+```sh
+sudo python3 scripts/diagnose_socket_peers.py --url http://100.90.5.16:9090 \
+  > /tmp/procinsh-socket-peers.jsonl
+
+# 指定プロセスの全ソケット、または特定 FD
+sudo python3 scripts/diagnose_socket_peers.py --pid 1234
+sudo python3 scripts/diagnose_socket_peers.py --pid 1234 --fd 7
+
+# 保存済み system snapshot の JSON から選択
+sudo python3 scripts/diagnose_socket_peers.py --snapshot /tmp/system-snapshot.json
+
+# 実ソケットによる診断スクリプトの検証（ホスト上で実行）
+python3 tests/diagnose-socket-peers.py
+```
+
+標準出力はソケットごとの JSON Lines、標準エラーは集計と権限不足の案内です。PID の開始時刻とソケットの device/inode を照合し、再利用・終了・権限不足は個別のエラーとして出力します。対象プロセスの attach/停止、ソケットの送受信、フラグ変更、`SO_ERROR` の読み取りは行いません。
+
+`classification` は `listener`（待受）、`unconnected`（`ENOTCONN`）、`peer_address_found`（接続先アドレスあり）、`unnamed_unix_peer`（名前なし UNIX）、`netlink_default_peer`（Netlink の既定送信先）、`peer_query_failed`（照会失敗）です。Netlink の port ID 0 はカーネルを表し、その他の port ID はプロセス PID と同一とは限りません。`getpeername` は `sendto` / `sendmsg` ごとの送信先を示さないため、未接続 UDP などの通信相手はこの診断だけでは分かりません。
+
+UNIX ソケットでは `SO_PEERCRED` も出力します。これは接続・listen・socketpair 時点の資格情報であり、現在の FD 所有者ではありません。待受ソケットの資格情報や PID 0/-1 は相手プロセスの特定には使えません。名前なしソケットの `getpeername` は相手の inode を返しません。
+
 ### 実機センサーテスト
 
 BPF の観測権限（`CAP_BPF`・`CAP_PERFMON` など）と対応するカーネルのフックを利用できるサーバーに対して実行します。CPU/IPC とファイル I/O を検証します。センサー利用不可を成功扱いにはしません。
