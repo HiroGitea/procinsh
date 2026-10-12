@@ -166,7 +166,7 @@ test("a status-only delta clears activity and restores a socket when its peer be
   store.stop();
 });
 
-test("Netlink traffic survives closure but is removed immediately when explicitly excluded", () => {
+test("Netlink sockets are removed immediately on closure or explicit exclusion", () => {
   const store = new SpaceDataStore();
   const relation = {
     ...socketRelation("peer_present"),
@@ -186,9 +186,12 @@ test("Netlink traffic survives closure but is removed immediately when explicitl
     undefined,
     100,
   );
-  expect(store.recentNetlink.entries.size).toBe(1);
+  expect(store.netlinkSockets.entries.size).toBe(1);
   store.replaceSnapshot({ ...snapshot, fd_relations: [] }, false, 200);
-  expect(store.recentNetlink.entries.size).toBe(1);
+  expect(store.netlinkSockets.entries.size).toBe(0);
+  expect(store.netlinkPositions.size).toBe(0);
+  store.replaceSnapshot(snapshot, false, 250);
+  expect(store.netlinkSockets.entries.size).toBe(1);
   const excluded = {
     ...relation,
     endpoint: {
@@ -197,7 +200,7 @@ test("Netlink traffic survives closure but is removed immediately when explicitl
     },
   };
   store.replaceSnapshot({ ...snapshot, fd_relations: [excluded] }, false, 300);
-  expect(store.recentNetlink.entries.size).toBe(0);
+  expect(store.netlinkSockets.entries.size).toBe(0);
   expect(store.netlinkPositions.size).toBe(0);
   expect(
     store.ingestActivity(spaceActivity({ ipc: [activity(excluded)] })).routes,

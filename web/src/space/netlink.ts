@@ -1,4 +1,4 @@
-// Identify kernel-facing Netlink sockets and retain observed traffic per owner.
+// Track current kernel-facing Netlink sockets and traffic totals per owner.
 import { Display } from "../shared/display.js";
 import type {
   FdEndpoint,
@@ -7,7 +7,7 @@ import type {
   SocketEndpoint,
 } from "../shared/api-types.js";
 import { ipcKey, key, socketOwnerKey } from "./model.js";
-import type { RecentNetlinkSocket, NetlinkSocketInfo } from "./types.js";
+import type { NetlinkSocketStats, NetlinkSocketInfo } from "./types.js";
 
 /** USERSOCK retains ordinary socket rendering; other families are unaffected. */
 export function isKernelNetlink(socket: SocketEndpoint | null | undefined) {
@@ -22,7 +22,10 @@ export function isKernelNetlink(socket: SocketEndpoint | null | undefined) {
 const ownerKey = socketOwnerKey;
 
 /** Shared ownership is not a communication peer. Each owner gets its own entry. */
-function socketOwners(relations: readonly FdRelation[]) {
+function socketOwners(
+  relations: readonly FdRelation[],
+  live: ReadonlySet<string>,
+) {
   const resources = new Map<
     string,
     { socket: SocketEndpoint; endpoints: Map<string, FdEndpoint> }
@@ -39,7 +42,12 @@ function socketOwners(relations: readonly FdRelation[]) {
       relation.endpoint,
       relation.shared ? relation.peer : null,
     ]) {
-      if (!endpoint || ipcKey(endpoint.resource) !== resource) continue;
+      if (
+        !endpoint ||
+        !live.has(key(endpoint.process_id)) ||
+        ipcKey(endpoint.resource) !== resource
+      )
+        continue;
       group.endpoints.set(
         JSON.stringify([key(endpoint.process_id), endpoint.fd]),
         endpoint,
@@ -75,81 +83,47 @@ function socketOwners(relations: readonly FdRelation[]) {
   return owners;
 }
 
-/** Traffic survives socket closure for 30 seconds, but never process exit/reset. */
-export class RecentNetlinkSockets {
-  readonly entries = new Map<string, RecentNetlinkSocket>();
-  private owners = new Map<string, NetlinkSocketInfo>();
+/** Current snapshot sockets are visible even before any traffic is observed. */
+export class NetlinkSocketStore {
+  readonly entries = new Map<string, NetlinkSocketStats>();
+
   clear() {
     this.entries.clear();
-    this.owners.clear();
   }
-  sync(
-    relations: readonly FdRelation[],
-    now: number,
-    live: ReadonlySet<string>,
-    suppressed: ReadonlySet<string> = new Set(),
-  ) {
-    this.owners = socketOwners(relations);
-    for (const [id, entry] of this.entries) {
-      if (suppressed.has(id)) {
-        this.entries.delete(id);
-        continue;
-      }
-      const owner = this.owners.get(id);
-      if (owner) Object.assign(entry, owner);
+
+  /** Preserve counters for stable resource identities; remove absent owners immediately. */
+  sync(relations: readonly FdRelation[], live: ReadonlySet<string>) {
+    const owners = socketOwners(relations, live);
+    for (const id of this.entries.keys()) {
+      if (!owners.has(id)) this.entries.delete(id);
     }
-    this.prune(now, live);
-  }
-  prune(now: number, live: ReadonlySet<string>) {
-    let changed = false;
-    for (const [id, entry] of this.entries) {
-      if (
-        now - entry.last >= 30000 ||
-        !live.has(key(entry.endpoint.process_id))
-      ) {
-        this.entries.delete(id);
-        changed = true;
-      }
+    for (const [id, owner] of owners) {
+      const entry = this.entries.get(id);
+      if (entry) Object.assign(entry, owner);
+      else
+        this.entries.set(id, {
+          ...owner,
+          readBytes: 0,
+          writeBytes: 0,
+          readCount: 0,
+          writeCount: 0,
+        });
     }
-    return changed;
   }
-  /** Null means the current snapshot cannot classify this event as Netlink. */
-  ingest(event: IoActivity, now: number, live: ReadonlySet<string>) {
-    const owner = this.owners.get(ownerKey(event));
-    if (!owner) return null;
+
+  /** Events only update current sockets; they never create a plate. */
+  ingest(event: IoActivity, live: ReadonlySet<string>) {
+    const entry = this.entries.get(ownerKey(event));
+    if (!entry) return null;
     if (
       !live.has(key(event.process_id)) ||
       !(event.bytes > 0) ||
       !(event.count > 0)
-    )
-      return { id: owner.id, changed: false, observed: false };
-    let entry = this.entries.get(owner.id);
-    const changed = !entry;
-    if (!entry) {
-      const owned = [...this.entries.values()].filter(
-        (e) => key(e.endpoint.process_id) === key(event.process_id),
-      );
-      const victim =
-        owned.length >= 32
-          ? owned[0]
-          : this.entries.size >= 512
-            ? this.entries.values().next().value
-            : null;
-      if (victim) this.entries.delete(victim.id);
-      entry = {
-        ...owner,
-        last: now,
-        readBytes: 0,
-        writeBytes: 0,
-        readCount: 0,
-        writeCount: 0,
-      };
+    ) {
+      return { id: entry.id, observed: false };
     }
     entry[event.write ? "writeBytes" : "readBytes"] += event.bytes;
     entry[event.write ? "writeCount" : "readCount"] += event.count;
-    entry.last = now;
-    this.entries.delete(owner.id);
-    this.entries.set(owner.id, entry);
-    return { id: owner.id, changed, observed: true };
+    return { id: entry.id, observed: true };
   }
 }

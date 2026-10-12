@@ -6,7 +6,7 @@ import type {
   Position,
   NetworkGroup,
   RecentFile,
-  RecentNetlinkSocket,
+  NetlinkSocketStats,
   NetlinkView,
   EdgeStat,
   RenderNode,
@@ -41,7 +41,7 @@ export interface SelectionTargets {
 export interface FileSceneInput {
   nodes: ReadonlyMap<string, PlacedProcess>;
   files: ReadonlyMap<string, RecentFile>;
-  netlink: ReadonlyMap<string, RecentNetlinkSocket>;
+  netlink: ReadonlyMap<string, NetlinkSocketStats>;
   filePositions: ReadonlyMap<string, Position>;
   netlinkPositions: ReadonlyMap<string, Position>;
   visible: ReadonlySet<string>;
@@ -63,7 +63,7 @@ export interface DetailsInput {
   network: ReadonlyMap<string, NetworkGroup>;
   edgeStats: ReadonlyMap<string, EdgeStat>;
   files: ReadonlyMap<string, RecentFile>;
-  netlink: ReadonlyMap<string, RecentNetlinkSocket>;
+  netlink: ReadonlyMap<string, NetlinkSocketStats>;
 }
 /** Read afresh for each pointer event, since scene geometry is replaced on updates. */
 export interface PickingView {
@@ -76,7 +76,7 @@ export interface PickingInput {
   view: PickingView;
   edgeStats: ReadonlyMap<string, EdgeStat>;
   files: ReadonlyMap<string, RecentFile>;
-  netlink: ReadonlyMap<string, RecentNetlinkSocket>;
+  netlink: ReadonlyMap<string, NetlinkSocketStats>;
 }
 export interface SelectionBindings {
   camera: T.Camera;

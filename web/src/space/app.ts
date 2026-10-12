@@ -97,7 +97,7 @@ bindSelection($("world"), $("hover"), {
     view: scene.pickingView(),
     edgeStats: data.edgeStats,
     files: data.recentFiles.entries,
-    netlink: data.recentNetlink.entries,
+    netlink: data.netlinkSockets.entries,
   }),
   actions,
   hover(state) {
@@ -232,7 +232,7 @@ function sceneInput(): SceneInput {
     network: data.network,
     networkPositions: data.networkPositions,
     files: data.recentFiles.entries,
-    netlink: data.recentNetlink.entries,
+    netlink: data.netlinkSockets.entries,
     filePositions: data.filePositions,
     netlinkPositions: data.netlinkPositions,
     visible: search.visibleIds(),
@@ -245,7 +245,7 @@ function detailsInput(): DetailsInput {
     network: data.network,
     edgeStats: data.edgeStats,
     files: data.recentFiles.entries,
-    netlink: data.recentNetlink.entries,
+    netlink: data.netlinkSockets.entries,
   };
 }
 function worldPositions(): WorldPositions {
@@ -266,7 +266,7 @@ function retainSelection() {
     ),
     networks: new Set(data.network.keys()),
     files: new Set(data.recentFiles.entries.keys()),
-    netlink: new Set(data.recentNetlink.entries.keys()),
+    netlink: new Set(data.netlinkSockets.entries.keys()),
   });
 }
 function retainParticles() {

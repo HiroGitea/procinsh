@@ -425,7 +425,7 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 |---|---|---|
 | CPU の発光 | 実行中に強まり、活動が途絶えると約500msで減衰 | [`cpuGlowLevel`](../web/src/space/renderer.ts#L67) |
 | IPC・ネットワークの粒子 | 読み書きの向きと操作回数に応じて粒子を生成。接続先を一つに特定できない場合は操作元のポートだけを発光。`prefers-reduced-motion` に応じて粒子の表示時間と数を減らす | [`edgeDirection`](../web/src/space/data.ts)、[`ipcParticlePlan`](../web/src/space/renderer.ts#L48)、[`SpaceDataStore.ingestActivity`](../web/src/space/data.ts) |
-| netlink 通信 | USERSOCK を除く netlink は、通信を観測したプロセスの下方にオレンジ色の六角形プレートと接続線を表示。プロセスとソケット資源ごとに複製 FD をまとめ、送信はプレートへ、受信はプロセスへ粒子を流す。最終通信から30秒、各プロセス32個・全体512個まで保持し、古いものから削除。ソケットが閉じても期限まで保持し、プロセス終了・SSEリセット・待受または未接続への変化では削除。プレートはカーネル側インターフェースの概念図で、実際の相手の netlink アドレスは未観測 | [RecentNetlinkSockets](../web/src/space/netlink.ts)、[refreshFileScene](../web/src/space/scene.ts) |
+| netlink 通信 | USERSOCK を除く表示対象の netlink は、スナップショットに存在する間、送受信の有無によらずプロセスの下方にオレンジ色の六角形プレートと接続線を表示。プロセスとソケット資源ごとに複製 FD をまとめ、通信前の集計は0。送受信イベントがあるときだけ、送信はプレートへ、受信はプロセスへ粒子を流す。時間経過や件数による表示の打切りは行わず、ソケットがスナップショットから消えたとき、プロセス終了・SSEリセット・待受または未接続への変化で削除。プレートはカーネル側インターフェースの概念図で、実際の相手の netlink アドレスは未観測 | [NetlinkSocketStore](../web/src/space/netlink.ts)、[refreshFileScene](../web/src/space/scene.ts) |
 | ファイル I/O | 読み書きの粒子と、保持中のファイルのバイト数・操作回数を表示。最終アクセスから30秒、各プロセス32個・全体512個まで保持し、終了したプロセスのファイルは削除 | [`RecentFiles`](../web/src/space/data.ts)、[`fileDetails`](../web/src/space/details.ts#L72) |
 | プロセス名・接続先ラベル | 3D 座標を画面座標へ投影し、WebGL とは別の Canvas 2D に描画 | [`drawLabels`](../web/src/space/renderer.ts#L191) |
 
@@ -463,7 +463,7 @@ SPACE は両端が表示中のシグナルを最大256件保持し、紫色の�
 | 部品間の import 境界、シーンへの入力、当たり判定・選択、カメラ範囲、詳細表示のリンク・操作、描画の通知・停止復帰 | [space-components.test.ts](../web/tests/space-components.test.ts) | `npm --prefix web test` |
 | プロセス配置 | [process-layout.ts](../web/src/space/process-layout.ts) の in-source test と [process-layout.test.ts](../web/tests/process-layout.test.ts) のソケット通信相手・配置安定性の回帰テスト | `npm --prefix web test -- src/space/process-layout.ts tests/process-layout.test.ts` |
 | データのマージ、接続先・ファイルの配置、活動モデル、解像度調整 | [data.ts](../web/src/space/data.ts)・[renderer.ts](../web/src/space/renderer.ts) の in-source test | `npm --prefix web test` |
-| netlink の分類、共有FD、保持期限・上限、配置 | [space-netlink.test.ts](../web/tests/space-netlink.test.ts) | `npm --prefix web test` |
+| netlink の常時表示、分類、共有FD、終了・状態変化、配置 | [space-netlink.test.ts](../web/tests/space-netlink.test.ts) | `npm --prefix web test` |
 | 表示ラベルと UID 色 | [space-formatting.test.ts](../web/tests/space-formatting.test.ts) | `npm --prefix web test` |
 | 観測状態・活動経路、SSE の停止・再同期・古い通知の破棄 | [data.ts の in-source test](../web/src/space/data.ts) | `npm --prefix web test` |
 | WebGL 描画、配置・選択・カメラ操作、接続管理 | [space-browser.ts](../web/tests/browser/space-browser.ts)。ネットワーク・netlink・ファイルは [space-netlink.ts](../web/tests/browser/space-netlink.ts)・[space-network.ts](../web/tests/browser/space-network.ts)・[space-files.ts](../web/tests/browser/space-files.ts) を呼び出して検証 | [ブラウザテスト](#ブラウザテスト)の準備後に `npm --prefix web run test:browser:space` |

@@ -71,21 +71,30 @@ test("kernel-facing classification leaves USERSOCK and other socket families unc
   expect(isKernelNetlink(null)).toBe(false);
 });
 
-test("traffic creates directional plate routes once, accumulates totals and expires after the last observation", () => {
+test("snapshot sockets start at zero and remain visible without traffic or a time limit", () => {
   const fd = endpoint("1");
   const data = store([relation(fd)]);
-  expect(data.recentNetlink.entries.size).toBe(0);
+  expect(data.netlinkSockets.entries.size).toBe(1);
+  const socket = [...data.netlinkSockets.entries.values()][0];
+  expect(socket).toMatchObject({
+    readBytes: 0,
+    writeBytes: 0,
+    readCount: 0,
+    writeCount: 0,
+  });
+  expect(data.netlinkPositions.size).toBe(1);
+  expect(data.pruneFiles(60000)).toBe(false);
+  expect(data.netlinkSockets.entries.get(socket.id)).toBe(socket);
   const update = data.ingestActivity(
-    { ...spaceActivity(), ipc: [event(fd), event(fd, false)] },
+    spaceActivity({ ipc: [event(fd), event(fd, false)] }),
     undefined,
-    10,
+    60010,
   );
-  expect(update.netlinkChanged).toBe(true);
+  expect(update.netlinkChanged).toBe(false);
   expect(update.routes.map((r) => [r.kind, r.direction])).toEqual([
     ["netlink", 1],
     ["netlink", -1],
   ]);
-  const socket = [...data.recentNetlink.entries.values()][0];
   expect(socket).toMatchObject({
     readBytes: 100,
     writeBytes: 100,
@@ -94,16 +103,10 @@ test("traffic creates directional plate routes once, accumulates totals and expi
   });
   expect(socket.label).toBe("NETLINK ROUTE · FD 3");
   expect(data.edgeStats.size).toBe(0);
-  data.ingestActivity(
-    { ...spaceActivity(), ipc: [event(fd)] },
-    undefined,
-    20000,
-  );
-  expect(data.pruneFiles(30010)).toBe(false);
-  expect(socket.writeBytes).toBe(200);
-  expect(data.pruneFiles(50000)).toBe(true);
-  expect(data.recentNetlink.entries.size).toBe(0);
-  expect(data.netlinkPositions.size).toBe(0);
+  data.replaceSnapshot(data.snapshot, false, 120000);
+  expect(data.pruneFiles(180000)).toBe(false);
+  expect(data.netlinkSockets.entries.get(socket.id)).toBe(socket);
+  expect([...data.netlinkSockets.entries.keys()]).toEqual([socket.id]);
 });
 
 test("shared relations and duplicate FDs normalize owners without duplicating traffic", () => {
@@ -126,8 +129,8 @@ test("shared relations and duplicate FDs normalize owners without duplicating tr
   );
   expect(update.routes).toHaveLength(3);
   expect(update.routes.every((r) => r.kind === "netlink")).toBe(true);
-  expect(data.recentNetlink.entries.size).toBe(3);
-  const owned = [...data.recentNetlink.entries.values()].find(
+  expect(data.netlinkSockets.entries.size).toBe(3);
+  const owned = [...data.netlinkSockets.entries.values()].find(
     (s) =>
       s.endpoint.process_id.pid === a.pid && s.endpoint.resource.inode === "1",
   )!;
@@ -167,7 +170,7 @@ test("file and plate positions share collision-free slots and survive structural
   expect([...data.netlinkPositions.values()][0]).toEqual(platePosition);
 });
 
-test("socket closure retains recent traffic, while FD and PID reuse do not inherit totals", () => {
+test("socket closure removes totals immediately, while FD and PID reuse start at zero", () => {
   const old = endpoint("1"),
     data = store([relation(old)]);
   data.ingestActivity({ ...spaceActivity(), ipc: [event(old)] }, undefined, 10);
@@ -177,14 +180,17 @@ test("socket closure retains recent traffic, while FD and PID reuse do not inher
     false,
     20,
   );
+  expect(
+    [...data.netlinkSockets.entries.values()].map((s) => s.writeBytes),
+  ).toEqual([0]);
   data.ingestActivity(
-    { ...spaceActivity(), ipc: [event(replacement)] },
+    spaceActivity({ ipc: [event(replacement)] }),
     undefined,
     30,
   );
   expect(
-    [...data.recentNetlink.entries.values()].map((s) => s.writeBytes),
-  ).toEqual([100, 100]);
+    [...data.netlinkSockets.entries.values()].map((s) => s.writeBytes),
+  ).toEqual([100]);
   data.replaceSnapshot(
     {
       processes: [processInfo({ identity: { ...a, start_time_ticks: 99 } })],
@@ -193,9 +199,9 @@ test("socket closure retains recent traffic, while FD and PID reuse do not inher
     false,
     40,
   );
-  expect(data.recentNetlink.entries.size).toBe(0);
+  expect(data.netlinkSockets.entries.size).toBe(0);
   data.ingestActivity({ ...spaceActivity(), ipc: [event(old)] }, undefined, 50);
-  expect(data.recentNetlink.entries.size).toBe(0);
+  expect(data.netlinkSockets.entries.size).toBe(0);
 });
 
 test("invalid observations and filtered owners do not create misleading particle routes", () => {
@@ -213,38 +219,26 @@ test("invalid observations and filtered owners do not create misleading particle
     10,
   );
   expect(update.routes).toEqual([]);
-  expect(data.recentNetlink.entries.size).toBe(0);
+  expect(data.netlinkSockets.entries.size).toBe(1);
   const filtered = data.ingestActivity(
     { ...spaceActivity(), ipc: [event(fd)] },
     new Set(),
     20,
   );
   expect(filtered.routes).toEqual([]);
-  expect(data.recentNetlink.entries.size).toBe(1);
+  expect(data.netlinkSockets.entries.size).toBe(1);
   data.stop();
-  expect(data.recentNetlink.entries.size).toBe(0);
+  expect(data.netlinkSockets.entries.size).toBe(0);
   expect(data.netlinkPositions.size).toBe(0);
 });
 
-test("per-owner and total retention limits evict the least recently observed socket", () => {
+test("all current sockets appear beyond the former per-owner and global limits", () => {
   const fds = Array.from({ length: 33 }, (_, i) => endpoint(String(i), i + 3));
   const data = store(fds.map((fd) => relation(fd)));
-  data.ingestActivity(
-    { ...spaceActivity(), ipc: fds.slice(0, 32).map((fd) => event(fd)) },
-    undefined,
-    10,
-  );
-  data.ingestActivity(
-    { ...spaceActivity(), ipc: [event(fds[0]), event(fds[32])] },
-    undefined,
-    20,
-  );
-  expect(data.recentNetlink.entries.size).toBe(32);
-  expect(
-    [...data.recentNetlink.entries.values()].some(
-      (s) => s.endpoint.resource.inode === "1",
-    ),
-  ).toBe(false);
+  expect(data.netlinkSockets.entries.size).toBe(33);
+  const order = [...data.netlinkSockets.entries.keys()];
+  data.ingestActivity(spaceActivity({ ipc: [event(fds[0])] }));
+  expect([...data.netlinkSockets.entries.keys()]).toEqual(order);
   const processes = Array.from({ length: 17 }, (_, i) =>
     processInfo({ identity: { pid: 200 + i, start_time_ticks: 1 } }),
   );
@@ -253,22 +247,15 @@ test("per-owner and total retention limits evict the least recently observed soc
       endpoint(String(p.identity.pid * 32 + i), i + 3, p.identity),
     ),
   );
-  data.replaceSnapshot(
-    { processes, fd_relations: many.map((fd) => relation(fd)) },
-    false,
-    30,
-  );
-  data.ingestActivity(
-    { ...spaceActivity(), ipc: many.map((fd) => event(fd)) },
-    undefined,
-    40,
-  );
-  expect(data.recentNetlink.entries.size).toBe(512);
+  data.replaceSnapshot({
+    processes,
+    fd_relations: many.map((fd) => relation(fd)),
+  });
+  expect(data.netlinkSockets.entries.size).toBe(544);
+  expect(data.netlinkPositions.size).toBe(544);
   expect(
-    [...data.recentNetlink.entries.values()].some(
-      (s) => s.endpoint.process_id.pid === 200,
-    ),
-  ).toBe(false);
+    [...data.netlinkSockets.entries.values()].every((s) => s.writeBytes === 0),
+  ).toBe(true);
 });
 
 test("the scene suppresses generic netlink relations and renders plates and selectable paths", () => {
@@ -283,7 +270,7 @@ test("the scene suppresses generic netlink relations and renders plates and sele
     networkPositions: data.networkPositions,
     files: data.recentFiles.entries,
     filePositions: data.filePositions,
-    netlink: data.recentNetlink.entries,
+    netlink: data.netlinkSockets.entries,
     netlinkPositions: data.netlinkPositions,
     visible: new Set(data.nodes.keys()),
   });
@@ -291,7 +278,7 @@ test("the scene suppresses generic netlink relations and renders plates and sele
   expect(scene.renderView().edgeViews.map((v) => v.e.id)).toEqual([
     relation(usersock, 2).id,
   ]);
-  expect(scene.renderView().netlinkViews.size).toBe(0);
+  expect(scene.renderView().netlinkViews.size).toBe(1);
   data.ingestActivity({ ...spaceActivity(), ipc: [event(fd)] }, undefined, 10);
   scene.refreshFiles(input());
   expect(scene.renderView().netlinkViews.size).toBe(1);

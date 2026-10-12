@@ -22,7 +22,7 @@ export function createSpaceDetails(
     network: DetailsInput["network"],
     edgeStats: DetailsInput["edgeStats"],
     recentFiles: DetailsInput["files"],
-    recentNetlink: DetailsInput["netlink"];
+    netlinkSockets: DetailsInput["netlink"];
   let selected: string | null = null,
     selectedEdge: string | null = null,
     selectedNetwork: string | null = null,
@@ -90,7 +90,7 @@ export function createSpaceDetails(
     updateConnectionEndpoints([path, identity, link]);
   }
   function netlinkDetails() {
-    const socket = recentNetlink.get(selectedNetlink ?? "");
+    const socket = netlinkSockets.get(selectedNetlink ?? "");
     if (!socket) return;
     $("process-details").hidden = true;
     $("connection-details").hidden = false;
@@ -163,7 +163,7 @@ export function createSpaceDetails(
       network,
       edgeStats,
       files: recentFiles,
-      netlink: recentNetlink,
+      netlink: netlinkSockets,
     } = data);
     selected = selection.process;
     selectedEdge = selection.connection;
