@@ -1,0 +1,285 @@
+[
+  {
+    "codes": [
+      2,
+      1,
+      6
+    ],
+    "value": {
+      "kind": "tcp",
+      "family": "ipv4"
+    },
+    "label": "TCP"
+  },
+  {
+    "codes": [
+      10,
+      1,
+      6
+    ],
+    "value": {
+      "kind": "tcp",
+      "family": "ipv6"
+    },
+    "label": "TCP6"
+  },
+  {
+    "codes": [
+      2,
+      2,
+      17
+    ],
+    "value": {
+      "kind": "udp",
+      "family": "ipv4"
+    },
+    "label": "UDP"
+  },
+  {
+    "codes": [
+      10,
+      2,
+      17
+    ],
+    "value": {
+      "kind": "udp",
+      "family": "ipv6"
+    },
+    "label": "UDP6"
+  },
+  {
+    "codes": [
+      1,
+      2,
+      0
+    ],
+    "value": {
+      "kind": "unix",
+      "socket_type": {
+        "kind": "dgram"
+      }
+    },
+    "label": "UNIX DGRAM"
+  },
+  {
+    "codes": [
+      1,
+      255,
+      0
+    ],
+    "value": {
+      "kind": "unix",
+      "socket_type": {
+        "kind": "unknown",
+        "code": 255
+      }
+    },
+    "label": "UNIX TYPE 255"
+  },
+  {
+    "codes": [
+      16,
+      2,
+      15
+    ],
+    "value": {
+      "kind": "other",
+      "family": 16,
+      "socket_type": {
+        "kind": "dgram"
+      },
+      "protocol": 15
+    },
+    "label": "NETLINK KOBJECT_UEVENT"
+  },
+  {
+    "codes": [
+      16,
+      3,
+      9
+    ],
+    "value": {
+      "kind": "other",
+      "family": 16,
+      "socket_type": {
+        "kind": "raw"
+      },
+      "protocol": 9
+    },
+    "label": "NETLINK AUDIT"
+  },
+  {
+    "codes": [
+      16,
+      null,
+      0
+    ],
+    "value": {
+      "kind": "other",
+      "family": 16,
+      "socket_type": null,
+      "protocol": 0
+    },
+    "label": "NETLINK ROUTE"
+  },
+  {
+    "codes": [
+      16,
+      null,
+      999
+    ],
+    "value": {
+      "kind": "other",
+      "family": 16,
+      "socket_type": null,
+      "protocol": 999
+    },
+    "label": "NETLINK PROTOCOL 999"
+  },
+  {
+    "codes": [
+      2,
+      3,
+      1
+    ],
+    "value": {
+      "kind": "other",
+      "family": 2,
+      "socket_type": {
+        "kind": "raw"
+      },
+      "protocol": 1
+    },
+    "label": "RAW ICMP"
+  },
+  {
+    "codes": [
+      10,
+      3,
+      58
+    ],
+    "value": {
+      "kind": "other",
+      "family": 10,
+      "socket_type": {
+        "kind": "raw"
+      },
+      "protocol": 58
+    },
+    "label": "RAW6 ICMPV6"
+  },
+  {
+    "codes": [
+      10,
+      3,
+      99
+    ],
+    "value": {
+      "kind": "other",
+      "family": 10,
+      "socket_type": {
+        "kind": "raw"
+      },
+      "protocol": 99
+    },
+    "label": "RAW6 PROTOCOL 99"
+  },
+  {
+    "codes": [
+      17,
+      2,
+      2054
+    ],
+    "value": {
+      "kind": "other",
+      "family": 17,
+      "socket_type": {
+        "kind": "dgram"
+      },
+      "protocol": 2054
+    },
+    "label": "PACKET DGRAM PROTOCOL 2054"
+  },
+  {
+    "codes": [
+      40,
+      1,
+      0
+    ],
+    "value": {
+      "kind": "other",
+      "family": 40,
+      "socket_type": {
+        "kind": "stream"
+      },
+      "protocol": 0
+    },
+    "label": "VSOCK STREAM"
+  },
+  {
+    "codes": [
+      29,
+      3,
+      1
+    ],
+    "value": {
+      "kind": "other",
+      "family": 29,
+      "socket_type": {
+        "kind": "raw"
+      },
+      "protocol": 1
+    },
+    "label": "CAN RAW PROTOCOL 1"
+  },
+  {
+    "codes": [
+      31,
+      5,
+      3
+    ],
+    "value": {
+      "kind": "other",
+      "family": 31,
+      "socket_type": {
+        "kind": "seqpacket"
+      },
+      "protocol": 3
+    },
+    "label": "BLUETOOTH SEQPACKET PROTOCOL 3"
+  },
+  {
+    "codes": [
+      65535,
+      999,
+      42
+    ],
+    "value": {
+      "kind": "other",
+      "family": 65535,
+      "socket_type": {
+        "kind": "unknown",
+        "code": 999
+      },
+      "protocol": 42
+    },
+    "label": "AF 65535 TYPE 999 PROTOCOL 42"
+  },
+  {
+    "codes": [
+      16,
+      999,
+      999
+    ],
+    "value": {
+      "kind": "other",
+      "family": 16,
+      "socket_type": {
+        "kind": "unknown",
+        "code": 999
+      },
+      "protocol": 999
+    },
+    "label": "NETLINK PROTOCOL 999 TYPE 999"
+  }
+]

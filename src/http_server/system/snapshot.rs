@@ -1,3 +1,17 @@
+//! Collect process structure and descriptor relations, retaining kinds without peers.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`ProcessSnapshot`] | `pub(super)` | `struct ProcessSnapshot` |
+//! | [`FdEndpoint`] | `pub(super)` | `struct FdEndpoint` |
+//! | [`SocketEndpoint`] | `pub(super)` | `struct SocketEndpoint` |
+//! | [`FdRelation`] | `pub(super)` | `struct FdRelation` |
+//! | [`SystemSnapshot`] | `pub(in crate::http_server)` | `struct SystemSnapshot` |
+//! | [`process_from_summary`] | `pub(super)` | `fn process_from_summary(summary: `[`ProcessSummary`]`, parent_id: `[`Option`]`<`[`ProcessId`]`>) -> `[`ProcessSnapshot`] |
+//! | [`collect`] | `pub(super)` | `fn collect(discovery: &mut `[`ProcessScanner`]`) -> `[`SystemSnapshot`] |
+
 use crate::http_server::process::{
     self, MemoryMap, ProcessId, ProcessScanner, ProcessSummary, SocketInfo,
 };
@@ -41,7 +55,8 @@ pub(super) struct FdEndpoint {
 #[derive(Clone, PartialEq, Eq, Serialize)]
 pub(super) struct SocketEndpoint {
     pub(super) protocol: SocketProtocol,
-    pub(super) state: SocketState,
+    /// Null when no state was observed, even if the socket kind is known.
+    pub(super) state: Option<SocketState>,
     pub(super) local: Option<InetAddress>,
     pub(super) remote: Option<InetAddress>,
     pub(super) path: Option<String>,
@@ -57,8 +72,8 @@ impl From<&SocketInfo> for SocketEndpoint {
             local: info.local.map(InetAddress::from),
             remote: info.remote.map(InetAddress::from),
             path: info.path.clone(),
-            network_peer: info.protocol.is_inet()
-                && info.state != SocketState::Listen
+            network_peer: info.protocol.is_tcp_or_udp()
+                && info.state != Some(SocketState::Listen)
                 && info
                     .remote
                     .is_some_and(|remote| remote.port() != 0 && !remote.ip().is_unspecified()),
@@ -129,6 +144,7 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
     let mut inode_ns = HashMap::new();
     let mut namespaces = HashSet::new();
     let mut denied = 0;
+    let mut unknown_socket_types = 0;
     let mut truncated = false;
     let deadline = Instant::now() + Duration::from_secs(8);
     for summary in summaries {
@@ -138,6 +154,7 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
             .filter(|parent| *parent != summary.identity);
         let mut n = process_from_summary(summary, parent_id);
         let pid = n.identity.pid;
+        let mut metadata_reader = process::SocketMetadataReader::new(n.identity);
         if Instant::now() >= deadline {
             n.maps_error = Some("Scan time limit reached. Retrying on the next update.".into());
             truncated = true;
@@ -202,6 +219,7 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                     infos.extend(table);
                 }
             }
+            infos.extend(process::additional_sockets(pid));
         }
         let mut endpoints = Vec::new();
         match fs::read_dir(format!("/proc/{pid}/fd")) {
@@ -232,6 +250,36 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                     } else {
                         continue;
                     };
+                    let known = infos.get(&meta.ino());
+                    if kind == FdKind::Socket
+                        && known.is_none_or(|info| {
+                            matches!(
+                                info.protocol,
+                                SocketProtocol::Other {
+                                    socket_type: None,
+                                    ..
+                                }
+                            )
+                        })
+                    {
+                        match metadata_reader.read(number, meta.dev(), meta.ino()) {
+                            Ok(protocol) => {
+                                infos
+                                    .entry(meta.ino())
+                                    .and_modify(|info| info.protocol = protocol)
+                                    .or_insert(SocketInfo {
+                                        protocol,
+                                        state: None,
+                                        local: None,
+                                        remote: None,
+                                        path: None,
+                                        peer_inode: None,
+                                    });
+                            }
+                            Err(_) if !infos.contains_key(&meta.ino()) => unknown_socket_types += 1,
+                            Err(_) => {}
+                        }
+                    }
                     let flags = process::fields(&format!("/proc/{pid}/fdinfo/{number}"))
                         .ok()
                         .and_then(|f| f.get("flags").and_then(|v| u32::from_str_radix(v, 8).ok()))
@@ -283,10 +331,11 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
     // Socket inodes are global, but reversed tuples must also share a namespace. Build candidates from same net table below only if unique.
     let mut reverse: HashMap<_, Vec<u64>> = HashMap::new();
     for (&inode, info) in &infos {
-        if let (Some(local), Some(remote)) = (info.local, info.remote)
+        if info.protocol.is_tcp_or_udp()
+            && let (Some(local), Some(remote)) = (info.local, info.remote)
             && remote.port() != 0
             && !remote.ip().is_unspecified()
-            && info.state != SocketState::Listen
+            && info.state != Some(SocketState::Listen)
         {
             reverse
                 .entry((
@@ -337,7 +386,8 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                 let mut peers = Vec::new();
                 if let Some(peer) = info.peer_inode {
                     peers.push((peer, false));
-                } else if let (Some(local), Some(remote)) = (info.local, info.remote)
+                } else if info.protocol.is_tcp_or_udp()
+                    && let (Some(local), Some(remote)) = (info.local, info.remote)
                     && let Some(ids) = reverse.get(&(
                         inode_ns.get(&inode).copied(),
                         info.protocol.is_tcp(),
@@ -365,14 +415,21 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                         format!(
                             "{} {} {}",
                             i.protocol,
-                            i.state,
+                            i.state.map(|s| s.to_string()).unwrap_or_default(),
                             i.remote
                                 .map(|v| v.to_string())
                                 .or(i.path.clone())
                                 .unwrap_or_default()
                         )
                     })
-                    .unwrap_or_else(|| "Unknown peer".into());
+                    .map(|label| label.trim().to_owned())
+                    .unwrap_or_else(|| {
+                        if endpoint.kind == FdKind::Socket {
+                            "Socket · Type unavailable".into()
+                        } else {
+                            "Unknown peer".into()
+                        }
+                    });
                 result.fd_relations.push(FdRelation {
                     id: format!(
                         "{}:{}:{}:external",
@@ -391,6 +448,12 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                 truncated = true;
             }
             for (peer, candidate, shared, label) in matches.into_iter().take(64) {
+                let label = if endpoint.kind == FdKind::Socket {
+                    info.map(|i| i.protocol.to_string())
+                        .unwrap_or_else(|| "Socket · Type unavailable".into())
+                } else {
+                    label
+                };
                 let mut ends = [
                     format!(
                         "{}:{}:{}",
@@ -429,6 +492,11 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
             .warnings
             .push(format!("Access denied for {denied} processes/FDs"));
     }
+    if unknown_socket_types > 0 {
+        result.warnings.push(format!(
+            "Socket type unavailable for {unknown_socket_types} FDs (closed, unobserved, unsupported, or access denied)."
+        ));
+    }
     if truncated {
         result
             .warnings
@@ -453,7 +521,7 @@ mod tests {
             protocol: SocketProtocol::Tcp {
                 family: AddressFamily::Ipv6,
             },
-            state: SocketState::Established,
+            state: Some(SocketState::Established),
             local: Some("[::1]:5000".parse().unwrap()),
             remote: Some("[2001:db8::1]:443".parse().unwrap()),
             path: None,
@@ -465,12 +533,12 @@ mod tests {
             serde_json::to_value(endpoint).unwrap()["remote"],
             serde_json::json!({"ip":"2001:db8::1","port":443})
         );
-        info.state = SocketState::Listen;
+        info.state = Some(SocketState::Listen);
         assert!(!SocketEndpoint::from(&info).network_peer);
         info.protocol = SocketProtocol::Udp {
             family: AddressFamily::Ipv4,
         };
-        info.state = SocketState::Unconnected;
+        info.state = Some(SocketState::Unconnected);
         for address in ["0.0.0.0:0", "127.0.0.1:0", "[::]:123"] {
             info.remote = Some(address.parse().unwrap());
             assert!(!SocketEndpoint::from(&info).network_peer);
@@ -480,6 +548,13 @@ mod tests {
         info.protocol = SocketProtocol::Unix {
             socket_type: SocketType::Unknown(0),
         };
+        assert!(!SocketEndpoint::from(&info).network_peer);
+        info.protocol = SocketProtocol::from_codes(
+            libc::AF_INET as u32,
+            libc::SOCK_RAW as u32,
+            libc::IPPROTO_TCP as u32,
+        );
+        info.remote = Some("127.0.0.1:443".parse().unwrap());
         assert!(!SocketEndpoint::from(&info).network_peer);
     }
 }

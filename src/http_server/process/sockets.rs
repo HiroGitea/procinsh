@@ -1,3 +1,15 @@
+//! Socket table parsing and UNIX peer diagnostics for process and system scans.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`SocketInfo`] | `pub(in crate::http_server)` | `struct SocketInfo` |
+//! | [`read_text`] | `pub(super)` | `fn read_text(path: &`[`str`]`) -> `[`Result`]`<`[`String`]`>` |
+//! | [`parse_inet`] | `pub(super)` | `fn parse_inet(text: &`[`str`]`, protocol: `[`SocketProtocol`]`) -> `[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>` |
+//! | [`parse_unix`] | `pub(super)` | `fn parse_unix(text: &`[`str`]`) -> `[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>` |
+//! | [`unix_diag`] | `pub(super)` | `fn unix_diag(deadline: `[`Instant`]`) -> `[`Result`]`<`[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>>` |
+
 use crate::http_server::socket_types::{SocketProtocol, SocketState, SocketType};
 // Visibility is scoped to the consumers of the parent process façade.
 use anyhow::{Context, Result, bail, ensure};
@@ -11,9 +23,11 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
+/// Socket kind and independently observed connection metadata.
+/// A known protocol does not imply a known state, address or peer.
 pub(in crate::http_server) struct SocketInfo {
     pub(in crate::http_server) protocol: SocketProtocol,
-    pub(in crate::http_server) state: SocketState,
+    pub(in crate::http_server) state: Option<SocketState>,
     pub(in crate::http_server) local: Option<SocketAddr>,
     pub(in crate::http_server) remote: Option<SocketAddr>,
     pub(in crate::http_server) path: Option<String>,
@@ -70,7 +84,7 @@ pub(super) fn parse_inet(text: &str, protocol: SocketProtocol) -> HashMap<u64, S
                 inode,
                 SocketInfo {
                     protocol,
-                    state: SocketState::inet(u32::from_str_radix(f.get(3)?, 16).ok()?),
+                    state: Some(SocketState::inet(u32::from_str_radix(f.get(3)?, 16).ok()?)),
                     local: Some(address(f.get(1)?).ok()?),
                     remote: Some(address(f.get(2)?).ok()?),
                     path: None,
@@ -106,7 +120,7 @@ pub(super) fn parse_unix(text: &str) -> HashMap<u64, SocketInfo> {
                 f[6].parse().ok()?,
                 SocketInfo {
                     protocol,
-                    state,
+                    state: Some(state),
                     local: None,
                     remote: None,
                     path: (!rest.is_empty()).then(|| rest.to_owned()),
@@ -135,7 +149,7 @@ fn parse_diag(bytes: &[u8]) -> Result<(u64, SocketInfo)> {
         protocol: SocketProtocol::Unix {
             socket_type: SocketType::from_code(bytes[1] as u32),
         },
-        state: SocketState::unix_diag(bytes[2] as u32),
+        state: Some(SocketState::unix_diag(bytes[2] as u32)),
         local: None,
         remote: None,
         path: None,
@@ -336,12 +350,12 @@ mod tests {
         );
         let info = &table[&u64::MAX];
         assert_eq!(info.protocol, protocol);
-        assert_eq!(info.state, SocketState::UnknownInet(254));
+        assert_eq!(info.state, Some(SocketState::UnknownInet(254)));
         assert_eq!(info.local.unwrap().port(), 8080);
         let unix = parse_unix(
             "header\n000: 2 0 00010000 0001 01 42 /tmp/name with spaces\n000: 2 0 0 00FF FF 43\n",
         );
-        assert_eq!(unix[&42].state, SocketState::Listen);
+        assert_eq!(unix[&42].state, Some(SocketState::Listen));
         assert_eq!(unix[&42].path.as_deref(), Some("/tmp/name with spaces"));
         assert_eq!(
             unix[&43].protocol,
@@ -349,7 +363,7 @@ mod tests {
                 socket_type: SocketType::Unknown(255)
             }
         );
-        assert_eq!(unix[&43].state, SocketState::UnknownUnix(255));
+        assert_eq!(unix[&43].state, Some(SocketState::UnknownUnix(255)));
         let mut bytes = vec![0u8; 16];
         bytes[0] = libc::AF_UNIX as u8;
         bytes[1] = 254;
@@ -361,7 +375,7 @@ mod tests {
                 socket_type: SocketType::Unknown(254)
             }
         );
-        assert_eq!(info.state, SocketState::UnknownUnix(255));
+        assert_eq!(info.state, Some(SocketState::UnknownUnix(255)));
     }
 
     #[test]

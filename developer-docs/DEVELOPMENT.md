@@ -227,6 +227,10 @@ Axum がルートごとにクエリを取り出し、ハンドラへ渡します
 
 FD 情報の収集、通信相手の候補の照合、候補を所有するプロセス・FD の探索は [fds.rs](../src/http_server/process/fds.rs) を参照してください。UNIX domain socket の通信相手の inode を取得する処理は [socket diagnostic](../src/http_server/process/sockets.rs) にあります。
 
+ソケットの種類は通信相手の特定とは独立して取得し、SPACE の接続詳細とプロセスの FD 一覧に表示します。TCP・UDP・UNIX の表に加え、Netlink・RAW・packet の procfs 表を参照します。種類や socket type が表から分からない FD は、[SocketMetadataReader](../src/http_server/process/socket_metadata.rs) が `pidfd_open`・`pidfd_getfd` で一時的に複製し、`SO_DOMAIN`・`SO_TYPE`・`SO_PROTOCOL` を読み取ります。プロセスの開始時刻と socket の device/inode を検証し、pidfd は走査中のプロセスごとに保持します。複製した FD は直ちに閉じ、送受信・ソケット設定の変更・対象の停止は行いません。pidfd による複製は ptrace の権限検査を受け、権限不足や非対応のカーネルでは procfs で取得できた種類を保持します。
+
+種類が取得できれば、未接続でも `TCP`、`NETLINK KOBJECT_UEVENT`、`VSOCK STREAM` などを表示します。TCP・UDP・UNIX 以外の API の protocol は `kind: "other"` と Linux の `family`・`socket_type`・`protocol` 番号で表し、未認識の番号も保持します。Netlink の procfs 表だけでは socket type は分からないため、その場合は `socket_type: null` です。接続状態が未取得なら `state: null` とし、種類から接続状態や相手の PID を推測しません。種類も未取得の socket は `Socket · Type unavailable` と表示し、走査結果の警告にも含めます。
+
 ### 環境変数・補助ベクトル
 
 いずれも識別子・生存を確認して要求時に取得します。定期観測に含めて再収集するものではありません。

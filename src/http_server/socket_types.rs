@@ -1,4 +1,16 @@
 //! Structured socket metadata and descriptor capabilities shared by both views.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind |
+//! | --- | --- | --- |
+//! | [`AddressFamily`] | `pub(super)` | `enum AddressFamily` |
+//! | [`SocketType`] | `pub(super)` | `enum SocketType` |
+//! | [`SocketProtocol`] | `pub(super)` | `enum SocketProtocol` |
+//! | [`SocketState`] | `pub(super)` | `enum SocketState` |
+//! | [`FdKind`] | `pub(super)` | `enum FdKind` |
+//! | [`FdAccess`] | `pub(super)` | `enum FdAccess` |
+//! | [`InetAddress`] | `pub(super)` | `struct InetAddress` |
 use serde::Serialize;
 use std::{
     fmt,
@@ -15,7 +27,11 @@ pub(super) enum AddressFamily {
 pub(super) enum SocketType {
     Stream,
     Dgram,
+    Raw,
+    Rdm,
     Seqpacket,
+    Dccp,
+    Packet,
     Unknown(u32),
 }
 impl SocketType {
@@ -23,25 +39,80 @@ impl SocketType {
         match code {
             1 => Self::Stream,
             2 => Self::Dgram,
+            3 => Self::Raw,
+            4 => Self::Rdm,
             5 => Self::Seqpacket,
+            6 => Self::Dccp,
+            10 => Self::Packet,
             n => Self::Unknown(n),
         }
+    }
+}
+impl fmt::Display for SocketType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Stream => "STREAM",
+            Self::Dgram => "DGRAM",
+            Self::Raw => "RAW",
+            Self::Rdm => "RDM",
+            Self::Seqpacket => "SEQPACKET",
+            Self::Dccp => "DCCP",
+            Self::Packet => "PACKET",
+            Self::Unknown(code) => return write!(f, "TYPE {code}"),
+        })
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum SocketProtocol {
-    Tcp { family: AddressFamily },
-    Udp { family: AddressFamily },
-    Unix { socket_type: SocketType },
+    Tcp {
+        family: AddressFamily,
+    },
+    Udp {
+        family: AddressFamily,
+    },
+    Unix {
+        socket_type: SocketType,
+    },
+    /// Linux domain, socket type and protocol numbers outside TCP/UDP/UNIX.
+    /// A missing socket type means that only a procfs table supplied metadata.
+    Other {
+        family: u32,
+        socket_type: Option<SocketType>,
+        protocol: u32,
+    },
 }
 impl SocketProtocol {
     pub(super) fn is_tcp(self) -> bool {
         matches!(self, Self::Tcp { .. })
     }
 
-    pub(super) fn is_inet(self) -> bool {
-        !matches!(self, Self::Unix { .. })
+    pub(super) fn is_tcp_or_udp(self) -> bool {
+        matches!(self, Self::Tcp { .. } | Self::Udp { .. })
+    }
+
+    pub(super) fn from_codes(family: u32, socket_type: u32, protocol: u32) -> Self {
+        let inet = match family as i32 {
+            libc::AF_INET => Some(AddressFamily::Ipv4),
+            libc::AF_INET6 => Some(AddressFamily::Ipv6),
+            _ => None,
+        };
+        match (family as i32, socket_type as i32, protocol as i32) {
+            (_, libc::SOCK_STREAM, libc::IPPROTO_TCP) if inet.is_some() => Self::Tcp {
+                family: inet.unwrap(),
+            },
+            (_, libc::SOCK_DGRAM, libc::IPPROTO_UDP) if inet.is_some() => Self::Udp {
+                family: inet.unwrap(),
+            },
+            (libc::AF_UNIX, _, _) => Self::Unix {
+                socket_type: SocketType::from_code(socket_type),
+            },
+            _ => Self::Other {
+                family,
+                socket_type: Some(SocketType::from_code(socket_type)),
+                protocol,
+            },
+        }
     }
 }
 impl fmt::Display for SocketProtocol {
@@ -57,14 +128,93 @@ impl fmt::Display for SocketProtocol {
             } else {
                 "UDP"
             }),
-            Self::Unix { socket_type } => f.write_str(match socket_type {
-                SocketType::Stream => "UNIX STREAM",
-                SocketType::Dgram => "UNIX DGRAM",
-                SocketType::Seqpacket => "UNIX SEQPACKET",
-                SocketType::Unknown(_) => "UNIX",
-            }),
+            Self::Unix { socket_type } => write!(f, "UNIX {socket_type}"),
+            Self::Other {
+                family,
+                socket_type,
+                protocol,
+            } => {
+                if *family == libc::AF_NETLINK as u32 {
+                    write!(f, "NETLINK ")?;
+                    match netlink_name(*protocol) {
+                        Some(name) => f.write_str(name),
+                        None => write!(f, "PROTOCOL {protocol}"),
+                    }?;
+                    if let Some(SocketType::Unknown(code)) = socket_type {
+                        write!(f, " TYPE {code}")?;
+                    }
+                    return Ok(());
+                }
+                if matches!(*family as i32, libc::AF_INET | libc::AF_INET6)
+                    && *socket_type == Some(SocketType::Raw)
+                {
+                    write!(
+                        f,
+                        "RAW{} ",
+                        if *family == libc::AF_INET6 as u32 {
+                            "6"
+                        } else {
+                            ""
+                        }
+                    )?;
+                    return match *protocol {
+                        1 => f.write_str("ICMP"),
+                        2 => f.write_str("IGMP"),
+                        6 => f.write_str("TCP"),
+                        17 => f.write_str("UDP"),
+                        58 => f.write_str("ICMPV6"),
+                        _ => write!(f, "PROTOCOL {protocol}"),
+                    };
+                }
+                match *family as i32 {
+                    libc::AF_INET => f.write_str("INET")?,
+                    libc::AF_INET6 => f.write_str("INET6")?,
+                    libc::AF_PACKET => f.write_str("PACKET")?,
+                    libc::AF_VSOCK => f.write_str("VSOCK")?,
+                    libc::AF_BLUETOOTH => f.write_str("BLUETOOTH")?,
+                    libc::AF_CAN => f.write_str("CAN")?,
+                    libc::AF_ALG => f.write_str("ALG")?,
+                    libc::AF_XDP => f.write_str("XDP")?,
+                    _ => write!(f, "AF {family}")?,
+                }
+                if let Some(socket_type) = socket_type {
+                    write!(f, " {socket_type}")?;
+                }
+                if !matches!(*family as i32, libc::AF_PACKET | libc::AF_VSOCK) || *protocol != 0 {
+                    write!(f, " PROTOCOL {protocol}")?;
+                }
+                Ok(())
+            }
         }
     }
+}
+
+fn netlink_name(protocol: u32) -> Option<&'static str> {
+    Some(match protocol {
+        0 => "ROUTE",
+        1 => "UNUSED",
+        2 => "USERSOCK",
+        3 => "FIREWALL",
+        4 => "SOCK_DIAG",
+        5 => "NFLOG",
+        6 => "XFRM",
+        7 => "SELINUX",
+        8 => "ISCSI",
+        9 => "AUDIT",
+        10 => "FIB_LOOKUP",
+        11 => "CONNECTOR",
+        12 => "NETFILTER",
+        13 => "IP6_FW",
+        14 => "DNRTMSG",
+        15 => "KOBJECT_UEVENT",
+        16 => "GENERIC",
+        18 => "SCSITRANSPORT",
+        19 => "ECRYPTFS",
+        20 => "RDMA",
+        21 => "CRYPTO",
+        22 => "SMC",
+        _ => return None,
+    })
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", content = "code", rename_all = "snake_case")]
@@ -231,6 +381,36 @@ impl From<SocketAddr> for InetAddress {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kinds_keep_codes_and_match_shared_display_contract() {
+        let cases: serde_json::Value =
+            serde_json::from_str(include_str!("test_support/socket-protocols.json")).unwrap();
+        for case in cases.as_array().unwrap() {
+            let codes = &case["codes"];
+            let family = codes[0].as_u64().unwrap() as u32;
+            let protocol = codes[2].as_u64().unwrap() as u32;
+            let kind = match codes[1].as_u64() {
+                Some(socket_type) => {
+                    SocketProtocol::from_codes(family, socket_type as u32, protocol)
+                }
+                None => SocketProtocol::Other {
+                    family,
+                    socket_type: None,
+                    protocol,
+                },
+            };
+            assert_eq!(serde_json::to_value(kind).unwrap(), case["value"]);
+            assert_eq!(kind.to_string(), case["label"].as_str().unwrap());
+            assert_eq!(
+                kind.is_tcp_or_udp(),
+                matches!(
+                    kind,
+                    SocketProtocol::Tcp { .. } | SocketProtocol::Udp { .. }
+                )
+            );
+        }
+    }
 
     #[test]
     fn unknown_codes_and_descriptor_capabilities_are_preserved() {

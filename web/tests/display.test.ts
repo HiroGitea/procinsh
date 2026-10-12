@@ -1,7 +1,25 @@
 import { describe, expect, test } from "vitest";
 import { bytes, byteRate, Display, percent, rate } from "../src/shared/display";
+import type { SocketProtocol } from "../src/shared/api-types.js";
+import { readFileSync } from "node:fs";
+
+const socketProtocols = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../src/http_server/test_support/socket-protocols.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+) as { value: SocketProtocol; label: string }[];
 
 describe("shared formatting", () => {
+  test.each(socketProtocols)(
+    "formats $label with no peer information",
+    ({ value, label }) => {
+      expect(Display.protocol(value)).toBe(label);
+    },
+  );
   test("distinguishes missing observations from zero", () => {
     for (const format of [bytes, byteRate, percent, rate]) {
       expect(format(null)).toBe("N/A");

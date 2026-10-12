@@ -1,3 +1,14 @@
+//! Descriptor kinds, communication peers and shared holders for one process.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`Endpoint`] | `pub(super)` | `struct Endpoint` |
+//! | [`Descriptor`] | `pub(super)` | `struct Descriptor` |
+//! | [`FileDescriptors`] | `pub(super)` | `struct FileDescriptors` |
+//! | [`read`] | `pub(super)` | `fn read(id: `[`ProcessId`]`) -> `[`Result`]`<`[`FileDescriptors`]`>` |
+
 use super::{
     ProcessId, check_identity, permission_help, procfs,
     sockets::{self, SocketInfo},
@@ -50,6 +61,8 @@ pub(super) struct Descriptor {
     key: Key,
     #[serde(skip)]
     mode: Option<u32>,
+    #[serde(skip)]
+    socket_device: Option<u64>,
 }
 #[derive(Debug, Serialize)]
 pub(super) struct FileDescriptors {
@@ -222,6 +235,7 @@ fn socket_table(
     warnings: &mut Vec<String>,
 ) -> HashMap<u64, SocketInfo> {
     let mut result = HashMap::new();
+    result.extend(super::additional_sockets(pid));
     for (file, protocol) in [
         (
             "tcp",
@@ -290,9 +304,13 @@ fn socket_table(
 type InetKey = (bool, SocketAddr, SocketAddr);
 
 fn inet_key(info: &SocketInfo) -> Option<InetKey> {
+    if !info.protocol.is_tcp_or_udp() {
+        return None;
+    }
     let local = info.local?;
     let remote = info.remote?;
-    if info.state == SocketState::Listen || remote.port() == 0 || remote.ip().is_unspecified() {
+    if info.state == Some(SocketState::Listen) || remote.port() == 0 || remote.ip().is_unspecified()
+    {
         return None;
     }
     Some((info.protocol.is_tcp(), local, remote))
@@ -344,6 +362,11 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
             note: String::new(),
             key,
             mode,
+            socket_device: if key.kind == FdKind::Socket {
+                fs::metadata(entry.path()).ok().map(|m| m.dev())
+            } else {
+                None
+            },
         });
     }
     if omitted > 0 {
@@ -357,11 +380,56 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
         .filter(|e| e.kind == FdKind::Socket)
         .map(|e| e.key.inode)
         .collect();
-    let sockets = if needed.is_empty() {
+    let mut sockets = if needed.is_empty() {
         HashMap::new()
     } else {
         socket_table(id.pid, &needed, deadline, &mut warnings)
     };
+    let mut metadata_reader = super::SocketMetadataReader::new(id);
+    let mut unavailable = 0;
+    for entry in &entries {
+        let known = sockets.get(&entry.key.inode);
+        if entry.kind != FdKind::Socket
+            || known.is_some_and(|info| {
+                !matches!(
+                    info.protocol,
+                    SocketProtocol::Other {
+                        socket_type: None,
+                        ..
+                    }
+                )
+            })
+        {
+            continue;
+        }
+        if Instant::now() >= deadline {
+            warnings.push("Socket kind scan time limit reached. Showing partial results.".into());
+            break;
+        }
+        let protocol = entry
+            .socket_device
+            .and_then(|device| metadata_reader.read(entry.fd, device, entry.key.inode).ok());
+        if let Some(protocol) = protocol {
+            sockets
+                .entry(entry.key.inode)
+                .and_modify(|info| info.protocol = protocol)
+                .or_insert(SocketInfo {
+                    protocol,
+                    state: None,
+                    local: None,
+                    remote: None,
+                    path: None,
+                    peer_inode: None,
+                });
+        } else if !sockets.contains_key(&entry.key.inode) {
+            unavailable += 1;
+        }
+    }
+    if unavailable > 0 {
+        warnings.push(format!(
+            "Socket type unavailable for {unavailable} FDs (closed, unsupported, or access denied)."
+        ));
+    }
     let mut reversed: HashMap<InetKey, Vec<u64>> = HashMap::new();
     for (&inode, info) in &sockets {
         if let Some(key) = inet_key(info) {
@@ -376,7 +444,7 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
             .filter(|_| entry.kind == FdKind::Socket)
         {
             entry.protocol = Some(info.protocol);
-            entry.state = Some(info.state);
+            entry.state = info.state;
             entry.local = info.local.map(InetAddress::from);
             entry.remote = info.remote.map(InetAddress::from);
             entry.path = info.path.clone();
@@ -487,14 +555,22 @@ mod tests {
             protocol: SocketProtocol::Tcp {
                 family: AddressFamily::Ipv4,
             },
-            state: SocketState::Listen,
+            state: Some(SocketState::Listen),
             local: Some("127.0.0.1:80".parse().unwrap()),
             remote: Some("127.0.0.1:1234".parse().unwrap()),
             path: None,
             peer_inode: None,
         };
         assert!(inet_key(&info).is_none());
-        info.state = SocketState::Established;
+        info.state = Some(SocketState::Established);
+        let transport = info.protocol;
+        info.protocol = SocketProtocol::from_codes(
+            libc::AF_INET as u32,
+            libc::SOCK_RAW as u32,
+            libc::IPPROTO_TCP as u32,
+        );
+        assert!(inet_key(&info).is_none());
+        info.protocol = transport;
         assert!(inet_key(&info).is_some());
         info.remote = Some("0.0.0.0:0".parse().unwrap());
         assert!(inet_key(&info).is_none());
