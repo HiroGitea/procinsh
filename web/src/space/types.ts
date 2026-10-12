@@ -29,6 +29,20 @@ export interface NetworkGroup {
   members: FdRelation[];
   label: string;
 }
+export interface NetlinkSocketInfo {
+  id: string;
+  endpoint: FdEndpoint;
+  socket: SocketEndpoint;
+  holders: FdEndpoint[];
+  label: string;
+}
+export interface RecentNetlinkSocket extends NetlinkSocketInfo {
+  readBytes: number;
+  writeBytes: number;
+  readCount: number;
+  writeCount: number;
+  last: number;
+}
 export interface RecentFile {
   id: string;
   process_id: ProcessId;
@@ -54,7 +68,7 @@ export interface EdgeStat {
   time: number;
 }
 export type ActivityRoute = {
-  kind: "file" | "connection" | "port";
+  kind: "file" | "netlink" | "connection" | "port";
   id: string;
   direction?: number | null;
   count: number;
@@ -62,6 +76,7 @@ export type ActivityRoute = {
 export interface ActivityUpdate {
   now: number;
   filesChanged: boolean;
+  netlinkChanged: boolean;
   routes: ActivityRoute[];
   signals?: SignalEvent[];
 }
@@ -78,13 +93,16 @@ export interface SelectionState {
   readonly connection: string | null;
   readonly network: string | null;
   readonly file: string | null;
+  readonly netlink: string | null;
 }
 export interface HoverState {
   readonly hoveredNetwork: string | null;
   readonly hoveredFile: string | null;
+  readonly hoveredNetlink: string | null;
 }
 export type ConnectionPick = FdRelation & { networkId?: string };
-export type PickResult = ConnectionPick | { fileId: string };
+export type PickResult =
+  ConnectionPick | { fileId: string } | { netlinkId: string };
 export interface RenderNode extends Process {
   pos: T.Vector3;
   regions: Region[];
@@ -101,6 +119,12 @@ export interface NetworkView {
 }
 export interface FileView {
   file: RecentFile;
+  pos: T.Vector3;
+  curve: T.QuadraticBezierCurve3;
+}
+
+export interface NetlinkView {
+  socket: RecentNetlinkSocket;
   pos: T.Vector3;
   curve: T.QuadraticBezierCurve3;
 }

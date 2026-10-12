@@ -6,6 +6,8 @@ import type {
   Position,
   NetworkGroup,
   RecentFile,
+  RecentNetlinkSocket,
+  NetlinkView,
   EdgeStat,
   RenderNode,
   Region,
@@ -26,6 +28,7 @@ export interface SelectionActions {
   connection(id: string | null): void;
   network(id: string | null): void;
   file(id: string | null): void;
+  netlink(id: string | null): void;
   clear(): void;
 }
 export interface SelectionTargets {
@@ -33,11 +36,14 @@ export interface SelectionTargets {
   connections: ReadonlySet<string>;
   networks: ReadonlySet<string>;
   files: ReadonlySet<string>;
+  netlink: ReadonlySet<string>;
 }
 export interface FileSceneInput {
   nodes: ReadonlyMap<string, PlacedProcess>;
   files: ReadonlyMap<string, RecentFile>;
+  netlink: ReadonlyMap<string, RecentNetlinkSocket>;
   filePositions: ReadonlyMap<string, Position>;
+  netlinkPositions: ReadonlyMap<string, Position>;
   visible: ReadonlySet<string>;
 }
 export interface SceneInput extends FileSceneInput {
@@ -49,6 +55,7 @@ export interface WorldPositions {
   processes: Iterable<Position>;
   networks: Iterable<Position>;
   files: Iterable<Position>;
+  netlink: Iterable<Position>;
 }
 export interface DetailsInput {
   nodes: ReadonlyMap<string, PlacedProcess>;
@@ -56,6 +63,7 @@ export interface DetailsInput {
   network: ReadonlyMap<string, NetworkGroup>;
   edgeStats: ReadonlyMap<string, EdgeStat>;
   files: ReadonlyMap<string, RecentFile>;
+  netlink: ReadonlyMap<string, RecentNetlinkSocket>;
 }
 /** Read afresh for each pointer event, since scene geometry is replaced on updates. */
 export interface PickingView {
@@ -68,6 +76,7 @@ export interface PickingInput {
   view: PickingView;
   edgeStats: ReadonlyMap<string, EdgeStat>;
   files: ReadonlyMap<string, RecentFile>;
+  netlink: ReadonlyMap<string, RecentNetlinkSocket>;
 }
 export interface SelectionBindings {
   camera: T.Camera;
@@ -84,6 +93,7 @@ export interface RenderView {
   hullIds: readonly string[];
   networkViews: readonly NetworkView[];
   fileViews: ReadonlyMap<string, FileView>;
+  netlinkViews: ReadonlyMap<string, NetlinkView>;
   edgeViews: readonly EdgeView[];
   baseGlow: T.InstancedMesh | null;
   haloGlow: T.InstancedMesh | null;

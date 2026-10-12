@@ -33,7 +33,9 @@ function input(processes: PlacedProcess[]): SceneInput {
     snapshot: { processes, fd_relations: [] },
     network: new Map(),
     networkPositions: new Map(),
+    netlink: new Map(),
     files: new Map(),
+    netlinkPositions: new Map(),
     filePositions: new Map(),
   };
 }
@@ -42,6 +44,7 @@ function selection(pid: number | null): SelectionState {
     process: pid === null ? null : `${pid}:1`,
     connection: null,
     network: null,
+    netlink: null,
     file: null,
   };
 }

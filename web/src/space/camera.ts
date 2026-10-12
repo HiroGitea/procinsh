@@ -40,7 +40,7 @@ export function createSpaceCamera(canvas: HTMLCanvasElement) {
     }
     for (const p of positions.networks)
       box.expandByPoint(new T.Vector3(p.x, p.y, p.z + 1));
-    for (const p of positions.files)
+    for (const p of [...positions.files, ...positions.netlink])
       box.expandByPoint(new T.Vector3(p.x, p.y, p.z - 1));
     return box;
   }

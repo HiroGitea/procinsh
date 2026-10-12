@@ -421,6 +421,7 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 |---|---|---|
 | CPU の発光 | 実行中に強まり、活動が途絶えると約500msで減衰 | [`cpuGlowLevel`](../web/src/space/renderer.ts#L67) |
 | IPC・ネットワークの粒子 | 読み書きの向きと操作回数に応じて粒子を生成。接続先を一つに特定できない場合は操作元のポートだけを発光。`prefers-reduced-motion` に応じて粒子の表示時間と数を減らす | [`edgeDirection`](../web/src/space/data.ts)、[`ipcParticlePlan`](../web/src/space/renderer.ts#L48)、[`SpaceDataStore.ingestActivity`](../web/src/space/data.ts) |
+| netlink 通信 | USERSOCK を除く netlink は、通信を観測したプロセスの下方にオレンジ色のチップと接続線を表示。プロセスとソケット資源ごとに複製 FD をまとめ、送信はチップへ、受信はプロセスへ粒子を流す。最終通信から30秒、各プロセス32個・全体512個まで保持し、古いものから削除。ソケットが閉じても期限まで保持し、プロセス終了・SSEリセットでは削除。チップはカーネル側インターフェースの概念図で、実際の相手の netlink アドレスは未観測 | [RecentNetlinkSockets](../web/src/space/netlink.ts)、[refreshFileScene](../web/src/space/scene.ts) |
 | ファイル I/O | 読み書きの粒子と、保持中のファイルのバイト数・操作回数を表示。最終アクセスから30秒、各プロセス32個・全体512個まで保持し、終了したプロセスのファイルは削除 | [`RecentFiles`](../web/src/space/data.ts)、[`fileDetails`](../web/src/space/details.ts#L72) |
 | プロセス名・接続先ラベル | 3D 座標を画面座標へ投影し、WebGL とは別の Canvas 2D に描画 | [`drawLabels`](../web/src/space/renderer.ts#L191) |
 
@@ -437,16 +438,16 @@ SPACE は両端が表示中のシグナルを最大256件保持し、紫色の�
 | 操作 | 振る舞い | 主な実装 |
 |---|---|---|
 | PID・プロセス名の検索 | 描画対象を絞り込み、Enter で最初の候補を選択してカメラを寄せる | [`visibleIds`](../web/src/space/search.ts#L4)、[検索イベント](../web/src/space/search.ts#L19) |
-| クリック・ホバー | プロセス、接続線、ネットワーク接続先、ファイルを選択・説明表示。プロセスのダブルクリックでカメラを寄せる | [`hit`・`edgeHit`](../web/src/space/selection.ts#L75)、[pointer イベント](../web/src/space/selection.ts#L60)、[`details`](../web/src/space/details.ts#L138) |
+| クリック・ホバー | プロセス、接続線、ネットワーク接続先、netlink チップ、ファイルを選択・説明表示。プロセスのダブルクリックでカメラを寄せる | [`hit`・`edgeHit`](../web/src/space/selection.ts#L75)、[pointer イベント](../web/src/space/selection.ts#L60)、[`details`](../web/src/space/details.ts#L138) |
 | ドラッグ・右ドラッグ・スクロール | カメラの回転・平行移動・ズーム | [OrbitControls の設定](../web/src/space/camera.ts#L6) |
 | Fit all | 検索と選択を解除し、全体が見えるようにカメラを調整 | [`fit`](../web/src/space/camera.ts#L57)、[ボタンイベント](../web/src/space/app.ts#L214) |
-| Rearrange | 粒子をクリアし、プロセス・ネットワーク接続先・ファイルを再配置して全体を表示 | [`SpaceDataStore.replaceSnapshot`](../web/src/space/data.ts)、[ボタンイベント](../web/src/space/app.ts#L208) |
+| Rearrange | 粒子をクリアし、プロセス・ネットワーク接続先・netlink チップ・ファイルを再配置して全体を表示 | [`SpaceDataStore.replaceSnapshot`](../web/src/space/data.ts)、[ボタンイベント](../web/src/space/app.ts#L208) |
 
 #### 接続とページのライフサイクル
 
 接続開始は [`SpaceDataStore.start`](../web/src/space/data.ts)、接続停止は [`SpaceDataStore.stop`](../web/src/space/data.ts)、ページの表示状態から接続と描画を起動・停止するイベントは [`visibilitychange`・`pagehide`・`pageshow` のハンドラ](../web/src/space/app.ts#L234) を参照してください。
 
-- タブ非表示・`pagehide` では SSE と再接続タイマーを止め、粒子・CPU の発光・ファイル表示をクリアします。タブの再表示やページキャッシュからの復帰時は接続し直します。
+- タブ非表示・`pagehide` では SSE と再接続タイマーを止め、粒子・CPU の発光・netlink チップ・ファイル表示をクリアします。タブの再表示やページキャッシュからの復帰時は接続し直します。
 - 接続エラーでは現在の EventSource を閉じ、エラーを表示して、表示中に限り3秒後に新しい接続を作ります。接続成功時にエラー表示を消し、古い接続からのイベントは無視します。
 - 構造イベントの解析やマージに失敗した場合は接続を閉じ、表示中なら直ちに接続し直して初期構造を取得します。
 - タブの表示状態の変更・ページ離脱・ページキャッシュからの復帰時には、FPS の計測と解像度調整の連続回数をリセットします。
@@ -458,9 +459,9 @@ SPACE は両端が表示中のシグナルを最大256件保持し、紫色の�
 | 部品間の import 境界、シーンへの入力、当たり判定・選択、カメラ範囲、詳細表示のリンク・操作、描画の通知・停止復帰 | [space-components.test.ts](../web/tests/space-components.test.ts) | `npm --prefix web test` |
 | プロセス配置 | [process-layout.ts](../web/src/space/process-layout.ts) の in-source test と [process-layout.test.ts](../web/tests/process-layout.test.ts) のソケット通信相手・配置安定性の回帰テスト | `npm --prefix web test -- src/space/process-layout.ts tests/process-layout.test.ts` |
 | データのマージ、接続先・ファイルの配置、活動モデル、解像度調整 | [data.ts](../web/src/space/data.ts)・[renderer.ts](../web/src/space/renderer.ts) の in-source test | `npm --prefix web test` |
-| 表示ラベルと UID 色 | [space-formatting.test.ts](../web/tests/space-formatting.test.ts) | `npm --prefix web test` |
+| netlink の分類、共有FD、保持期限・上限、配置 | [space-netlink.test.ts](../web/tests/space-netlink.test.ts) | `npm --prefix web test` |\n| 表示ラベルと UID 色 | [space-formatting.test.ts](../web/tests/space-formatting.test.ts) | `npm --prefix web test` |
 | 観測状態・活動経路、SSE の停止・再同期・古い通知の破棄 | [data.ts の in-source test](../web/src/space/data.ts) | `npm --prefix web test` |
-| WebGL 描画、配置・選択・カメラ操作、接続管理 | [space-browser.ts](../web/tests/browser/space-browser.ts)。ネットワークとファイルは [space-network.ts](../web/tests/browser/space-network.ts)・[space-files.ts](../web/tests/browser/space-files.ts) を呼び出して検証 | [ブラウザテスト](#ブラウザテスト)の準備後に `npm --prefix web run test:browser:space` |
+| WebGL 描画、配置・選択・カメラ操作、接続管理 | [space-browser.ts](../web/tests/browser/space-browser.ts)。ネットワーク・netlink・ファイルは [space-netlink.ts](../web/tests/browser/space-netlink.ts)・[space-network.ts](../web/tests/browser/space-network.ts)・[space-files.ts](../web/tests/browser/space-files.ts) を呼び出して検証 | [ブラウザテスト](#ブラウザテスト)の準備後に `npm --prefix web run test:browser:space` |
 | 実機の CPU・IPC・ファイル I/O センサー | [space-live.py](../tests/space-live.py)、[space-files-live.py](../tests/space-files-live.py) | [実機センサーテスト](#実機センサーテスト)を参照 |
 
 ## 権限
@@ -583,7 +584,7 @@ CHROME=/usr/bin/chromium npm --prefix web run test:browser:space
 
 [dev-server.ts](../web/tests/integration/dev-server.ts)（`npm --prefix web run test:dev`）は dev_run 経由でバックエンドと Vite を起動し、画面ルート、CSS 編集による HMR 更新、Origin 検査、JSON と両方の SSE のプロキシを確認します。
 
-通常画面は検索・選択・SSE・ライブサンプル・詳細パネル・終了処理を、SPACE は WebGL、配置、選択、ネットワークとファイルの描画を検証します。ブラウザテストは一時サーバーとブラウザプロファイルを作り、終了時に片付けます。画面・モデルの検証と実機センサーの検証は別です。
+通常画面は検索・選択・SSE・ライブサンプル・詳細パネル・終了処理を、SPACE は WebGL、配置、選択、ネットワーク・netlink・ファイルの描画を検証します。ブラウザテストは一時サーバーとブラウザプロファイルを作り、終了時に片付けます。画面・モデルの検証と実機センサーの検証は別です。
 
 ### Chrome による通信・IPC の負荷生成
 

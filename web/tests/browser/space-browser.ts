@@ -16,6 +16,7 @@ import { join } from "node:path";
 import assert from "node:assert/strict";
 import { checkProcessDetails } from "./process-details.js";
 import { checkDescriptors } from "./fds.js";
+import { checkNetlinkSpace } from "./space-netlink.js";
 import { checkFileSpace } from "./space-files.js";
 import { checkNetworkSpace } from "./space-network.js";
 import { processEventRecording } from "./process-events.js";
@@ -467,22 +468,15 @@ try {
     ),
     /External \/ unknown/,
   );
-  await evaluate(
-    "import(window.spaceTestModule).then(m=>m.selectConnection('netlink'))",
-  );
   assert.equal(
-    await evaluate("document.getElementById('connection-label').textContent"),
-    "NETLINK KOBJECT_UEVENT",
-  );
-  assert.equal(
-    await evaluate("document.getElementById('connection-state').textContent"),
-    "Unknown destination",
-  );
-  assert.match(
-    await evaluate<string>(
-      "document.getElementById('connection-endpoints').textContent",
+    await evaluate(
+      "import(window.spaceTestModule).then(m=>m.connectionVisual('netlink') === undefined)",
     ),
-    /NETLINK KOBJECT_UEVENT/,
+    true,
+    "quiet kernel-facing netlink sockets have no generic connection line",
+  );
+  await evaluate(
+    "import(window.spaceTestModule).then(m=>m.selectConnection('external'))",
   );
   await evaluate(
     "import(window.spaceTestModule).then(m=>m.renderSystemSnapshot({processes:[{identity:{pid:424242,start_time_ticks:7},name:'cpu-glow-test',uid:1000,username:'test',maps_epoch:1,maps:[]}],fd_relations:[],captured_at:Date.now(),inspected_processes:1,inspected_fds:0,warnings:[]}))",
@@ -662,6 +656,7 @@ try {
   );
   await evaluate("document.getElementById('reset').click()");
   await checkFileSpace(evaluate, delay, cdp);
+  await checkNetlinkSpace(evaluate, delay, cdp);
   await checkNetworkSpace(evaluate, delay, cdp);
   // A close-up right drag should travel as far in world space as a focused drag.
   await evaluate(
