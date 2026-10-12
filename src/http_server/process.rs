@@ -13,6 +13,7 @@
 //! | [`ProcessMonitor`] | `pub(super)` | `struct `[`ProcessMonitor`] |
 //! | [`SubscribeError`] | `pub(super)` | `enum `[`SubscribeError`] |
 //! | [`SocketInfo`] | `pub(super)` | `struct `[`SocketInfo`] |
+//! | [`SocketMetadataReader`] | `pub(super)` | `struct `[`SocketMetadataReader`] |
 //!
 //! ## Constants
 //!
@@ -39,6 +40,7 @@
 //! | [`inet_sockets`] | `pub(super)` | `fn inet_sockets(text: &`[`str`]`, protocol: `[`super::socket_types::SocketProtocol`]`) -> `[`HashMap`](std::collections::HashMap)`<`[`u64`]`, `[`SocketInfo`]`>` |
 //! | [`unix_sockets`] | `pub(super)` | `fn unix_sockets(text: &`[`str`]`) -> `[`HashMap`](std::collections::HashMap)`<`[`u64`]`, `[`SocketInfo`]`>` |
 //! | [`unix_socket_peers`] | `pub(super)` | `fn unix_socket_peers(deadline: `[`Instant`](std::time::Instant)`) -> `[`Result`](anyhow::Result)`<`[`HashMap`](std::collections::HashMap)`<`[`u64`]`, `[`SocketInfo`]`>>` |
+//! | [`additional_sockets`] | `pub(super)` | `fn additional_sockets(pid: `[`i32`]`) -> `[`HashMap`](std::collections::HashMap)`<`[`u64`]`, `[`SocketInfo`]`>` |
 //! | [`timestamp_ms`] | `pub(super)` | `fn timestamp_ms() -> `[`u64`] |
 //!
 mod details;
@@ -51,6 +53,7 @@ mod monitoring;
 mod procfs;
 mod resources;
 mod snapshot;
+mod socket_metadata;
 mod sockets;
 mod threads;
 pub(super) use discovery::{ProcessScanner, ProcessSummary};
@@ -66,9 +69,12 @@ pub(super) use resources::{
     memory_maps, observation, socket_text, threads, ticks_per_second, timestamp_ms,
     unix_socket_peers, unix_sockets,
 };
+pub(super) use socket_metadata::{SocketMetadataReader, additional_sockets};
 pub(super) use sockets::SocketInfo;
 #[cfg(test)]
 mod test_support;
+#[cfg(test)]
+pub(super) use socket_metadata::metadata_available;
 #[cfg(test)]
 pub(super) use test_support::Target as TestTarget;
 #[cfg(test)]

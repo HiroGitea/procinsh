@@ -95,6 +95,16 @@ try {
   });
   await cdp("Page.addScriptToEvaluateOnNewDocument", {
     source: `
+    // Optional prebaked glyph cache and synthetic process memory stay local to the fixture.
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = (input, options) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (url.pathname.startsWith('/slug-core/'))
+        return Promise.resolve(new Response(null, {status:404}));
+      if (url.pathname === '/api/processes/memory' && url.searchParams.get('pid') === '424242' && url.searchParams.get('start_time_ticks') === '7')
+        return Promise.resolve(Response.json({error:'Process has exited'}, {status:410}));
+      return nativeFetch(input, options);
+    };
     window.spaceTestSources=[];
     const NativeEventSource=window.EventSource;
     window.EventSource=class extends NativeEventSource {
@@ -342,6 +352,7 @@ try {
       {id:'tcp-candidate',endpoint:a,peer:b,label:'TCP ESTABLISHED',shared:false,candidate:true},
       {id:'pipe-shared',endpoint:{...a,kind:'pipe',resource:{kind:'pipe',device:{major:0,minor:1},inode:'20'}},peer:{...b,kind:'pipe',resource:{kind:'pipe',device:{major:0,minor:1},inode:'20'}},label:'pipe',shared:true,candidate:false},
       {id:'external',endpoint:{...a,resource:{kind:'socket',device:{major:0,minor:1},inode:'99'}},peer:null,label:'UNIX STREAM external',shared:false,candidate:false},
+      {id:'netlink',endpoint:{...a,fd:11,resource:{kind:'socket',device:{major:0,minor:1},inode:'14130'}},peer:null,label:'NETLINK KOBJECT_UEVENT',shared:false,candidate:false,socket:{protocol:{kind:'other',family:16,socket_type:{kind:'dgram'},protocol:15},state:null,local:null,remote:null,path:null,network_peer:false,remote_hostname:null}},
     ];
     m.renderSystemSnapshot({processes:[node,peer],fd_relations:edges,captured_at:Date.now(),inspected_processes:2,inspected_fds:4,warnings:[]});
     m.selectConnection('unix-exact');
@@ -455,6 +466,23 @@ try {
       "document.getElementById('connection-endpoints').textContent",
     ),
     /External \/ unknown/,
+  );
+  await evaluate(
+    "import(window.spaceTestModule).then(m=>m.selectConnection('netlink'))",
+  );
+  assert.equal(
+    await evaluate("document.getElementById('connection-label').textContent"),
+    "NETLINK KOBJECT_UEVENT",
+  );
+  assert.equal(
+    await evaluate("document.getElementById('connection-state').textContent"),
+    "Unknown destination",
+  );
+  assert.match(
+    await evaluate<string>(
+      "document.getElementById('connection-endpoints').textContent",
+    ),
+    /NETLINK KOBJECT_UEVENT/,
   );
   await evaluate(
     "import(window.spaceTestModule).then(m=>m.renderSystemSnapshot({processes:[{identity:{pid:424242,start_time_ticks:7},name:'cpu-glow-test',uid:1000,username:'test',maps_epoch:1,maps:[]}],fd_relations:[],captured_at:Date.now(),inspected_processes:1,inspected_fds:0,warnings:[]}))",

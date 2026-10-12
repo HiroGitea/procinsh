@@ -45,11 +45,20 @@ export interface InetAddress {
   port: number;
 }
 export type SocketType =
-  | { kind: "stream" | "dgram" | "seqpacket" }
+  | {
+      kind:
+        "stream" | "dgram" | "raw" | "rdm" | "seqpacket" | "dccp" | "packet";
+    }
   | { kind: "unknown"; code: number };
 export type SocketProtocol =
   | { kind: "tcp" | "udp"; family: "ipv4" | "ipv6" }
-  | { kind: "unix"; socket_type: SocketType };
+  | { kind: "unix"; socket_type: SocketType }
+  | {
+      kind: "other";
+      family: number;
+      socket_type: SocketType | null;
+      protocol: number;
+    };
 export type SocketState =
   | {
       kind:
@@ -302,7 +311,8 @@ export interface FdEndpoint {
 }
 export interface SocketEndpoint {
   protocol: SocketProtocol;
-  state: SocketState;
+  /** Null when only the kind was observed. Peer identification is independent. */
+  state: SocketState | null;
   local: InetAddress | null;
   remote: InetAddress | null;
   path: string | null;

@@ -23,8 +23,12 @@ export function connectionState(
   if (e.candidate) return "Candidate peer";
   if (e.peer) return "Confirmed process connection";
   if (e.socket?.network_peer) return "Network destination";
-  if (e.socket?.state.kind === "listen") return "Listening";
-  if (e.socket?.protocol.kind === "udp") return "No destination set";
+  if (e.socket?.state?.kind === "listen") return "Listening";
+  if (
+    e.socket?.protocol.kind === "udp" &&
+    (e.socket.remote || e.socket.state?.kind === "unconnected")
+  )
+    return "No destination set";
   return "Unknown destination";
 }
 

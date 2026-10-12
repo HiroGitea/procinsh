@@ -84,7 +84,7 @@ export function createProcessDetails(store: ProcessDataStore) {
         cell(row, e.fd, "mono");
         cell(
           row,
-          `${Display.protocol(e.protocol) || e.kind}\n${Display.access(e.access)}`,
+          `${Display.protocol(e.protocol) || (e.kind === "socket" ? "Socket · Type unavailable" : e.kind)}\n${Display.access(e.access)}`,
           "mono",
         );
         const resource = cell(row, e.target, "mono muted");

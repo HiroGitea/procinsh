@@ -200,7 +200,15 @@ export function createSpaceDetails(
     ];
     if (e.socket) {
       const info = document.createElement("p");
-      info.textContent = `${Display.protocol(e.socket.protocol)} ${Display.state(e.socket!.state)} · ${Display.address(e.socket!.local) || e.socket!.path || "—"} → ${Display.address(e.socket.remote) || "—"}`;
+      info.textContent = [
+        Display.protocol(e.socket.protocol),
+        Display.state(e.socket.state),
+        e.socket.local || e.socket.path || e.socket.remote
+          ? `${Display.address(e.socket.local) || e.socket.path || "—"} → ${Display.address(e.socket.remote) || "—"}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
       endpoints.push(info);
     }
     const group = [...network.values()].find((g) =>
