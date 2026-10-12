@@ -33,6 +33,19 @@ export async function checkNetworkSpace(
     groups.some((g) => g.label.includes("×2")),
     "same destination is aggregated",
   );
+  const attachments = await evaluate<{
+    owner: { x: number; y: number; z: number };
+    starts: number[][];
+  }>(`import(window.spaceTestModule).then(m=>({
+    owner:m.processPosition('900001:1'),
+    starts:['net-a','net-b','net-v6'].map(id=>m.connectionVisual(id).points[0]),
+  }))`);
+  for (const start of attachments.starts)
+    assert.deepEqual(
+      start,
+      [attachments.owner.x, attachments.owner.y, 8],
+      "external connections start at the center of the process roof",
+    );
   assert.deepEqual(
     await evaluate(
       "import(window.spaceTestModule).then(m=>m.networkParticles())",
