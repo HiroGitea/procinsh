@@ -16,7 +16,7 @@ export function createSpaceCamera(canvas: HTMLCanvasElement) {
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
   controls.maxPolarAngle = Math.PI * 0.49;
-  controls.minDistance = 3;
+  controls.minDistance = 0.5;
   controls.maxDistance = 500;
   // OrbitControls scales panning by camera distance. Keep close-up navigation usable.
   function updatePanSpeed() {
