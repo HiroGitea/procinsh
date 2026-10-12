@@ -78,9 +78,12 @@ def decode_address(raw):
         # A Netlink port ID is not necessarily a process PID.
         result.update(port_id=port_id, groups=groups,
                       endpoint="kernel" if port_id == 0 else "userspace_port")
-    elif family == socket.AF_PACKET and len(raw) >= 20:
+    elif family == socket.AF_PACKET and len(raw) >= 12:
         result.update(protocol=struct.unpack_from("!H", raw, 2)[0],
-                      interface_index=struct.unpack_from("=i", raw, 4)[0])
+                      interface_index=struct.unpack_from("=i", raw, 4)[0],
+                      hardware_type=struct.unpack_from("=H", raw, 8)[0],
+                      packet_type=raw[10],
+                      hardware_address_hex=raw[12:12 + raw[11]].hex())
     elif family == 40 and len(raw) >= 16:  # AF_VSOCK
         port, cid = struct.unpack_from("=II", raw, 4)
         result.update(port=port, cid=cid)

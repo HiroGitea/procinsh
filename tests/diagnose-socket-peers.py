@@ -88,6 +88,14 @@ class SocketDiagnosisTests(unittest.TestCase):
                 self.assertEqual(result["peer"]["kind"], "abstract")
                 self.assertEqual(result["peer"]["name_hex"], name[1:].hex())
 
+    def test_packet_sockaddr_with_six_byte_hardware_address(self):
+        # Kernel getsockname output for the observed NetworkManager ARP socket.
+        result = diagnosis.decode_address(bytes.fromhex(
+            "1100080602000000010000067085c29bb1f9"))
+        self.assertEqual(result["protocol"], 0x0806)
+        self.assertEqual(result["interface_index"], 2)
+        self.assertEqual(result["hardware_address_hex"], "7085c29bb1f9")
+
 
 if __name__ == "__main__":
     unittest.main()
