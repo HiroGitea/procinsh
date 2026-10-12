@@ -4,10 +4,11 @@ import { key, PROCESS_SIDE } from "./model.js";
 import type { ProcessId, FdRelation } from "../shared/api-types.js";
 import type { Position, TreePosition } from "./types.js";
 
-/** The identity and parent relationship needed to place a process. */
+/** The identity, parent relationship, and optional name used to place a process. */
 export interface ProcessLayoutNode {
   identity: ProcessId;
   parent_id?: ProcessId | null;
+  name?: string;
 }
 interface PackedTree {
   positions: Map<string, TreePosition>;
@@ -26,6 +27,7 @@ const WRAPPED_ROW_OFFSET = PROCESS_SIDE;
  * Leaf siblings share a block that can wrap onto multiple rows. Sibling
  * branches with descendants occupy separate horizontal ranges. Trees with
  * different roots can wrap as whole units. Depth describes ancestry, not rows.
+ * Roots named kthreadd are packed first; other roots retain PID/start-time order.
  * xGap and yGap control horizontal and vertical spacing.
  * Distinct confirmed socket peers prioritize central sibling blocks and leaf
  * slots. Shared descriptors, candidates, external and stale peers do not count.
@@ -105,7 +107,13 @@ export function treeLayout(
     list.sort((a, b) => rank.get(a)! - rank.get(b)!);
   const roots = ordered
     .map((node) => key(node.identity))
-    .filter((id) => !parents.get(id));
+    .filter((id) => !parents.get(id))
+    .sort(
+      (a, b) =>
+        Number(known.get(b)!.name === "kthreadd") -
+          Number(known.get(a)!.name === "kthreadd") ||
+        rank.get(a)! - rank.get(b)!,
+    );
   const pack = (
     layouts: PackedTree[],
     gap: number,
@@ -355,6 +363,69 @@ if (import.meta.vitest) {
     identity: { pid, start_time_ticks: pid * 10 },
     parent_id:
       parent !== null ? { pid: parent, start_time_ticks: parent * 10 } : null,
+  });
+
+  test("kthreadd root is packed before systemd without changing tree internals", async () => {
+    const assert: typeof import("node:assert/strict") = (
+      await import("node:assert/strict")
+    ).default;
+    const nodes = [
+      { ...processNode(1), name: "systemd" },
+      { ...processNode(2), name: "kthreadd" },
+      processNode(3, 2),
+      processNode(4, 1),
+      processNode(5, 2),
+      processNode(6, 3),
+      processNode(8),
+    ];
+    const layout = treeLayout(nodes);
+    assert.deepEqual(
+      [...layout].filter(([, p]) => p.parent === null).map(([id]) => id),
+      ["2:20", "1:10", "8:80"],
+    );
+    assert.ok(layout.get("2:20")!.x < layout.get("1:10")!.x);
+    assert.deepEqual(treeLayout([...nodes].reverse()), layout);
+    for (const group of [
+      [1, 4],
+      [2, 3, 5, 6],
+    ]) {
+      const standalone = treeLayout(
+        nodes.filter((node) => group.includes(node.identity.pid)),
+      );
+      const rootId = key(processNode(group[0]).identity),
+        root = layout.get(rootId)!,
+        standaloneRoot = standalone.get(rootId)!;
+      for (const [id, p] of standalone) {
+        const placed = layout.get(id)!;
+        assert.ok(
+          Math.abs(placed.x - root.x - (p.x - standaloneRoot.x)) < 1e-9,
+        );
+        assert.equal(placed.y - root.y, p.y - standaloneRoot.y);
+        assert.equal(placed.parent, p.parent);
+        assert.equal(placed.depth, p.depth);
+      }
+    }
+    const updated = stableLayout([...nodes, processNode(9, 2)], layout);
+    for (const [id, p] of layout) assert.deepEqual(updated.get(id), p);
+    assert.deepEqual(stableLayout(nodes), layout);
+  });
+
+  test("names do not reorder ordinary roots or kthreadd-named children", async () => {
+    const assert: typeof import("node:assert/strict") = (
+      await import("node:assert/strict")
+    ).default;
+    const nodes = [
+      processNode(1),
+      processNode(2),
+      processNode(3, 1),
+      processNode(4, 1),
+      processNode(5),
+    ];
+    const named = nodes.map((node) => ({
+      ...node,
+      name: node.identity.pid === 4 ? "kthreadd" : "systemd",
+    }));
+    assert.deepEqual(treeLayout(named), treeLayout(nodes));
   });
 
   test("leaf siblings wrap while recursive branches stay side by side", async () => {
