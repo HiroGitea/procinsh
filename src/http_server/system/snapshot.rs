@@ -16,7 +16,9 @@ use crate::http_server::process::{
     self, MemoryMap, ProcessId, ProcessScanner, ProcessSummary, SocketInfo,
 };
 use crate::http_server::resource::{DeviceId, IpcIdentity, IpcKind};
-use crate::http_server::socket_types::{AddressFamily, SocketProtocol, SocketState, SocketType};
+use crate::http_server::socket_types::{
+    AddressFamily, SocketConnectionStatus, SocketProtocol, SocketState, SocketType,
+};
 use crate::http_server::socket_types::{FdAccess, FdKind, InetAddress};
 use serde::Serialize;
 use std::{
@@ -51,6 +53,8 @@ pub(super) struct FdEndpoint {
     pub(super) resource: IpcIdentity,
     pub(super) kind: FdKind,
     pub(super) access: FdAccess,
+    /// Independent connection observation; null for non-socket resources.
+    pub(super) connection_status: Option<SocketConnectionStatus>,
 }
 #[derive(Clone, PartialEq, Eq, Serialize)]
 pub(super) struct SocketEndpoint {
@@ -144,7 +148,7 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
     let mut inode_ns = HashMap::new();
     let mut namespaces = HashSet::new();
     let mut denied = 0;
-    let mut unknown_socket_types = 0;
+    let mut metadata: HashMap<IpcIdentity, process::SocketMetadata> = HashMap::new();
     let mut truncated = false;
     let deadline = Instant::now() + Duration::from_secs(8);
     for summary in summaries {
@@ -250,35 +254,21 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                     } else {
                         continue;
                     };
-                    let known = infos.get(&meta.ino());
+                    let resource = IpcIdentity {
+                        kind: if kind == FdKind::Pipe {
+                            IpcKind::Pipe
+                        } else {
+                            IpcKind::Socket
+                        },
+                        device: DeviceId::from_stat(meta.dev()),
+                        inode: meta.ino(),
+                    };
                     if kind == FdKind::Socket
-                        && known.is_none_or(|info| {
-                            matches!(
-                                info.protocol,
-                                SocketProtocol::Other {
-                                    socket_type: None,
-                                    ..
-                                }
-                            )
-                        })
+                        && !metadata.contains_key(&resource)
+                        && let Ok(observed) = metadata_reader.read(number, meta.dev(), meta.ino())
+                        && observed.has_observation()
                     {
-                        match metadata_reader.read(number, meta.dev(), meta.ino()) {
-                            Ok(protocol) => {
-                                infos
-                                    .entry(meta.ino())
-                                    .and_modify(|info| info.protocol = protocol)
-                                    .or_insert(SocketInfo {
-                                        protocol,
-                                        state: None,
-                                        local: None,
-                                        remote: None,
-                                        path: None,
-                                        peer_inode: None,
-                                    });
-                            }
-                            Err(_) if !infos.contains_key(&meta.ino()) => unknown_socket_types += 1,
-                            Err(_) => {}
-                        }
+                        metadata.insert(resource, observed);
                     }
                     let flags = process::fields(&format!("/proc/{pid}/fdinfo/{number}"))
                         .ok()
@@ -288,15 +278,9 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                         process_id: n.identity,
                         fd: number,
                         fd_count: 1,
-                        resource: IpcIdentity {
-                            kind: if kind == FdKind::Pipe {
-                                IpcKind::Pipe
-                            } else {
-                                IpcKind::Socket
-                            },
-                            device: DeviceId::from_stat(meta.dev()),
-                            inode: meta.ino(),
-                        },
+                        resource,
+                        connection_status: (kind == FdKind::Socket)
+                            .then_some(SocketConnectionStatus::Unknown),
                         kind,
                         access: FdAccess::from_flags(flags),
                     });
@@ -327,6 +311,53 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
     match process::unix_socket_peers(Instant::now() + Duration::from_millis(500)) {
         Ok(diag) => infos.extend(diag),
         Err(e) => result.warnings.push(format!("UNIX peer: {e}")),
+    }
+    // Enrich after all table/diag reads so direct observations cannot be overwritten.
+    for (resource, observed) in &metadata {
+        if let Some(protocol) = observed.protocol {
+            infos
+                .entry(resource.inode)
+                .and_modify(|info| {
+                    if matches!(
+                        info.protocol,
+                        SocketProtocol::Other {
+                            socket_type: None,
+                            ..
+                        }
+                    ) {
+                        info.protocol = protocol;
+                    }
+                })
+                .or_insert(SocketInfo {
+                    protocol,
+                    state: None,
+                    local: None,
+                    remote: None,
+                    path: None,
+                    peer_inode: None,
+                });
+        }
+    }
+    let mut unknown_socket_types = 0;
+    let mut unknown_connection_statuses = 0;
+    for (resource, endpoints) in &mut owners {
+        if resource.kind != IpcKind::Socket {
+            continue;
+        }
+        let observed = metadata
+            .get(resource)
+            .map_or(SocketConnectionStatus::Unknown, |m| m.connection_status);
+        let info = infos.get(&resource.inode);
+        let status = info.map_or(observed, |info| info.connection_status(observed));
+        for endpoint in endpoints {
+            endpoint.connection_status = Some(status);
+            if info.is_none() {
+                unknown_socket_types += endpoint.fd_count;
+            }
+            if status == SocketConnectionStatus::Unknown {
+                unknown_connection_statuses += endpoint.fd_count;
+            }
+        }
     }
     // Socket inodes are global, but reversed tuples must also share a namespace. Build candidates from same net table below only if unique.
     let mut reverse: HashMap<_, Vec<u64>> = HashMap::new();
@@ -495,6 +526,11 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
     if unknown_socket_types > 0 {
         result.warnings.push(format!(
             "Socket type unavailable for {unknown_socket_types} FDs (closed, unobserved, unsupported, or access denied)."
+        ));
+    }
+    if unknown_connection_statuses > 0 {
+        result.warnings.push(format!(
+            "Socket connection status unavailable for {unknown_connection_statuses} FDs (closed, unobserved, unsupported, or access denied)."
         ));
     }
     if truncated {

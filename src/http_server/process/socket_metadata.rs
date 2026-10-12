@@ -1,17 +1,18 @@
-//! Read socket kinds without identifying or communicating with a peer.
+//! Read socket kinds and listener/peer availability through temporary FD duplicates.
 //!
 //! # Interface
 //!
 //! | Definition | Visibility | Kind / signature |
 //! | --- | --- | --- |
 //! | [`SocketMetadataReader`] | `pub(in crate::http_server)` | `struct SocketMetadataReader` |
+//! | [`SocketMetadata`] | `pub(in crate::http_server)` | `struct SocketMetadata` |
 //! | [`additional_sockets`] | `pub(in crate::http_server)` | `fn additional_sockets(pid: `[`i32`]`) -> `[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>` |
 
 use super::{
     ProcessId, check_identity,
     sockets::{self, SocketInfo},
 };
-use crate::http_server::socket_types::{SocketProtocol, SocketType};
+use crate::http_server::socket_types::{SocketConnectionStatus, SocketProtocol, SocketType};
 use anyhow::{Result, bail, ensure};
 use std::{
     collections::HashMap,
@@ -20,7 +21,7 @@ use std::{
 
 /// Lazily owns one pidfd for a process during a descriptor scan.
 ///
-/// Reads only SO_DOMAIN, SO_TYPE and SO_PROTOCOL from temporary FD duplicates;
+/// Reads SO_DOMAIN, SO_TYPE, SO_PROTOCOL, SO_ACCEPTCONN and getpeername from temporary FD duplicates;
 /// no socket data or pending errors are consumed. Process identity and socket
 /// device/inode are checked before publishing a kind. No result is cached
 /// across scans, and process-wide permission/unsupported errors suppress
@@ -29,6 +30,23 @@ pub(in crate::http_server) struct SocketMetadataReader {
     process_id: ProcessId,
     pidfd: Option<OwnedFd>,
     unavailable: Option<String>,
+}
+
+/// Independent kind and connection observations for one verified socket.
+/// An unsupported option does not discard other observations. Addresses are
+/// not decoded; getpeername success only confirms that a peer can be queried.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::http_server) struct SocketMetadata {
+    pub(in crate::http_server) protocol: Option<SocketProtocol>,
+    pub(in crate::http_server) connection_status: SocketConnectionStatus,
+}
+
+impl SocketMetadata {
+    /// Empty observations, such as O_PATH duplicates, cannot suppress a later
+    /// attempt through another descriptor for the same resource.
+    pub(in crate::http_server) fn has_observation(&self) -> bool {
+        self.protocol.is_some() || self.connection_status != SocketConnectionStatus::Unknown
+    }
 }
 
 impl SocketMetadataReader {
@@ -45,7 +63,7 @@ impl SocketMetadataReader {
         fd: u32,
         device: u64,
         inode: u64,
-    ) -> Result<SocketProtocol> {
+    ) -> Result<SocketMetadata> {
         if let Some(reason) = &self.unavailable {
             bail!("{reason}");
         }
@@ -82,22 +100,57 @@ impl SocketMetadataReader {
                 && stat.st_ino == inode,
             "socket FD identity changed"
         );
-        let domain = option(&duplicate, libc::SO_DOMAIN)?;
-        let socket_type = option(&duplicate, libc::SO_TYPE)?;
-        let protocol = option(&duplicate, libc::SO_PROTOCOL)?;
+        let protocol = match (
+            option(&duplicate, libc::SO_DOMAIN),
+            option(&duplicate, libc::SO_TYPE),
+            option(&duplicate, libc::SO_PROTOCOL),
+        ) {
+            (Ok(domain), Ok(kind), Ok(protocol)) => {
+                Some(SocketProtocol::from_codes(domain, kind, protocol))
+            }
+            _ => None,
+        };
+        let accepting = option(&duplicate, libc::SO_ACCEPTCONN).ok().map(|v| v != 0);
+        let mut address: libc::sockaddr_storage = unsafe { std::mem::zeroed() };
+        let mut length = std::mem::size_of_val(&address) as libc::socklen_t;
+        let peer_error = if unsafe {
+            libc::getpeername(
+                duplicate.as_raw_fd(),
+                (&mut address as *mut libc::sockaddr_storage).cast(),
+                &mut length,
+            )
+        } == 0
+        {
+            None
+        } else {
+            std::io::Error::last_os_error().raw_os_error()
+        };
+        let connection_status = connection_status(accepting, peer_error);
         check_identity(self.process_id)?;
-        Ok(SocketProtocol::from_codes(domain, socket_type, protocol))
+        Ok(SocketMetadata {
+            protocol,
+            connection_status,
+        })
     }
 
-    fn syscall_error(&mut self) -> Result<SocketProtocol> {
+    fn syscall_error(&mut self) -> Result<SocketMetadata> {
         let error = std::io::Error::last_os_error();
         if matches!(
             error.raw_os_error(),
             Some(libc::EPERM | libc::EACCES | libc::ENOSYS)
         ) {
-            self.unavailable = Some(format!("socket kind: {error}"));
+            self.unavailable = Some(format!("socket metadata: {error}"));
         }
         Err(error.into())
+    }
+}
+
+fn connection_status(accepting: Option<bool>, peer_error: Option<i32>) -> SocketConnectionStatus {
+    match (accepting, peer_error) {
+        (Some(true), _) => SocketConnectionStatus::Listening,
+        (_, None) => SocketConnectionStatus::PeerPresent,
+        (Some(false), Some(libc::ENOTCONN)) => SocketConnectionStatus::Unconnected,
+        _ => SocketConnectionStatus::Unknown,
     }
 }
 
@@ -195,7 +248,13 @@ pub(in crate::http_server) fn metadata_available(id: ProcessId, fd: i32) -> bool
     use std::os::unix::fs::MetadataExt;
     let meta = std::fs::metadata(format!("/proc/{}/fd/{fd}", id.pid)).unwrap();
     match SocketMetadataReader::new(id).read(fd as u32, meta.dev(), meta.ino()) {
-        Ok(_) => true,
+        Ok(metadata) => {
+            assert!(
+                metadata.protocol.is_some(),
+                "socket kind observation is required"
+            );
+            true
+        }
         Err(error) => {
             let restricted = error.downcast_ref::<std::io::Error>().is_some_and(|error| {
                 matches!(
@@ -229,7 +288,148 @@ mod tests {
 
     fn read_socket(reader: &mut SocketMetadataReader, fd: i32) -> SocketProtocol {
         let meta = fs::metadata(format!("/proc/self/fd/{fd}")).unwrap();
+        reader
+            .read(fd as u32, meta.dev(), meta.ino())
+            .unwrap()
+            .protocol
+            .unwrap()
+    }
+
+    fn read_metadata(reader: &mut SocketMetadataReader, fd: i32) -> SocketMetadata {
+        let meta = fs::metadata(format!("/proc/self/fd/{fd}")).unwrap();
         reader.read(fd as u32, meta.dev(), meta.ino()).unwrap()
+    }
+
+    #[test]
+    fn socket_connection_status_preserves_uncertain_observations() {
+        use SocketConnectionStatus::*;
+        assert_eq!(
+            connection_status(Some(true), Some(libc::ENOTCONN)),
+            Listening
+        );
+        assert_eq!(
+            connection_status(Some(false), Some(libc::ENOTCONN)),
+            Unconnected
+        );
+        assert_eq!(connection_status(None, Some(libc::ENOTCONN)), Unknown);
+        for code in [libc::EOPNOTSUPP, libc::EPERM, libc::EACCES, libc::EBADF] {
+            assert_eq!(connection_status(Some(false), Some(code)), Unknown);
+        }
+        assert_eq!(connection_status(None, None), PeerPresent);
+    }
+
+    #[test]
+    fn socket_path_descriptors_allow_a_later_usable_descriptor() {
+        use std::{ffi::CString, net::UdpSocket};
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let id = super::super::identity(std::process::id() as i32).unwrap();
+        if !metadata_available(id, socket.as_raw_fd()) {
+            return;
+        }
+        let usable = socket.try_clone().unwrap();
+        let name = CString::new(format!("/proc/self/fd/{}", socket.as_raw_fd())).unwrap();
+        let raw = unsafe { libc::open(name.as_ptr(), libc::O_PATH | libc::O_CLOEXEC) };
+        assert!(raw >= 0);
+        let path = unsafe { OwnedFd::from_raw_fd(raw) };
+        let first: OwnedFd = socket.into();
+        assert!(unsafe { libc::dup2(path.as_raw_fd(), first.as_raw_fd()) } >= 0);
+        let mut reader = reader();
+        assert!(!read_metadata(&mut reader, first.as_raw_fd()).has_observation());
+        assert_eq!(
+            read_metadata(&mut reader, usable.as_raw_fd()).connection_status,
+            SocketConnectionStatus::Unconnected
+        );
+        let descriptors = serde_json::to_value(super::super::fds(id).unwrap()).unwrap();
+        for fd in [first.as_raw_fd(), path.as_raw_fd(), usable.as_raw_fd()] {
+            let entry = descriptors["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["fd"] == fd)
+                .unwrap();
+            assert_eq!(entry["connection_status"], "unconnected");
+        }
+    }
+
+    #[test]
+    fn socket_connection_status_reads_live_tcp_udp_and_unix_without_consuming_data() {
+        use SocketConnectionStatus::*;
+        use std::{
+            net::{TcpListener, TcpStream, UdpSocket},
+            os::unix::net::{UnixListener, UnixStream},
+        };
+        let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+        if !metadata_available(
+            super::super::identity(std::process::id() as i32).unwrap(),
+            udp.as_raw_fd(),
+        ) {
+            return;
+        }
+        let mut reader = reader();
+        assert_eq!(
+            read_metadata(&mut reader, udp.as_raw_fd()).connection_status,
+            Unconnected
+        );
+        udp.connect("127.0.0.1:54321").unwrap();
+        assert_eq!(
+            read_metadata(&mut reader, udp.as_raw_fd()).connection_status,
+            PeerPresent
+        );
+        for address in ["127.0.0.1:0", "[::1]:0"] {
+            let listener = TcpListener::bind(address).unwrap();
+            assert_eq!(
+                read_metadata(&mut reader, listener.as_raw_fd()).connection_status,
+                Listening
+            );
+            let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            let (accepted, _) = listener.accept().unwrap();
+            for fd in [client.as_raw_fd(), accepted.as_raw_fd()] {
+                assert_eq!(
+                    read_metadata(&mut reader, fd).connection_status,
+                    PeerPresent
+                );
+            }
+        }
+        let path = std::env::temp_dir().join(format!(
+            "procinsh-socket-status-{}.sock",
+            std::process::id()
+        ));
+        let listener = UnixListener::bind(&path).unwrap();
+        // Unlink immediately: the listening FD still supports metadata queries.
+        fs::remove_file(path).unwrap();
+        assert_eq!(
+            read_metadata(&mut reader, listener.as_raw_fd()).connection_status,
+            Listening
+        );
+        let (stream, _peer) = UnixStream::pair().unwrap();
+        assert_eq!(
+            read_metadata(&mut reader, stream.as_raw_fd()).connection_status,
+            PeerPresent
+        );
+        let unbound = UnixDatagram::unbound().unwrap();
+        assert_eq!(
+            read_metadata(&mut reader, unbound.as_raw_fd()).connection_status,
+            Unconnected
+        );
+        let (receiver, sender) = UnixDatagram::pair().unwrap();
+        sender.send(b"queued").unwrap();
+        receiver
+            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+            .unwrap();
+        let flags = unsafe { libc::fcntl(receiver.as_raw_fd(), libc::F_GETFL) };
+        for _ in 0..32 {
+            assert_eq!(
+                read_metadata(&mut reader, receiver.as_raw_fd()).connection_status,
+                PeerPresent
+            );
+        }
+        assert_eq!(
+            unsafe { libc::fcntl(receiver.as_raw_fd(), libc::F_GETFL) },
+            flags
+        );
+        let mut data = [0; 16];
+        assert_eq!(receiver.recv(&mut data).unwrap(), 6);
+        assert_eq!(&data[..6], b"queued");
     }
 
     #[test]
@@ -273,6 +473,10 @@ mod tests {
             "NETLINK KOBJECT_UEVENT"
         );
         assert_eq!(
+            read_metadata(&mut reader, netlink.as_raw_fd()).connection_status,
+            SocketConnectionStatus::PeerPresent
+        );
+        assert_eq!(
             read_socket(&mut reader, unix.as_raw_fd()),
             SocketProtocol::Unix {
                 socket_type: SocketType::Dgram
@@ -292,6 +496,8 @@ mod tests {
         let meta = fs::metadata(format!("/proc/{}/fd/61", target.id.pid)).unwrap();
         let protocol = SocketMetadataReader::new(target.id)
             .read(61, meta.dev(), meta.ino())
+            .unwrap()
+            .protocol
             .unwrap();
         assert_eq!(
             protocol,

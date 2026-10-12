@@ -6,7 +6,7 @@ import type {
   IoActivity,
   SocketEndpoint,
 } from "../shared/api-types.js";
-import { ipcKey, key } from "./model.js";
+import { ipcKey, key, socketOwnerKey } from "./model.js";
 import type { RecentNetlinkSocket, NetlinkSocketInfo } from "./types.js";
 
 /** USERSOCK retains ordinary socket rendering; other families are unaffected. */
@@ -19,8 +19,7 @@ export function isKernelNetlink(socket: SocketEndpoint | null | undefined) {
   );
 }
 
-const ownerKey = (endpoint: Pick<FdEndpoint, "process_id" | "resource">) =>
-  JSON.stringify([key(endpoint.process_id), ipcKey(endpoint.resource)]);
+const ownerKey = socketOwnerKey;
 
 /** Shared ownership is not a communication peer. Each owner gets its own entry. */
 function socketOwners(relations: readonly FdRelation[]) {
@@ -88,9 +87,14 @@ export class RecentNetlinkSockets {
     relations: readonly FdRelation[],
     now: number,
     live: ReadonlySet<string>,
+    suppressed: ReadonlySet<string> = new Set(),
   ) {
     this.owners = socketOwners(relations);
     for (const [id, entry] of this.entries) {
+      if (suppressed.has(id)) {
+        this.entries.delete(id);
+        continue;
+      }
       const owner = this.owners.get(id);
       if (owner) Object.assign(entry, owner);
     }

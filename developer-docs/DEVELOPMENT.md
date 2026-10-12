@@ -227,9 +227,13 @@ Axum がルートごとにクエリを取り出し、ハンドラへ渡します
 
 FD 情報の収集、通信相手の候補の照合、候補を所有するプロセス・FD の探索は [fds.rs](../src/http_server/process/fds.rs) を参照してください。UNIX domain socket の通信相手の inode を取得する処理は [socket diagnostic](../src/http_server/process/sockets.rs) にあります。
 
-ソケットの種類は通信相手の特定とは独立して取得し、SPACE の接続詳細とプロセスの FD 一覧に表示します。TCP・UDP・UNIX の表に加え、Netlink・RAW・packet の procfs 表を参照します。種類や socket type が表から分からない FD は、[SocketMetadataReader](../src/http_server/process/socket_metadata.rs) が `pidfd_open`・`pidfd_getfd` で一時的に複製し、`SO_DOMAIN`・`SO_TYPE`・`SO_PROTOCOL` を読み取ります。プロセスの開始時刻と socket の device/inode を検証し、pidfd は走査中のプロセスごとに保持します。複製した FD は直ちに閉じ、送受信・ソケット設定の変更・対象の停止は行いません。pidfd による複製は ptrace の権限検査を受け、権限不足や非対応のカーネルでは procfs で取得できた種類を保持します。
+ソケットの種類は通信相手の特定とは独立して取得し、SPACE の接続詳細とプロセスの FD 一覧に表示します。TCP・UDP・UNIX の表に加え、Netlink・RAW・packet の procfs 表を参照します。ソケット FD は、[SocketMetadataReader](../src/http_server/process/socket_metadata.rs) が `pidfd_open`・`pidfd_getfd` で一時的に複製し、`SO_DOMAIN`・`SO_TYPE`・`SO_PROTOCOL`・`SO_ACCEPTCONN` と `getpeername` を読み取ります。種類と待受・相手の有無は独立して扱い、成功した直接観測は収集回ごとに device/inode をキーに共有します。プロセスの開始時刻と socket の device/inode を検証し、pidfd は走査中のプロセスごとに保持します。複製した FD は直ちに閉じ、送受信・ソケット設定の変更・対象の停止は行いません。pidfd による複製は ptrace の権限検査を受け、権限不足や非対応のカーネルでは procfs で取得できた種類を保持します。
 
-種類が取得できれば、未接続でも `TCP`、`NETLINK KOBJECT_UEVENT`、`VSOCK STREAM` などを表示します。TCP・UDP・UNIX 以外の API の protocol は `kind: "other"` と Linux の `family`・`socket_type`・`protocol` 番号で表し、未認識の番号も保持します。Netlink の procfs 表だけでは socket type は分からないため、その場合は `socket_type: null` です。接続状態が未取得なら `state: null` とし、種類から接続状態や相手の PID を推測しません。種類も未取得の socket は `Socket · Type unavailable` と表示し、走査結果の警告にも含めます。
+プロセスの FD 一覧では、種類が取得できれば未接続でも `TCP`、`NETLINK KOBJECT_UEVENT`、`VSOCK STREAM` などを表示します。TCP・UDP・UNIX 以外の API の protocol は `kind: "other"` と Linux の `family`・`socket_type`・`protocol` 番号で表し、未認識の番号も保持します。Netlink の procfs 表だけでは socket type は分からないため、その場合は `socket_type: null` です。接続状態が未取得なら `state: null` とし、種類から接続状態や相手の PID を推測しません。種類も未取得の socket は `Socket · Type unavailable` と表示し、走査結果の警告にも含めます。
+
+system snapshot の関係の両端にある FD と、プロセス FD API の entry は、`connection_status` を返します。ソケットでは `listening`（`SO_ACCEPTCONN` が非ゼロ）、`unconnected`（待受ではなく `getpeername` が `ENOTCONN`）、`peer_present`（peer 照会成功）、`unknown`（未取得・非対応）で、ソケット以外は `null` です。既存の `state` は TCP・UNIX の状態として独立して保持します。直接観測が不明な場合は、表の明確な LISTEN、peer inode、TCP/UDP の意味のある相手アドレスから正の情報だけを補います。ゼロの相手アドレスや CLOSE、UNIX の状態名だけでは未接続と判定しません。`peer_present` は名前なし UNIX や Netlink の既定送信先も含み、相手プロセスの特定を意味しません。
+
+SPACE は、関係のどちらかのソケット FD が `listening` / `unconnected` の場合、共有 FD の線も含めて可視化から除外します。除外ソケットの IPC イベントは、粒子や操作元ポートの発光にも使いません。接続処理中でも peer 照会が `ENOTCONN` の間は除外し、未接続 UDP の `sendto` / `sendmsg` による通信も SPACE には表示しません。`unknown`、旧サーバーのフィールド欠落は表示対象として扱います。API と受信した生のスナップショットには全 FD を保持し、状態が変わったら選択・粒子・保持中の Netlink 表示も更新します。
 
 `dev_test.sh` は `PROCINSH_REQUIRE_SOCKET_METADATA=1` を設定し、pidfd による種類取得の権限不足・非対応によるテストのスキップを禁止します。通常の `cargo test` は、コンテナなどで FD の複製が制限されている場合にも procfs の種類取得と種類未取得の部分結果を検証します。
 
@@ -421,7 +425,7 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 |---|---|---|
 | CPU の発光 | 実行中に強まり、活動が途絶えると約500msで減衰 | [`cpuGlowLevel`](../web/src/space/renderer.ts#L67) |
 | IPC・ネットワークの粒子 | 読み書きの向きと操作回数に応じて粒子を生成。接続先を一つに特定できない場合は操作元のポートだけを発光。`prefers-reduced-motion` に応じて粒子の表示時間と数を減らす | [`edgeDirection`](../web/src/space/data.ts)、[`ipcParticlePlan`](../web/src/space/renderer.ts#L48)、[`SpaceDataStore.ingestActivity`](../web/src/space/data.ts) |
-| netlink 通信 | USERSOCK を除く netlink は、通信を観測したプロセスの下方にオレンジ色の六角形プレートと接続線を表示。プロセスとソケット資源ごとに複製 FD をまとめ、送信はプレートへ、受信はプロセスへ粒子を流す。最終通信から30秒、各プロセス32個・全体512個まで保持し、古いものから削除。ソケットが閉じても期限まで保持し、プロセス終了・SSEリセットでは削除。プレートはカーネル側インターフェースの概念図で、実際の相手の netlink アドレスは未観測 | [RecentNetlinkSockets](../web/src/space/netlink.ts)、[refreshFileScene](../web/src/space/scene.ts) |
+| netlink 通信 | USERSOCK を除く netlink は、通信を観測したプロセスの下方にオレンジ色の六角形プレートと接続線を表示。プロセスとソケット資源ごとに複製 FD をまとめ、送信はプレートへ、受信はプロセスへ粒子を流す。最終通信から30秒、各プロセス32個・全体512個まで保持し、古いものから削除。ソケットが閉じても期限まで保持し、プロセス終了・SSEリセット・待受または未接続への変化では削除。プレートはカーネル側インターフェースの概念図で、実際の相手の netlink アドレスは未観測 | [RecentNetlinkSockets](../web/src/space/netlink.ts)、[refreshFileScene](../web/src/space/scene.ts) |
 | ファイル I/O | 読み書きの粒子と、保持中のファイルのバイト数・操作回数を表示。最終アクセスから30秒、各プロセス32個・全体512個まで保持し、終了したプロセスのファイルは削除 | [`RecentFiles`](../web/src/space/data.ts)、[`fileDetails`](../web/src/space/details.ts#L72) |
 | プロセス名・接続先ラベル | 3D 座標を画面座標へ投影し、WebGL とは別の Canvas 2D に描画 | [`drawLabels`](../web/src/space/renderer.ts#L191) |
 

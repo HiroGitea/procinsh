@@ -69,6 +69,7 @@ export interface EdgeStat {
 }
 export type ActivityRoute = {
   kind: "file" | "netlink" | "connection" | "port";
+  socketOwnerKey?: string;
   id: string;
   direction?: number | null;
   count: number;

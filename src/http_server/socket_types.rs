@@ -8,6 +8,7 @@
 //! | [`SocketType`] | `pub(super)` | `enum SocketType` |
 //! | [`SocketProtocol`] | `pub(super)` | `enum SocketProtocol` |
 //! | [`SocketState`] | `pub(super)` | `enum SocketState` |
+//! | [`SocketConnectionStatus`] | `pub(super)` | `enum SocketConnectionStatus` |
 //! | [`FdKind`] | `pub(super)` | `enum FdKind` |
 //! | [`FdAccess`] | `pub(super)` | `enum FdAccess` |
 //! | [`InetAddress`] | `pub(super)` | `struct InetAddress` |
@@ -216,6 +217,20 @@ fn netlink_name(protocol: u32) -> Option<&'static str> {
         _ => return None,
     })
 }
+/// Independently observed listener/peer availability, not a transport state.
+///
+/// A peer includes an unnamed UNIX endpoint or a Netlink default destination;
+/// it does not identify a process. Unknown observations must remain visible.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum SocketConnectionStatus {
+    Listening,
+    Unconnected,
+    PeerPresent,
+    #[default]
+    Unknown,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", content = "code", rename_all = "snake_case")]
 pub(super) enum SocketState {

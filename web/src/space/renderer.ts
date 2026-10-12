@@ -101,6 +101,8 @@ type Particle = {
   duration: number;
   color: number;
   networkId?: string;
+  connectionId?: string;
+  socketOwnerKey?: string;
   fileId?: string;
   netlinkId?: string;
 } & (
@@ -347,6 +349,7 @@ export function createSpaceRenderer({
             start: now,
             duration: plan.duration,
             pos: n.pos.clone().add(new graphics.Vector3(1.2, 0, 1)),
+            socketOwnerKey: route.socketOwnerKey,
             color: 0xffffff,
           });
         continue;
@@ -367,6 +370,8 @@ export function createSpaceRenderer({
           start: now + offset,
           duration: plan.duration,
           curve: path.curve,
+          connectionId: route.kind === "connection" ? route.id : undefined,
+          socketOwnerKey: route.socketOwnerKey,
           direction: route.direction ?? null,
           fileId: route.kind === "file" ? route.id : undefined,
           netlinkId: route.kind === "netlink" ? route.id : undefined,
@@ -404,9 +409,13 @@ export function createSpaceRenderer({
     signalFlights = signalFlights.slice(-SIGNAL_CAP);
     if (particles.length > CAP) particles = particles.slice(-CAP);
   }
-  function retainParticles(networkIds: ReadonlySet<string>) {
+  function retainParticles(
+    networkIds: ReadonlySet<string>,
+    suppressed: ReadonlySet<string> = new Set(),
+  ) {
     const view = readView();
     const visible = new Set(view.hullIds);
+    const connections = new Set(view.edgeViews.map((v) => v.e.id));
     signalFlights = signalFlights.filter(
       (f) => visible.has(f.source) && visible.has(f.destination),
     );
@@ -414,6 +423,8 @@ export function createSpaceRenderer({
       if (!visible.has(id)) signalPulses.delete(id);
     particles = particles.filter(
       (p) =>
+        (!p.connectionId || connections.has(p.connectionId)) &&
+        (!p.socketOwnerKey || !suppressed.has(p.socketOwnerKey)) &&
         (!p.fileId || view.fileViews.has(p.fileId)) &&
         (!p.netlinkId || view.netlinkViews.has(p.netlinkId)) &&
         (!p.networkId || networkIds.has(p.networkId)),

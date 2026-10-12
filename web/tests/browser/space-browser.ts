@@ -19,6 +19,7 @@ import { checkDescriptors } from "./fds.js";
 import { checkNetlinkSpace } from "./space-netlink.js";
 import { checkFileSpace } from "./space-files.js";
 import { checkNetworkSpace } from "./space-network.js";
+import { checkSocketVisibility } from "./space-socket-visibility.js";
 import { processEventRecording } from "./process-events.js";
 import { checkBuildHeader } from "./build-header.js";
 
@@ -657,6 +658,7 @@ try {
   await evaluate("document.getElementById('reset').click()");
   await checkFileSpace(evaluate, delay, cdp);
   await checkNetlinkSpace(evaluate, delay, cdp);
+  await checkSocketVisibility(evaluate);
   await checkNetworkSpace(evaluate, delay, cdp);
   // A close-up right drag should travel as far in world space as a focused drag.
   await evaluate(
