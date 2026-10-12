@@ -19,7 +19,7 @@ export async function checkProcessSessions({
   debugPort: string;
 }) {
   const pinnedUrl = await evaluate<string>("location.href");
-  const { targetId } = await cdp("Target.createTarget", { url });
+  const { targetId } = await cdp("Target.createTarget", { url: url + "/list" });
   let socket: WebSocket | undefined;
   try {
     const page = await until(async () => {
@@ -35,7 +35,7 @@ export async function checkProcessSessions({
     assert.equal(
       await second("document.getElementById('inspector')"),
       null,
-      "root always shows list",
+      "list page has no process inspector",
     );
     await call("Page.navigate", { url: pinnedUrl });
     await until(
@@ -76,7 +76,7 @@ export async function checkProcessSessions({
     assert.equal(await evaluate("document.getElementById('inspector')"), null);
     await choose(originalPid);
     console.log(
-      "Process sessions passed: independent tabs, root list, independent selection and disconnect.",
+      "Process sessions passed: independent tabs, process list, independent selection and disconnect.",
     );
   } finally {
     socket?.close();

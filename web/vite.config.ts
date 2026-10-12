@@ -14,11 +14,11 @@ function applicationPages(): Plugin {
       server.middlewares.use((request, _response, next) => {
         const url = new URL(request.url ?? "/", "http://localhost");
         const path = url.pathname;
-        const page = /^\/(?:list\/?)?$/.test(path)
+        const page = /^\/list\/?$/.test(path)
           ? "list"
           : /^\/process\/\d+\/?$/.test(path)
             ? "process"
-            : /^\/space\/?$/.test(path)
+            : /^\/(?:space\/?)?$/.test(path)
               ? "space"
               : null;
         if (page) request.url = `/${page}/index.html${url.search}`;

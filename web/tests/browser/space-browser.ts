@@ -112,7 +112,7 @@ try {
     };
   `,
   });
-  await cdp("Page.navigate", { url: url + "/space" });
+  await cdp("Page.navigate", { url });
   const snapshot = await until(
     () =>
       evaluate<SystemSnapshot | null>(

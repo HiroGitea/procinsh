@@ -62,7 +62,7 @@ try {
       html.includes(
         path.startsWith("/process")
           ? "/src/process/app.ts"
-          : path === "/space"
+          : path === "/" || path === "/space"
             ? "/src/space/app.ts"
             : "/src/list/app.ts",
       ),

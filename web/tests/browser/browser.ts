@@ -103,7 +103,7 @@ try {
     deviceScaleFactor: 1,
     mobile: false,
   });
-  await cdp("Page.navigate", { url });
+  await cdp("Page.navigate", { url: url + "/list" });
   await waitFor(
     "document.querySelectorAll('#process-list tr').length > 2",
     "process explorer",
