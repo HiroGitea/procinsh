@@ -180,11 +180,6 @@ export function createSpaceDetails(
     $("details").hidden = !active;
     if (!active) return;
     $("connection-state").hidden = !!selectedNetlink;
-    $("connection-kind").textContent = selectedNetlink
-      ? "SELECTED NETLINK SOCKET"
-      : selectedFile
-        ? "SELECTED FILE"
-        : "SELECTED CONNECTION";
     if (selectedNetlink) {
       netlinkDetails();
       return;

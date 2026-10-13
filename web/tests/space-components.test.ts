@@ -602,10 +602,6 @@ test("space-components regression", async () => {
     assert.equal(get("cmdline").children.length, 0);
     assert.equal(get("inspect").textContent, "DETAILS");
     assert.equal(
-      get("inspect").parentElement?.firstElementChild?.textContent,
-      "SELECTED PROCESS",
-    );
-    assert.equal(
       get("inspect").getAttribute("href"),
       "/process/101?start_time_ticks=1",
     );

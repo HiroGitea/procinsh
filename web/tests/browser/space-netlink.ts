@@ -62,10 +62,6 @@ export async function checkNetlinkSpace(
   };
   await click("screen");
   assert.equal(
-    await evaluate("document.getElementById('connection-kind').textContent"),
-    "SELECTED NETLINK SOCKET",
-  );
-  assert.equal(
     await evaluate("document.getElementById('connection-label').textContent"),
     "NETLINK ROUTE · FD 3",
   );
