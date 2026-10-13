@@ -16,7 +16,6 @@ export interface SpaceElements {
   cmdline: HTMLElement;
   inspect: HTMLAnchorElement;
   "connection-details": HTMLElement;
-  "connection-kind": HTMLElement;
   "connection-label": HTMLElement;
   "connection-state": HTMLElement;
   "connection-facts": HTMLElement;
