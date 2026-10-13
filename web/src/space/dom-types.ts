@@ -11,10 +11,9 @@ export interface SpaceElements {
   details: HTMLElement;
   close: HTMLButtonElement;
   "process-details": HTMLElement;
-  name: HTMLElement;
+  name: HTMLAnchorElement;
   pid: HTMLElement;
   cmdline: HTMLElement;
-  inspect: HTMLAnchorElement;
   "connection-details": HTMLElement;
   "connection-label": HTMLElement;
   "connection-state": HTMLElement;

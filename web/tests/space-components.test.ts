@@ -30,6 +30,103 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("connection detail cards stay ordered when collected endpoints reverse", async () => {
+  const { createSpaceDetails } = await import("../src/space/details.js");
+  const { key } = await import("../src/space/model.js");
+  document.body.innerHTML = await readFile(
+    resolve(import.meta.dirname, "../space/index.html"),
+    "utf8",
+  );
+  const details = createSpaceDetails({ connection() {}, network() {} });
+  const selection: SelectionState = {
+    process: null,
+    connection: "connection",
+    network: null,
+    netlink: null,
+    file: null,
+  };
+  for (const [low, high] of [
+    [
+      { pid: 2, ticks: 90, fd: 10 },
+      { pid: 10, ticks: 1, fd: 2 },
+    ],
+    [
+      { pid: 10, ticks: 2, fd: 10 },
+      { pid: 10, ticks: 10, fd: 2 },
+    ],
+    [
+      { pid: 10, ticks: 2, fd: 2 },
+      { pid: 10, ticks: 2, fd: 10 },
+    ],
+  ]) {
+    const endpoints = [low, high].map(({ pid, ticks, fd }) =>
+      fdEndpoint({ process_id: { pid, start_time_ticks: ticks }, fd }),
+    );
+    const nodes = new Map<string, PlacedProcess>();
+    for (const { process_id } of endpoints)
+      nodes.set(key(process_id), {
+        ...processInfo({
+          identity: process_id,
+          name: `process-${key(process_id)}`,
+        }),
+        pos: { x: 0, y: 0, z: 0 },
+        regions: [],
+      });
+    for (const style of [{}, { candidate: true }, { shared: true }]) {
+      const edge = fdRelation({
+        id: "connection",
+        endpoint: endpoints[0],
+        peer: endpoints[1],
+        label: "UNIX STREAM",
+        socket: socketEndpoint({
+          protocol: { kind: "unix", socket_type: { kind: "stream" } },
+          path: "/run/test.sock",
+        }),
+        ...style,
+      });
+      let cards: Element[] | undefined;
+      for (const reversed of [true, false, true]) {
+        const current = reversed
+          ? { ...edge, endpoint: edge.peer!, peer: edge.endpoint }
+          : edge;
+        details.update(
+          {
+            nodes,
+            snapshot: { processes: [], fd_relations: [current] },
+            network: new Map(),
+            edgeStats: new Map(),
+            files: new Map(),
+            netlink: new Map(),
+          },
+          selection,
+        );
+        const rendered = [...spaceElement("connection-endpoints").children];
+        assert.equal(
+          rendered.length,
+          2,
+          "only the endpoint cards are rendered",
+        );
+        rendered.forEach((card, index) => {
+          const { process_id, fd } = endpoints[index];
+          assert.equal(
+            card.querySelector("a")?.getAttribute("href"),
+            `/process/${process_id.pid}?start_time_ticks=${process_id.start_time_ticks}`,
+          );
+          assert.match(card.textContent!, new RegExp(`FD ${fd} ·`));
+          if (cards)
+            assert.equal(card, cards[index], "updates keep each card attached");
+        });
+        cards = rendered;
+        assert.equal(
+          current.endpoint,
+          reversed ? endpoints[1] : endpoints[0],
+          "display ordering does not mutate the collected relation",
+        );
+      }
+    }
+  }
+});
+
 test("socket attachment faces survive endpoint reversal across rebuilds", async () => {
   const { createSpaceScene } = await import("../src/space/scene.js");
   const { key } = await import("../src/space/model.js");
@@ -600,9 +697,9 @@ test("space-components regression", async () => {
     assert.equal(get("name").textContent, "writer");
     assert.equal(get("cmdline").textContent, commandLine.join(" "));
     assert.equal(get("cmdline").children.length, 0);
-    assert.equal(get("inspect").textContent, "DETAILS");
+    assert.ok(get("name") instanceof HTMLAnchorElement);
     assert.equal(
-      get("inspect").getAttribute("href"),
+      get("name").getAttribute("href"),
       "/process/101?start_time_ticks=1",
     );
     for (const command_line of [null, [], ["/usr/bin/writer", "--updated"]]) {
@@ -618,17 +715,20 @@ test("space-components regression", async () => {
       get("connection-facts").textContent!,
       /READ: 8 bytes.*WRITE: 12 bytes/,
     );
-    const link = get("connection-endpoints").children[2];
+    const link = get("connection-endpoints").querySelector("a");
     assert.ok(link instanceof HTMLAnchorElement);
+    assert.equal(link.textContent, "writer");
+    assert.equal(link.getAttribute("href"), "/process/101?start_time_ticks=1");
     details.update(data, { ...emptySelection(), file: "file" });
     assert.equal(
-      get("connection-endpoints").children[2],
+      get("connection-endpoints").querySelector("a"),
       link,
       "live details retain the attached process link",
     );
     const edge = fdRelation({
       id: "connection",
       endpoint: fdEndpoint({ process_id: identity, fd: 3, fd_count: 1 }),
+      peer: fdEndpoint({ process_id: { pid: 101, start_time_ticks: 2 } }),
       socket: socketEndpoint(),
       label: "destination",
     });
@@ -641,6 +741,19 @@ test("space-components regression", async () => {
     };
     const withNetwork = { ...data, network: new Map([["network", group]]) };
     details.update(withNetwork, { ...emptySelection(), network: "network" });
+    const networkLink = get("connection-endpoints").querySelector("a");
+    assert.ok(networkLink instanceof HTMLAnchorElement);
+    assert.equal(networkLink.textContent, "writer");
+    assert.equal(
+      networkLink.getAttribute("href"),
+      "/process/101?start_time_ticks=1",
+    );
+    details.update(withNetwork, { ...emptySelection(), network: "network" });
+    assert.equal(
+      get("connection-endpoints").querySelector("a"),
+      networkLink,
+      "live network details retain the attached process link",
+    );
     const button = get("connection-endpoints").querySelector("button");
     assert.ok(button);
     button.click();
@@ -649,6 +762,42 @@ test("space-components regression", async () => {
       [["connection", "connection"]],
       "detail buttons emit actions",
     );
+    const withConnection = {
+      ...data,
+      snapshot: { ...data.snapshot, fd_relations: [edge] },
+    };
+    details.update(withConnection, {
+      ...emptySelection(),
+      connection: "connection",
+    });
+    const endpointLinks = [
+      ...get("connection-endpoints").querySelectorAll("strong a"),
+    ];
+    assert.deepEqual(
+      endpointLinks.map((a) => [a.textContent, a.getAttribute("href")]),
+      [
+        ["writer", "/process/101?start_time_ticks=1"],
+        ["Unknown process", "/process/101?start_time_ticks=2"],
+      ],
+      "endpoint titles link to each observed identity, including a reused PID",
+    );
+    details.update(withConnection, {
+      ...emptySelection(),
+      connection: "connection",
+    });
+    assert.equal(
+      get("connection-endpoints").querySelector("strong a"),
+      endpointLinks[0],
+      "live connection details retain the attached title link",
+    );
+    details.update(
+      {
+        ...withConnection,
+        snapshot: { ...data.snapshot, fd_relations: [{ ...edge, peer: null }] },
+      },
+      { ...emptySelection(), connection: "connection" },
+    );
+    assert.equal(get("connection-endpoints").querySelectorAll("a").length, 1);
     details.update(data, emptySelection());
     assert.equal(get("details").hidden, true);
   }

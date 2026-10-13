@@ -265,9 +265,16 @@ try {
     new RegExp(String(app.pid)),
   );
   assert.equal(
-    await evaluate("document.getElementById('inspect').getAttribute('href')"),
+    await evaluate("document.getElementById('name').getAttribute('href')"),
     `/process/${app.pid}?start_time_ticks=${n.identity.start_time_ticks}`,
   );
+  assert.equal(
+    await evaluate(
+      "document.querySelector('#process-details h2 a').textContent",
+    ),
+    n.name,
+  );
+  assert.equal(await evaluate("document.getElementById('inspect')"), null);
   await evaluate("document.getElementById('reset').click()");
   assert.equal(
     await evaluate("document.getElementById('search').value"),
@@ -353,7 +360,8 @@ try {
       {id:'external',endpoint:{...a,resource:{kind:'socket',device:{major:0,minor:1},inode:'99'}},peer:null,label:'UNIX STREAM external',shared:false,candidate:false},
       {id:'netlink',endpoint:{...a,fd:11,resource:{kind:'socket',device:{major:0,minor:1},inode:'14130'}},peer:null,label:'NETLINK KOBJECT_UEVENT',shared:false,candidate:false,socket:{protocol:{kind:'other',family:16,socket_type:{kind:'dgram'},protocol:15},state:null,local:null,remote:null,path:null,network_peer:false,remote_hostname:null}},
     ];
-    m.renderSystemSnapshot({processes:[node,peer],fd_relations:edges,captured_at:Date.now(),inspected_processes:2,inspected_fds:4,warnings:[]});
+    window.connectionFixture={processes:[node,peer],fd_relations:edges,captured_at:Date.now(),inspected_processes:2,inspected_fds:4,warnings:[]};
+    m.renderSystemSnapshot(window.connectionFixture);
     m.selectConnection('unix-exact');
     m.renderActivity({window_ms:100,cpu:[{process_id:id,runtime_ns:40000000,switches:2,running_threads:1,cpus:[3]}],ipc:[{process_id:id,resource:{kind:'socket',device:{major:0,minor:1},inode:'10'},write:true,bytes:4096,count:16}],status:{cpu:{state:'observing'},ipc:{state:'observing'}}});
   })()`);
@@ -451,12 +459,31 @@ try {
   );
   assert.deepEqual(
     await evaluate(
-      "Array.from(document.querySelectorAll('#connection-endpoints a'),a=>a.getAttribute('href'))",
+      "Array.from(document.querySelectorAll('#connection-endpoints strong a'),a=>[a.textContent,a.getAttribute('href')])",
     ),
     [
-      "/process/424242?start_time_ticks=7",
-      "/process/434343?start_time_ticks=8",
+      ["cpu-glow-test", "/process/424242?start_time_ticks=7"],
+      ["connection-peer", "/process/434343?start_time_ticks=8"],
     ],
+  );
+  await evaluate(`(async()=>{
+    const m=await import(window.spaceTestModule);
+    window.endpointCards=Array.from(document.querySelectorAll('#connection-endpoints .endpoint'));
+    window.endpointTitle=window.endpointCards[0].querySelector('a');
+    window.endpointTitle.focus();
+    const f=window.connectionFixture;
+    m.renderSystemSnapshot({...f,fd_relations:f.fd_relations.map(e=>e.id==='unix-exact'?{...e,endpoint:e.peer,peer:e.endpoint,socket:{protocol:{kind:'unix',socket_type:{kind:'stream'}},state:{kind:'connected'},local:null,remote:null,path:'/run/test.sock',network_peer:false}}:e)});
+  })()`);
+  assert.ok(
+    await evaluate(
+      "window.endpointCards.every((card,i)=>card===document.querySelectorAll('#connection-endpoints .endpoint')[i]) && document.activeElement===window.endpointTitle",
+    ),
+    "reversing the collected endpoints preserves card order and focused title",
+  );
+  assert.equal(
+    await evaluate("document.querySelector('#connection-endpoints > p')"),
+    null,
+    "connection details omit the duplicate socket summary",
   );
   await evaluate(
     "import(window.spaceTestModule).then(m=>m.selectConnection('tcp-candidate'))",
@@ -811,7 +838,7 @@ try {
     }]};
     m.renderSystemSnapshot(window.linkSnapshot);
     m.selectConnection('click-link');
-    window.detailLink=document.querySelector('#connection-endpoints a');
+    window.detailLink=document.querySelector('#connection-endpoints strong a');
     window.detailLink.focus();
   })()`);
   const linkPoint = await evaluate<{ x: number; y: number }>(
@@ -845,6 +872,30 @@ try {
     "connection link opens process inspector",
   );
   await cdp("Page.navigate", { url });
+  await waitFor(
+    `import(window.spaceTestModule).then(m=>Boolean(m.processPosition('${app.pid}:${n.identity.start_time_ticks}')))`,
+    "process is available after returning to SPACE",
+  );
+  await evaluate(
+    `import(window.spaceTestModule).then(m=>m.selectProcess('${app.pid}:${n.identity.start_time_ticks}'))`,
+  );
+  await evaluate("document.getElementById('name').focus()");
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+  });
+  await waitFor(
+    `location.pathname==='/process/${app.pid}' && location.search==='?start_time_ticks=${n.identity.start_time_ticks}' && document.getElementById('inspector')?.hidden===false`,
+    "process title opens the inspector with Enter",
+  );
   assert.deepEqual(
     errors.filter((e) => !/favicon.ico/.test(e)),
     [],

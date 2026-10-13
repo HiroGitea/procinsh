@@ -11,7 +11,11 @@ import {
 } from "./model.js";
 import type { EdgeStat, SelectionState } from "./types.js";
 import type { DetailsInput, SelectionActions } from "./contracts.js";
-import type { FdEndpoint, SocketEndpoint } from "../shared/api-types.js";
+import type {
+  FdEndpoint,
+  ProcessId,
+  SocketEndpoint,
+} from "../shared/api-types.js";
 import { spaceElement } from "./dom-types.js";
 export function createSpaceDetails(
   actions: Pick<SelectionActions, "connection" | "network">,
@@ -30,6 +34,13 @@ export function createSpaceDetails(
     selectedNetlink: string | null = null;
   const selectConnection = actions.connection,
     selectNetwork = actions.network;
+  function processLink(id: ProcessId) {
+    const link = document.createElement("a");
+    link.className = "process-link";
+    link.href = processUrl(id);
+    link.textContent = nodes.get(key(id))?.name || "Unknown process";
+    return link;
+  }
   function networkDetails() {
     const group = network.get(selectedNetwork ?? "");
     if (!group) return;
@@ -45,14 +56,16 @@ export function createSpaceDetails(
     $("connection-facts").textContent = recent.length
       ? `Latest window: ${recent.reduce((n, s) => n + s.bytes, 0)} bytes / ${recent.reduce((n, s) => n + s.count, 0)} operations · ${((performance.now() - latest) / 1000).toFixed(1)}s ago`
       : "Recent traffic —";
-    const content = document.createDocumentFragment(),
-      heading = document.createElement("p");
+    const heading = document.createElement("p");
     const remoteAddress =
       group.socket.remote_hostname && group.socket.remote
         ? ` (${Display.address(group.socket.remote)})`
         : "";
-    heading.textContent = `${nodes.get(key(group.endpoint.process_id))?.name || ""} · PID ${group.endpoint.process_id.pid} → ${remoteLabel(group.socket)}${remoteAddress} · ${group.members.length} connections`;
-    content.append(heading);
+    heading.append(
+      processLink(group.endpoint.process_id),
+      ` · PID ${group.endpoint.process_id.pid} → ${remoteLabel(group.socket)}${remoteAddress} · ${group.members.length} connections`,
+    );
+    const content: HTMLElement[] = [heading];
     for (const e of group.members) {
       const row = document.createElement("div");
       row.className = "endpoint";
@@ -67,9 +80,9 @@ export function createSpaceDetails(
         ? `${stat.bytes} bytes / ${stat.count} operations · ${((performance.now() - stat.time) / 1000).toFixed(1)}s ago`
         : "Recent traffic —";
       row.append(button, address, observed);
-      content.append(row);
+      content.push(row);
     }
-    $("connection-endpoints").replaceChildren(content);
+    updateConnectionEndpoints(content);
   }
   function fileDetails() {
     const f = recentFiles.get(selectedFile ?? "");
@@ -83,11 +96,11 @@ export function createSpaceDetails(
     const path = document.createElement("p");
     path.textContent = f.path || `Path unavailable · ${fileLabel(f.file)}`;
     const identity = document.createElement("p");
-    identity.textContent = `${nodes.get(key(f.process_id))?.name || "Unknown process"} · PID ${f.process_id.pid} · ${fileLabel(f.file)}`;
-    const link = document.createElement("a");
-    link.href = processUrl(f.process_id);
-    link.textContent = "Open process details ↗";
-    updateConnectionEndpoints([path, identity, link]);
+    identity.append(
+      processLink(f.process_id),
+      ` · PID ${f.process_id.pid} · ${fileLabel(f.file)}`,
+    );
+    updateConnectionEndpoints([path, identity]);
   }
   function netlinkDetails() {
     const socket = netlinkSockets.get(selectedNetlink ?? "");
@@ -117,9 +130,9 @@ export function createSpaceDetails(
     div.className = "endpoint";
     const n = fdEndpoint && nodes.get(key(fdEndpoint.process_id));
     const heading = document.createElement("strong");
-    heading.textContent = fdEndpoint
-      ? n?.name || `Unknown process`
-      : socket?.network_peer
+    if (fdEndpoint) heading.append(processLink(fdEndpoint.process_id));
+    else
+      heading.textContent = socket?.network_peer
         ? (remoteLabel(socket) ?? "Unknown destination")
         : "External / unknown";
     div.append(heading);
@@ -137,10 +150,7 @@ export function createSpaceDetails(
     fd.textContent = `FD ${fdEndpoint.fd}${fdEndpoint.fd_count > 1 ? ` (+${fdEndpoint.fd_count - 1} shared FDs)` : ""} · ${Display.access(fdEndpoint.access)}`;
     const resource = document.createElement("span");
     resource.textContent = ipcLabel(fdEndpoint.resource);
-    const link = document.createElement("a");
-    link.href = processUrl(fdEndpoint.process_id);
-    link.textContent = "Open process details ↗";
-    div.append(identity, fd, resource, link);
+    div.append(identity, fd, resource);
     return div;
   }
   // Keep unchanged links attached across live updates so pointer presses and
@@ -200,6 +210,7 @@ export function createSpaceDetails(
       process.hidden = false;
       connection.hidden = true;
       $("name").textContent = n.name;
+      $("name").href = processUrl(n.identity);
       $("cmdline").textContent = n.command_line?.join(" ") || "N/A";
       $("pid").replaceChildren(
         document.createTextNode(`PID ${n.identity.pid} · `),
@@ -213,7 +224,6 @@ export function createSpaceDetails(
         label.textContent = `${role}: ${name ?? uid ?? "unknown"}${name ? ` (${uid})` : ""} `;
         $("pid").append(label);
       }
-      $("inspect").href = processUrl(n.identity);
       return;
     }
     const e = snapshot.fd_relations.find((edge) => edge.id === selectedEdge);
@@ -226,23 +236,19 @@ export function createSpaceDetails(
     $("connection-facts").textContent = stat
       ? `Latest activity: ${stat.bytes} bytes / ${stat.count} operations · ${((performance.now() - stat.time) / 1000).toFixed(1)}s ago`
       : "Recent traffic —";
+    // Collection can reverse a relation; order the cards by identity and FD.
+    const [first, second] = e.peer
+      ? [e.endpoint, e.peer].sort(
+          (a, b) =>
+            a.process_id.pid - b.process_id.pid ||
+            a.process_id.start_time_ticks - b.process_id.start_time_ticks ||
+            a.fd - b.fd,
+        )
+      : [e.endpoint, null];
     const endpoints: HTMLElement[] = [
-      endpoint(e.endpoint, "ENDPOINT"),
-      endpoint(e.peer, "PEER", e.socket),
+      endpoint(first, "ENDPOINT"),
+      endpoint(second, "PEER", e.socket),
     ];
-    if (e.socket) {
-      const info = document.createElement("p");
-      info.textContent = [
-        Display.protocol(e.socket.protocol),
-        Display.state(e.socket.state),
-        e.socket.local || e.socket.path || e.socket.remote
-          ? `${Display.address(e.socket.local) || e.socket.path || "—"} → ${Display.address(e.socket.remote) || "—"}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      endpoints.push(info);
-    }
     const group = [...network.values()].find((g) =>
       g.members.some((member) => member.id === e.id),
     );
