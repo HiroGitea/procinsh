@@ -11,11 +11,11 @@ Join our [Discord server](https://discord.gg/aQuNSczpw) for questions and discus
 
 <img src="./images/procinsh_movie.gif" alt="Demo of procinsh" width="800">
 
-<img src="./images/procinsh_top.png" alt="Screenshot of space view" width="800">
+<img src="./images/procinsh_space.png" alt="Screenshot of space view" width="800">
 
-<img src="./images/procinsh_procinsh.png" alt="Screenshot of a process in 3D" width="800">
+<img src="./images/procinsh_space_chrome.png" alt="Screenshot of a process in 3D" width="800">
 
-<img src="./images/procinsh_tmux.png" alt="Screenshot of process details" width="800">
+<img src="./images/procinsh_process_chrome.png" alt="Screenshot of process details" width="800">
 
 <img src="./images/procinsh_list.png" alt="Screenshot of the process list" width="800">
 
