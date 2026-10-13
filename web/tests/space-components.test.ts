@@ -90,6 +90,7 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
         4 + ((endpoint.fd % 12) - 5.5) * 0.11,
       );
     });
+    const colors = new Set<string>();
     for (const style of [{}, { candidate: true }, { shared: true }]) {
       const relation = fdRelation({
         id: "socket",
@@ -131,6 +132,22 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
               "reversing the relation preserves the path and reverses its animation direction",
             );
           }
+        const relationLine = scene
+          .pickingView()
+          .objects.find(
+            (object) =>
+              object instanceof T.LineSegments &&
+              object.userData.fd_relations?.includes(edge),
+          ) as T.LineSegments;
+        const firstSegment = relationLine.userData.fd_relations.indexOf(edge);
+        const color = relationLine.geometry.getAttribute("color");
+        colors.add(
+          [
+            color.getX(firstSegment * 2),
+            color.getY(firstSegment * 2),
+            color.getZ(firstSegment * 2),
+          ].join(":"),
+        );
         if (relation.candidate || relation.shared) {
           const line = scene
             .pickingView()
@@ -140,6 +157,20 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
                 object.userData.fd_relations?.[0] === edge,
             ) as T.LineSegments;
           const positions = line.geometry.getAttribute("position");
+          assert.equal(
+            positions.count,
+            32,
+            "shared and candidate relations draw all 16 path segments",
+          );
+          for (let i = 0; i < positions.count; i++)
+            assert.ok(
+              new T.Vector3()
+                .fromBufferAttribute(positions, i)
+                .distanceTo(
+                  view.curve.getPoint((Math.floor(i / 2) + (i % 2)) / 16),
+                ) < 1e-6,
+              "colored relations cover the full curve without dash gaps",
+            );
           const current: number[][] = [];
           for (let i = 0; i < positions.count; i += 2) {
             const ends = [
@@ -154,12 +185,17 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
             assert.deepEqual(
               current,
               segments,
-              "the dashed segments stay in place",
+              "the colored relation segments stay in place",
             );
           segments = current;
         }
       }
     }
+    assert.equal(
+      colors.size,
+      3,
+      "confirmed, candidate, and shared relations have distinct colors",
+    );
     scene.dispose();
   }
 });

@@ -25,6 +25,8 @@ const PARENT_LINE_Z = 0.06;
 const PARENT_LINE_BRIGHTNESS = 0.22;
 const PROCESS_HEIGHT = 8;
 const SOCKET_HEIGHT = 4;
+const SHARED_FD_COLOR = 0x54828b;
+const CANDIDATE_PEER_COLOR = 0xc69a50;
 
 // The lower endpoint attaches to +X regardless of the snapshot's orientation.
 function socketFaceOffset(endpoint: FdEndpoint, peer: FdEndpoint): number {
@@ -481,8 +483,9 @@ export function createSpaceScene() {
       for (let j = 0; j < 24; j++)
         addLine(pts[j].toArray(), pts[j + 1].toArray(), 0x68baff, pick);
     }
-    const dashedPos = [],
-      dashedEdges = [];
+    const mutedPos = [],
+      mutedColors = [],
+      mutedEdges = [];
     for (const e of snapshot.fd_relations) {
       if (grouped.has(e.id) || isKernelNetlink(e.socket)) continue;
       const a = nodes.get(key(e.endpoint.process_id)),
@@ -511,13 +514,21 @@ export function createSpaceScene() {
       const curve = new T.QuadraticBezierCurve3(start, mid, end);
       edgeViews.push({ e, curve });
       const pts = curve.getPoints(16);
+      const mutedColor = new T.Color(
+        e.shared ? SHARED_FD_COLOR : CANDIDATE_PEER_COLOR,
+      );
       for (let j = 0; j < 16; j++) {
         if (e.candidate || e.shared) {
-          // Keep the dash phase anchored to the lower socket endpoint.
-          if (j % 2 === (faceOffset < 0 ? 1 : 0)) {
-            dashedPos.push(...pts[j], ...pts[j + 1]);
-            dashedEdges.push(e);
-          }
+          mutedPos.push(...pts[j], ...pts[j + 1]);
+          mutedColors.push(
+            mutedColor.r,
+            mutedColor.g,
+            mutedColor.b,
+            mutedColor.r,
+            mutedColor.g,
+            mutedColor.b,
+          );
+          mutedEdges.push(e);
         } else
           addLine(
             pts[j].toArray(),
@@ -542,19 +553,20 @@ export function createSpaceScene() {
     );
     solidLines.userData.fd_relations = lineEdges;
     geometryGroup.add(solidLines);
-    const dashed = new T.BufferGeometry();
-    dashed.setAttribute("position", new T.Float32BufferAttribute(dashedPos, 3));
-    const dashedLines = new T.LineSegments(
-      dashed,
+    const muted = new T.BufferGeometry();
+    muted.setAttribute("position", new T.Float32BufferAttribute(mutedPos, 3));
+    muted.setAttribute("color", new T.Float32BufferAttribute(mutedColors, 3));
+    const mutedLines = new T.LineSegments(
+      muted,
       new T.LineBasicMaterial({
-        color: 0x54828b,
+        vertexColors: true,
         transparent: true,
         opacity: 0.3,
         depthWrite: false,
       }),
     );
-    dashedLines.userData.fd_relations = dashedEdges;
-    geometryGroup.add(dashedLines);
+    mutedLines.userData.fd_relations = mutedEdges;
+    geometryGroup.add(mutedLines);
     refreshFileScene(input);
   }
   function refreshFileScene(input: FileSceneInput) {
