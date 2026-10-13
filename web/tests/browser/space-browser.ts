@@ -265,9 +265,16 @@ try {
     new RegExp(String(app.pid)),
   );
   assert.equal(
-    await evaluate("document.getElementById('inspect').getAttribute('href')"),
+    await evaluate("document.getElementById('name').getAttribute('href')"),
     `/process/${app.pid}?start_time_ticks=${n.identity.start_time_ticks}`,
   );
+  assert.equal(
+    await evaluate(
+      "document.querySelector('#process-details h2 a').textContent",
+    ),
+    n.name,
+  );
+  assert.equal(await evaluate("document.getElementById('inspect')"), null);
   await evaluate("document.getElementById('reset').click()");
   assert.equal(
     await evaluate("document.getElementById('search').value"),
@@ -451,11 +458,11 @@ try {
   );
   assert.deepEqual(
     await evaluate(
-      "Array.from(document.querySelectorAll('#connection-endpoints a'),a=>a.getAttribute('href'))",
+      "Array.from(document.querySelectorAll('#connection-endpoints strong a'),a=>[a.textContent,a.getAttribute('href')])",
     ),
     [
-      "/process/424242?start_time_ticks=7",
-      "/process/434343?start_time_ticks=8",
+      ["cpu-glow-test", "/process/424242?start_time_ticks=7"],
+      ["connection-peer", "/process/434343?start_time_ticks=8"],
     ],
   );
   await evaluate(
@@ -811,7 +818,7 @@ try {
     }]};
     m.renderSystemSnapshot(window.linkSnapshot);
     m.selectConnection('click-link');
-    window.detailLink=document.querySelector('#connection-endpoints a');
+    window.detailLink=document.querySelector('#connection-endpoints strong a');
     window.detailLink.focus();
   })()`);
   const linkPoint = await evaluate<{ x: number; y: number }>(
@@ -845,6 +852,30 @@ try {
     "connection link opens process inspector",
   );
   await cdp("Page.navigate", { url });
+  await waitFor(
+    `import(window.spaceTestModule).then(m=>Boolean(m.processPosition('${app.pid}:${n.identity.start_time_ticks}')))`,
+    "process is available after returning to SPACE",
+  );
+  await evaluate(
+    `import(window.spaceTestModule).then(m=>m.selectProcess('${app.pid}:${n.identity.start_time_ticks}'))`,
+  );
+  await evaluate("document.getElementById('name').focus()");
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+  });
+  await waitFor(
+    `location.pathname==='/process/${app.pid}' && location.search==='?start_time_ticks=${n.identity.start_time_ticks}' && document.getElementById('inspector')?.hidden===false`,
+    "process title opens the inspector with Enter",
+  );
   assert.deepEqual(
     errors.filter((e) => !/favicon.ico/.test(e)),
     [],
