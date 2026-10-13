@@ -1,5 +1,5 @@
 import type { Evaluate, Cdp } from "./harness.js";
-import { delay as pause, repositoryPath } from "../support/runtime.js";
+import { delay as pause, repositoryPath, until } from "../support/runtime.js";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 
@@ -118,10 +118,25 @@ export async function checkNetlinkSpace(
   })`);
   assert.equal(
     await evaluate("document.getElementById('details').hidden"),
+    false,
+    "the exited owner retains plate selection during its animation",
+  );
+  assert.equal(
+    await evaluate(
+      "import(window.spaceTestModule).then(m=>!!m.processPosition('920001:1')&&m.netlinkParticles().length>0)",
+    ),
     true,
-    "process exit clears plate selection",
+    "Netlink traffic continues after its owner exits",
+  );
+  await until(
+    () =>
+      evaluate(
+        "import(window.spaceTestModule).then(m=>m.netlinkVisuals().length===0&&!m.processPosition('920001:1')&&document.getElementById('details').hidden)",
+      ),
+    "Netlink completion releases its owner, plate and selection",
+    3000,
   );
   console.log(
-    "Netlink browser checks passed: plates, picking, directions, totals, USERSOCK, filtering, stable layout, idle visibility and immediate removal.",
+    "Netlink browser checks passed: plates, picking, directions, totals, USERSOCK, filtering, stable layout, idle visibility, removal and animation retention.",
   );
 }

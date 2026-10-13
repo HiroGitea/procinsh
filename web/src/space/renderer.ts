@@ -1,6 +1,7 @@
 // Animate activity, draw the scene and labels, and adapt rendering resolution.
 import type * as T from "three";
 import { key, signalName } from "./model.js";
+import { emptyActivityRetention } from "./types.js";
 import type {
   ActivityUpdate,
   CpuGlow,
@@ -97,6 +98,7 @@ type SignalFlight = {
 };
 
 type Particle = {
+  processIds: string[];
   start: number;
   duration: number;
   color: number;
@@ -348,6 +350,7 @@ export function createSpaceRenderer({
           particles.push({
             start: now,
             duration: plan.duration,
+            processIds: [route.id],
             pos: n.pos.clone().add(new graphics.Vector3(1.2, 0, 1)),
             socketOwnerKey: route.socketOwnerKey,
             color: 0xffffff,
@@ -365,8 +368,17 @@ export function createSpaceRenderer({
         route.kind === "connection" && "networkId" in path
           ? path.networkId
           : undefined;
+      const processIds =
+        "file" in path
+          ? [key(path.file.process_id)]
+          : "socket" in path
+            ? [key(path.socket.endpoint.process_id)]
+            : [path.e.endpoint, path.e.peer]
+                .filter((endpoint) => endpoint !== null)
+                .map((endpoint) => key(endpoint.process_id));
       for (const offset of plan.offsets)
         particles.push({
+          processIds,
           start: now + offset,
           duration: plan.duration,
           curve: path.curve,
@@ -409,6 +421,33 @@ export function createSpaceRenderer({
     signalFlights = signalFlights.slice(-SIGNAL_CAP);
     if (particles.length > CAP) particles = particles.slice(-CAP);
   }
+  function activeResources(
+    now = performance.now(),
+    suppressed: ReadonlySet<string> = new Set(),
+  ) {
+    const retained = emptyActivityRetention();
+    for (const flight of signalFlights)
+      if (now - flight.start < flight.duration + SIGNAL_PULSE_MS) {
+        retained.processes.add(flight.source);
+        retained.processes.add(flight.destination);
+      }
+    for (const [id, arrival] of signalPulses)
+      if (now - arrival < SIGNAL_PULSE_MS) retained.processes.add(id);
+    for (const particle of particles) {
+      if (
+        now - particle.start >= particle.duration ||
+        (particle.socketOwnerKey && suppressed.has(particle.socketOwnerKey))
+      )
+        continue;
+      for (const id of particle.processIds) retained.processes.add(id);
+      if (particle.connectionId)
+        retained.connections.add(particle.connectionId);
+      if (particle.networkId) retained.networks.add(particle.networkId);
+      if (particle.fileId) retained.files.add(particle.fileId);
+      if (particle.netlinkId) retained.netlink.add(particle.netlinkId);
+    }
+    return retained;
+  }
   function retainParticles(
     networkIds: ReadonlySet<string>,
     suppressed: ReadonlySet<string> = new Set(),
@@ -423,6 +462,7 @@ export function createSpaceRenderer({
       if (!visible.has(id)) signalPulses.delete(id);
     particles = particles.filter(
       (p) =>
+        p.processIds.every((id) => !view.nodes.has(id) || visible.has(id)) &&
         (!p.connectionId || connections.has(p.connectionId)) &&
         (!p.socketOwnerKey || !suppressed.has(p.socketOwnerKey)) &&
         (!p.fileId || view.fileViews.has(p.fileId)) &&
@@ -577,6 +617,7 @@ export function createSpaceRenderer({
 
   return {
     activity,
+    activeResources,
     signalVisuals() {
       return signalFlights.map((f) => ({
         source: f.source,

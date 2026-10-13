@@ -1,5 +1,5 @@
 import type { Evaluate, Cdp } from "./harness.js";
-import { delay as pause, repositoryPath } from "../support/runtime.js";
+import { delay as pause, repositoryPath, until } from "../support/runtime.js";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 
@@ -227,7 +227,38 @@ export async function checkNetworkSpace(
     mobile: false,
   });
   await evaluate("document.getElementById('reset').click()");
+  const held = await evaluate<boolean>(`import(window.spaceTestModule).then(m=>{
+    const f=window.networkFixture,owner=m.processPosition('900001:1');
+    m.selectNetwork(m.networkVisuals()[0].id);
+    m.renderActivity({ipc:[{process_id:f.processes[0].identity,resource:f.fd_relations.find(e=>e.id==='net-a').endpoint.resource,write:true,bytes:100,count:64}]});
+    m.renderSystemSnapshot({processes:[],fd_relations:[]});
+    return JSON.stringify(m.processPosition('900001:1'))===JSON.stringify(owner)&&m.networkVisuals().length===1&&m.networkParticles().length===6&&!document.getElementById('details').hidden;
+  })`);
+  assert.equal(
+    held,
+    true,
+    "exited owner, destination and selection survive snapshot removal",
+  );
+  await delay(2150);
+  assert.equal(
+    await evaluate(
+      "import(window.spaceTestModule).then(m=>!!m.processPosition('900001:1')&&m.networkParticles().length>0)",
+    ),
+    true,
+    "the final staggered particles keep the exited process visible",
+  );
+  await until(
+    () =>
+      evaluate(
+        "import(window.spaceTestModule).then(m=>!m.processPosition('900001:1')&&m.networkVisuals().length===0&&document.getElementById('details').hidden)",
+      ),
+    "network completion releases its owner, destination and selection",
+    2000,
+  );
+  await evaluate(
+    "import(window.spaceTestModule).then(m=>m.renderSystemSnapshot(window.networkFixture))",
+  );
   console.log(
-    "Network browser checks passed: marker/path picking, grouping, FD details, directions, stats, stable positions, rearrange, and removal.",
+    "Network browser checks passed: marker/path picking, grouping, FD details, directions, stats, stable positions, rearrange, removal, and animation retention.",
   );
 }

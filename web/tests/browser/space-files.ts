@@ -1,5 +1,5 @@
 import type { Evaluate, Cdp } from "./harness.js";
-import { delay as pause, repositoryPath } from "../support/runtime.js";
+import { delay as pause, repositoryPath, until } from "../support/runtime.js";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 export async function checkFileSpace(
@@ -119,13 +119,23 @@ export async function checkFileSpace(
     await evaluate(
       "import(window.spaceTestModule).then(m=>m.fileVisuals().length)",
     ),
-    0,
+    1,
+    "the exited owner's file remains visible during the transfer",
   );
   assert.equal(
     await evaluate("document.getElementById('details').hidden"),
-    true,
+    false,
+    "the file selection remains while its animation is in progress",
+  );
+  await until(
+    () =>
+      evaluate(
+        "import(window.spaceTestModule).then(m=>m.fileVisuals().length===0&&!m.processPosition('910001:1')&&document.getElementById('details').hidden)",
+      ),
+    "file completion releases its owner, marker and selection",
+    3000,
   );
   console.log(
-    "File browser checks passed: picking, directions, totals, paths, stable positions/camera, expiry.",
+    "File browser checks passed: picking, directions, totals, paths, stable positions/camera, expiry, and animation retention.",
   );
 }
