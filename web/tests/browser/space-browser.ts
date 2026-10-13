@@ -360,7 +360,8 @@ try {
       {id:'external',endpoint:{...a,resource:{kind:'socket',device:{major:0,minor:1},inode:'99'}},peer:null,label:'UNIX STREAM external',shared:false,candidate:false},
       {id:'netlink',endpoint:{...a,fd:11,resource:{kind:'socket',device:{major:0,minor:1},inode:'14130'}},peer:null,label:'NETLINK KOBJECT_UEVENT',shared:false,candidate:false,socket:{protocol:{kind:'other',family:16,socket_type:{kind:'dgram'},protocol:15},state:null,local:null,remote:null,path:null,network_peer:false,remote_hostname:null}},
     ];
-    m.renderSystemSnapshot({processes:[node,peer],fd_relations:edges,captured_at:Date.now(),inspected_processes:2,inspected_fds:4,warnings:[]});
+    window.connectionFixture={processes:[node,peer],fd_relations:edges,captured_at:Date.now(),inspected_processes:2,inspected_fds:4,warnings:[]};
+    m.renderSystemSnapshot(window.connectionFixture);
     m.selectConnection('unix-exact');
     m.renderActivity({window_ms:100,cpu:[{process_id:id,runtime_ns:40000000,switches:2,running_threads:1,cpus:[3]}],ipc:[{process_id:id,resource:{kind:'socket',device:{major:0,minor:1},inode:'10'},write:true,bytes:4096,count:16}],status:{cpu:{state:'observing'},ipc:{state:'observing'}}});
   })()`);
@@ -464,6 +465,25 @@ try {
       ["cpu-glow-test", "/process/424242?start_time_ticks=7"],
       ["connection-peer", "/process/434343?start_time_ticks=8"],
     ],
+  );
+  await evaluate(`(async()=>{
+    const m=await import(window.spaceTestModule);
+    window.endpointCards=Array.from(document.querySelectorAll('#connection-endpoints .endpoint'));
+    window.endpointTitle=window.endpointCards[0].querySelector('a');
+    window.endpointTitle.focus();
+    const f=window.connectionFixture;
+    m.renderSystemSnapshot({...f,fd_relations:f.fd_relations.map(e=>e.id==='unix-exact'?{...e,endpoint:e.peer,peer:e.endpoint,socket:{protocol:{kind:'unix',socket_type:{kind:'stream'}},state:{kind:'connected'},local:null,remote:null,path:'/run/test.sock',network_peer:false}}:e)});
+  })()`);
+  assert.ok(
+    await evaluate(
+      "window.endpointCards.every((card,i)=>card===document.querySelectorAll('#connection-endpoints .endpoint')[i]) && document.activeElement===window.endpointTitle",
+    ),
+    "reversing the collected endpoints preserves card order and focused title",
+  );
+  assert.equal(
+    await evaluate("document.querySelector('#connection-endpoints > p')"),
+    null,
+    "connection details omit the duplicate socket summary",
   );
   await evaluate(
     "import(window.spaceTestModule).then(m=>m.selectConnection('tcp-candidate'))",

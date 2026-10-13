@@ -236,23 +236,19 @@ export function createSpaceDetails(
     $("connection-facts").textContent = stat
       ? `Latest activity: ${stat.bytes} bytes / ${stat.count} operations · ${((performance.now() - stat.time) / 1000).toFixed(1)}s ago`
       : "Recent traffic —";
+    // Collection can reverse a relation; order the cards by identity and FD.
+    const [first, second] = e.peer
+      ? [e.endpoint, e.peer].sort(
+          (a, b) =>
+            a.process_id.pid - b.process_id.pid ||
+            a.process_id.start_time_ticks - b.process_id.start_time_ticks ||
+            a.fd - b.fd,
+        )
+      : [e.endpoint, null];
     const endpoints: HTMLElement[] = [
-      endpoint(e.endpoint, "ENDPOINT"),
-      endpoint(e.peer, "PEER", e.socket),
+      endpoint(first, "ENDPOINT"),
+      endpoint(second, "PEER", e.socket),
     ];
-    if (e.socket) {
-      const info = document.createElement("p");
-      info.textContent = [
-        Display.protocol(e.socket.protocol),
-        Display.state(e.socket.state),
-        e.socket.local || e.socket.path || e.socket.remote
-          ? `${Display.address(e.socket.local) || e.socket.path || "—"} → ${Display.address(e.socket.remote) || "—"}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      endpoints.push(info);
-    }
     const group = [...network.values()].find((g) =>
       g.members.some((member) => member.id === e.id),
     );

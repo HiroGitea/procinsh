@@ -125,8 +125,7 @@ test.each([...cases, { value: null, label: "Socket · Type unavailable" }])(
     expect(spaceElement("connection-endpoints").textContent).toContain(
       "could not be identified",
     );
-    if (value)
-      expect(spaceElement("connection-endpoints").textContent).toContain(label);
+    expect(spaceElement("connection-endpoints").querySelector("p")).toBeNull();
     expect(spaceElement("connection-endpoints").textContent).not.toContain(
       "ESTABLISHED",
     );

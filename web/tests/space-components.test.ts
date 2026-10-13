@@ -30,6 +30,103 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("connection detail cards stay ordered when collected endpoints reverse", async () => {
+  const { createSpaceDetails } = await import("../src/space/details.js");
+  const { key } = await import("../src/space/model.js");
+  document.body.innerHTML = await readFile(
+    resolve(import.meta.dirname, "../space/index.html"),
+    "utf8",
+  );
+  const details = createSpaceDetails({ connection() {}, network() {} });
+  const selection: SelectionState = {
+    process: null,
+    connection: "connection",
+    network: null,
+    netlink: null,
+    file: null,
+  };
+  for (const [low, high] of [
+    [
+      { pid: 2, ticks: 90, fd: 10 },
+      { pid: 10, ticks: 1, fd: 2 },
+    ],
+    [
+      { pid: 10, ticks: 2, fd: 10 },
+      { pid: 10, ticks: 10, fd: 2 },
+    ],
+    [
+      { pid: 10, ticks: 2, fd: 2 },
+      { pid: 10, ticks: 2, fd: 10 },
+    ],
+  ]) {
+    const endpoints = [low, high].map(({ pid, ticks, fd }) =>
+      fdEndpoint({ process_id: { pid, start_time_ticks: ticks }, fd }),
+    );
+    const nodes = new Map<string, PlacedProcess>();
+    for (const { process_id } of endpoints)
+      nodes.set(key(process_id), {
+        ...processInfo({
+          identity: process_id,
+          name: `process-${key(process_id)}`,
+        }),
+        pos: { x: 0, y: 0, z: 0 },
+        regions: [],
+      });
+    for (const style of [{}, { candidate: true }, { shared: true }]) {
+      const edge = fdRelation({
+        id: "connection",
+        endpoint: endpoints[0],
+        peer: endpoints[1],
+        label: "UNIX STREAM",
+        socket: socketEndpoint({
+          protocol: { kind: "unix", socket_type: { kind: "stream" } },
+          path: "/run/test.sock",
+        }),
+        ...style,
+      });
+      let cards: Element[] | undefined;
+      for (const reversed of [true, false, true]) {
+        const current = reversed
+          ? { ...edge, endpoint: edge.peer!, peer: edge.endpoint }
+          : edge;
+        details.update(
+          {
+            nodes,
+            snapshot: { processes: [], fd_relations: [current] },
+            network: new Map(),
+            edgeStats: new Map(),
+            files: new Map(),
+            netlink: new Map(),
+          },
+          selection,
+        );
+        const rendered = [...spaceElement("connection-endpoints").children];
+        assert.equal(
+          rendered.length,
+          2,
+          "only the endpoint cards are rendered",
+        );
+        rendered.forEach((card, index) => {
+          const { process_id, fd } = endpoints[index];
+          assert.equal(
+            card.querySelector("a")?.getAttribute("href"),
+            `/process/${process_id.pid}?start_time_ticks=${process_id.start_time_ticks}`,
+          );
+          assert.match(card.textContent!, new RegExp(`FD ${fd} ·`));
+          if (cards)
+            assert.equal(card, cards[index], "updates keep each card attached");
+        });
+        cards = rendered;
+        assert.equal(
+          current.endpoint,
+          reversed ? endpoints[1] : endpoints[0],
+          "display ordering does not mutate the collected relation",
+        );
+      }
+    }
+  }
+});
+
 test("socket attachment faces survive endpoint reversal across rebuilds", async () => {
   const { createSpaceScene } = await import("../src/space/scene.js");
   const { key } = await import("../src/space/model.js");
