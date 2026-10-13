@@ -90,6 +90,7 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
         4 + ((endpoint.fd % 12) - 5.5) * 0.11,
       );
     });
+    const colors = new Set<string>();
     for (const style of [{}, { candidate: true }, { shared: true }]) {
       const relation = fdRelation({
         id: "socket",
@@ -100,7 +101,6 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
       });
       let forward: T.QuadraticBezierCurve3 | undefined;
       let segments: number[][] | undefined;
-      let phases: number[][] | undefined;
       // Start with the reverse orientation too, so a cache cannot mask the bug.
       for (const reversed of [true, false, true]) {
         const edge = reversed
@@ -132,6 +132,22 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
               "reversing the relation preserves the path and reverses its animation direction",
             );
           }
+        const relationLine = scene
+          .pickingView()
+          .objects.find(
+            (object) =>
+              object instanceof T.LineSegments &&
+              object.userData.fd_relations?.includes(edge),
+          ) as T.LineSegments;
+        const firstSegment = relationLine.userData.fd_relations.indexOf(edge);
+        const color = relationLine.geometry.getAttribute("color");
+        colors.add(
+          [
+            color.getX(firstSegment * 2),
+            color.getY(firstSegment * 2),
+            color.getZ(firstSegment * 2),
+          ].join(":"),
+        );
         if (relation.candidate || relation.shared) {
           const line = scene
             .pickingView()
@@ -141,27 +157,26 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
                 object.userData.fd_relations?.[0] === edge,
             ) as T.LineSegments;
           const positions = line.geometry.getAttribute("position");
-          const distances = line.geometry.getAttribute("lineDistance");
+          assert.equal(
+            positions.count,
+            32,
+            "shared and candidate relations draw all 16 path segments",
+          );
+          for (let i = 0; i < positions.count; i++)
+            assert.ok(
+              new T.Vector3()
+                .fromBufferAttribute(positions, i)
+                .distanceTo(
+                  view.curve.getPoint((Math.floor(i / 2) + (i % 2)) / 16),
+                ) < 1e-6,
+              "colored relations cover the full curve without dash gaps",
+            );
           const current: number[][] = [];
-          const currentPhases: number[][] = [];
           for (let i = 0; i < positions.count; i += 2) {
             const ends = [
               new T.Vector3().fromBufferAttribute(positions, i).toArray(),
               new T.Vector3().fromBufferAttribute(positions, i + 1).toArray(),
             ];
-            assert.ok(
-              Math.abs(
-                Math.abs(distances.getX(i + 1) - distances.getX(i)) -
-                  new T.Vector3(...ends[0]).distanceTo(
-                    new T.Vector3(...ends[1]),
-                  ),
-              ) < 1e-5,
-              "dash spacing uses world distance along each rendered segment",
-            );
-            currentPhases.push(
-              [...ends[0], distances.getX(i)],
-              [...ends[1], distances.getX(i + 1)],
-            );
             ends.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
             current.push(ends.flat());
           }
@@ -170,45 +185,17 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
             assert.deepEqual(
               current,
               segments,
-              "the dashed segments stay in place",
+              "the colored relation segments stay in place",
             );
           segments = current;
-          currentPhases.sort(
-            (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2],
-          );
-          if (phases)
-            for (let i = 0; i < phases.length; i++)
-              assert.ok(
-                Math.abs(currentPhases[i][3] - phases[i][3]) < 1e-5,
-                "reversing a socket relation preserves the visible dash phase",
-              );
-          phases = currentPhases;
         }
       }
-      if (phases) {
-        const parallel = { ...relation, id: "parallel-socket" };
-        scene.rebuild(
-          {
-            ...input,
-            snapshot: { ...input.snapshot, fd_relations: [parallel] },
-          },
-          null,
-        );
-        const line = scene
-          .pickingView()
-          .objects.find(
-            (object) =>
-              object instanceof T.LineSegments &&
-              object.userData.fd_relations?.[0] === parallel,
-          ) as T.LineSegments;
-        const distances = line.geometry.getAttribute("lineDistance");
-        assert.notEqual(
-          Math.min(...Array.from(distances.array)),
-          Math.min(...phases.map((point) => point[3])),
-          "parallel connections stagger their dashes instead of forming bands",
-        );
-      }
     }
+    assert.equal(
+      colors.size,
+      3,
+      "confirmed, candidate, and shared relations have distinct colors",
+    );
     scene.dispose();
   }
 });

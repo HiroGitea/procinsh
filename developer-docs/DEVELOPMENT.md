@@ -413,7 +413,7 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 | プロセスと親子関係 | 初期表示・Rearrange では葉の子を一つの領域にまとめ、その中で折り返す。子孫を持つ兄弟の枝の領域と横一列に並べ、異なるソケット通信相手が多いプロセスを含む領域を中央寄りに置く。葉の領域内も通信相手が多いプロセスから中央に近い位置を割り当てる。通信相手は現在の識別子で確認済みのローカル接続を数え、同じ相手への複数 FD は一つとし、共有 FD・接続候補・外部接続先・自己接続を除く。複数の通信相手を持つプロセスがない場合は PID・開始時刻順で最初の葉の位置に葉の領域を置く。枝の領域同士は縦に積まず、ルートが異なる木同士は木全体をまとめて折り返せる。折り返す行はプロセスの一辺分ずつ右へずらす。葉の折り返しにより同じ深さでも縦位置は異なり得る。通常更新は既存位置を保ち、新規プロセスを親の近くの空き位置に置くため、枝を横に分離する制約は適用しない | [`treeLayout`・`stableLayout`](../web/src/space/process-layout.ts) |
 | 仮想アドレス空間 | アドレス順にメモリ領域を積み上げ、アドレスの隙間を圧縮し、高さをプロセスごとに正規化。プロセス間の同じ高さは同じアドレスを意味しない | [`layoutMaps`](../web/src/space/data.ts)、[`regionColor`](../web/src/space/scene.ts#L81) |
 | ユーザーの識別 | 箱の上下の枠は実 UID、縦の枠は実効 UID に応じて色分け | [`userColor`・`processColors`](../web/src/space/model.ts) |
-| IPC・ネットワーク接続 | FD 関係を線で表示。接続候補・共有 FD は破線。ネットワーク接続先はプロセス・プロトコル・相手 IP/port ごとにまとめ、プロセスの上方に配置 | [`buildScene`](../web/src/space/scene.ts#L99)、[`networkGroups`](../web/src/space/data.ts)、[`networkLayout`](../web/src/space/data.ts) |
+| IPC・ネットワーク接続 | FD 関係を実線で表示。確認済みのプロセス間接続は緑系、接続候補は薄い黄土色、共有 FD は薄い青灰色。ネットワーク接続先はプロセス・プロトコル・相手 IP/port ごとにまとめ、プロセスの上方に配置 | [`buildScene`](../web/src/space/scene.ts#L99)、[`networkGroups`](../web/src/space/data.ts)、[`networkLayout`](../web/src/space/data.ts) |
 | 最近アクセスしたファイル | プロセスの下方にファイルのマーカーと接続線を配置。構造とは別のグループで更新 | [`fileLayout`](../web/src/space/data.ts)、[`refreshFileScene`](../web/src/space/scene.ts#L400) |
 
 #### 活動の表示と描画ループ
