@@ -25,6 +25,16 @@ const PARENT_LINE_Z = 0.06;
 const PARENT_LINE_BRIGHTNESS = 0.22;
 const PROCESS_HEIGHT = 8;
 const SOCKET_HEIGHT = 4;
+const DASH_SIZE = 0.4;
+const DASH_GAP = 0.4;
+
+// Different connections stagger their dashes so parallel paths do not form bands.
+function connectionDashOffset(id: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < id.length; i++)
+    hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
+  return ((hash >>> 0) / 0x100000000) * (DASH_SIZE + DASH_GAP);
+}
 
 // The lower endpoint attaches to +X regardless of the snapshot's orientation.
 function socketFaceOffset(endpoint: FdEndpoint, peer: FdEndpoint): number {
@@ -406,7 +416,7 @@ export function createSpaceScene() {
       new T.MeshBasicMaterial({
         transparent: true,
         opacity: 0.18,
-        depthWrite: false,
+        depthWrite: true,
       }),
       Math.max(1, layerList.length),
     );
@@ -482,6 +492,7 @@ export function createSpaceScene() {
         addLine(pts[j].toArray(), pts[j + 1].toArray(), 0x68baff, pick);
     }
     const dashedPos = [],
+      dashedDistances = [],
       dashedEdges = [];
     for (const e of snapshot.fd_relations) {
       if (grouped.has(e.id) || isKernelNetlink(e.socket)) continue;
@@ -511,13 +522,23 @@ export function createSpaceScene() {
       const curve = new T.QuadraticBezierCurve3(start, mid, end);
       edgeViews.push({ e, curve });
       const pts = curve.getPoints(16);
+      const distances = [0];
+      const dashOffset = connectionDashOffset(e.id);
+      if (e.candidate || e.shared)
+        for (let j = 0; j < 16; j++)
+          distances.push(distances[j] + pts[j].distanceTo(pts[j + 1]));
       for (let j = 0; j < 16; j++) {
         if (e.candidate || e.shared) {
-          // Keep the dash phase anchored to the lower socket endpoint.
-          if (j % 2 === (faceOffset < 0 ? 1 : 0)) {
-            dashedPos.push(...pts[j], ...pts[j + 1]);
-            dashedEdges.push(e);
-          }
+          dashedPos.push(...pts[j], ...pts[j + 1]);
+          // World-space dashes start at the lower socket endpoint, independent
+          // of the snapshot's orientation and the connection's total length.
+          const distance = (index: number) =>
+            dashOffset +
+            (faceOffset < 0
+              ? distances[16] - distances[index]
+              : distances[index]);
+          dashedDistances.push(distance(j), distance(j + 1));
+          dashedEdges.push(e);
         } else
           addLine(
             pts[j].toArray(),
@@ -544,13 +565,19 @@ export function createSpaceScene() {
     geometryGroup.add(solidLines);
     const dashed = new T.BufferGeometry();
     dashed.setAttribute("position", new T.Float32BufferAttribute(dashedPos, 3));
+    dashed.setAttribute(
+      "lineDistance",
+      new T.Float32BufferAttribute(dashedDistances, 1),
+    );
     const dashedLines = new T.LineSegments(
       dashed,
-      new T.LineBasicMaterial({
+      new T.LineDashedMaterial({
         color: 0x54828b,
         transparent: true,
         opacity: 0.3,
         depthWrite: false,
+        dashSize: DASH_SIZE,
+        gapSize: DASH_GAP,
       }),
     );
     dashedLines.userData.fd_relations = dashedEdges;
