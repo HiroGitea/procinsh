@@ -406,7 +406,7 @@ export function createSpaceScene() {
       new T.MeshBasicMaterial({
         transparent: true,
         opacity: 0.18,
-        depthWrite: true,
+        depthWrite: false,
       }),
       Math.max(1, layerList.length),
     );
