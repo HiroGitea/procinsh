@@ -234,7 +234,11 @@ system snapshot の関係の両端にある FD と、プロセス FD API の ent
 
 SPACE は、関係のどちらかのソケット FD が `listening` / `unconnected` の場合、共有 FD の線も含めて可視化から除外します。除外ソケットの IPC イベントは、粒子や操作元ポートの発光にも使いません。接続処理中でも peer 照会が `ENOTCONN` の間は除外し、未接続 UDP の `sendto` / `sendmsg` による通信も SPACE には表示しません。`unknown`、旧サーバーのフィールド欠落は表示対象として扱います。API と受信した生のスナップショットには全 FD を保持し、状態が変わったら選択・粒子・保持中の Netlink 表示も更新します。
 
-`dev_test.sh` は `PROCINSH_REQUIRE_SOCKET_METADATA=1` を設定し、pidfd による種類取得の権限不足・非対応によるテストのスキップを禁止します。通常の `cargo test` は、コンテナなどで FD の複製が制限されている場合にも procfs の種類取得と種類未取得の部分結果を検証します。
+`dev_test.sh` は `PROCINSH_REQUIRE_SOCKET_METADATA=1` と `PROCINSH_REQUIRE_NETNS=1` を設定し、pidfd による種類取得と別 network namespace の実機テストについて、権限不足・非対応によるスキップを禁止します。通常の `cargo test` は、コンテナなどで FD の複製が制限されている場合にも procfs の種類取得と種類未取得の部分結果を検証します。
+
+UNIX の診断は、対象の PID と開始時刻を確認して開いた network namespace の FD を使います。別 namespace では短命の専用スレッドが `setns(CLONE_NEWNET)` を実行して診断用 Netlink ソケットを作成し、その FD を呼び元へ返して終了します。要求と応答の処理は作成先の namespace に属するソケットを通じて行い、HTTP・収集スレッドの namespace は変更しません。SPACE は走査で発見した namespace を device/inode でまとめ、一回の走査で各 namespace を一度診断します。全 namespace の診断予算は合計500ms、プロセス FD 一覧は750msと全体3秒の締切の短い方を使います。診断ができない場合は既存の procfs 情報を保持し、対象 PID と失敗理由を警告に含めます。
+
+別 network namespace への切り替えには `CAP_SYS_ADMIN` が必要です。開発・プレビュー用スクリプトはこの capability も付与します。sudoers が `setcap` の引数を固定している場合は、既存版の許可を維持したまま新しい一覧の許可を追加します。配置済みプレビューの権限更新は [PREVIEW.md](PREVIEW.md) の手順に従います。アプリケーションから sudoers やカーネル設定を変更しません。
 
 ### 環境変数・補助ベクトル
 

@@ -2,6 +2,48 @@ use super::{self as process, maps, memory, test_support::Target};
 use std::time::Duration;
 
 #[test]
+fn netns_fd_list_resolves_peers_separately_from_shared_holders() {
+    use crate::http_server::socket_types::{SocketConnectionStatus, SocketState};
+    use std::os::fd::AsRawFd;
+    for separate in [false, true] {
+        let Some(fixture) = process::TestNetworkNamespaceTarget::new(separate) else {
+            continue;
+        };
+        let details = process::fds::read(fixture.target.id).unwrap();
+        let entry = details.entries.iter().find(|entry| entry.fd == 61).unwrap();
+        assert_eq!(entry.state, Some(SocketState::Connected));
+        assert_eq!(
+            entry.connection_status,
+            Some(SocketConnectionStatus::PeerPresent)
+        );
+        assert!(entry.peer_inode.is_some(), "{:?}", details.warnings);
+        assert!(
+            entry
+                .peers
+                .iter()
+                .any(|peer| peer.process_id == fixture.peer_id && peer.fd == 61),
+            "{entry:?}"
+        );
+        assert!(!entry.peers.iter().any(|peer| peer.fd == 63));
+        assert!(
+            entry
+                .holders
+                .iter()
+                .any(|holder| holder.process_id == fixture.peer_id && holder.fd == 63)
+        );
+        let inherited = details.entries.iter().find(|entry| entry.fd == 0).unwrap();
+        let self_id = process::identity(std::process::id() as i32).unwrap();
+        assert!(
+            inherited
+                .holders
+                .iter()
+                .any(|holder| holder.process_id == self_id
+                    && holder.fd == fixture.inherited.as_raw_fd() as u32)
+        );
+    }
+}
+
+#[test]
 fn memory_partial_reads_and_map_statistics() {
     let target = Target::new("mmap_test");
     let data = memory::read_raw(target.id.pid, target.address, 25).unwrap();

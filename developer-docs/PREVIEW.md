@@ -21,13 +21,15 @@ main 用 unit はログインユーザーのホームを基準に、開発用 ch
 
 公開版は `~/procinsh-release-preview/install` を Cargo の専用インストール先として使用します。通常の `~/.cargo/bin/procinsh` は変更しません。Rust とネイティブ・BPF のビルド依存、`curl`、`flock`、`cmp` が必要ですが、公開パッケージには生成済み JavaScript が含まれるため、Node.js・npm・GitHub 認証・開発用 checkout は不要です。Cargo は `~/.cargo/bin` から利用できる必要があります。公開版の更新は専用領域で実行するため、開発用 checkout の `rust-toolchain.toml` は適用されません。rustup の default toolchain は公開版をビルドできるバージョンに設定してください。
 
-ビルド・配置・サービス管理はすべてログインユーザーで行います。ビルド後の候補バイナリに対して `sudo -n setcap cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search=ep` を実行し、観測用の権限を付与します。このコマンドを候補ファイル `~/procinsh-main-preview/candidate` と `~/procinsh-release-preview/candidate` に対してパスワード入力なしで実行できることが前提です。権限付与に失敗した場合は更新を中止し、稼働版を維持します。
+ビルド・配置・サービス管理はすべてログインユーザーで行います。ビルド後の候補バイナリに対して `sudo -n setcap cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search,cap_sys_admin=ep` を実行し、観測用の権限を付与します。このコマンドを候補ファイル `~/procinsh-main-preview/candidate` と `~/procinsh-release-preview/candidate` に対してパスワード入力なしで実行できることが前提です。権限付与に失敗した場合は更新を中止し、稼働版を維持します。
 
 ## 登録
 
 ### sudoers の設定
 
 自動更新を開始する前に、候補バイナリへの `setcap` を `NOPASSWD` で許可してください。`dev_run.sh` 用の設定が開発用バイナリのパスに限定されている場合は、常設版の候補パスを追加する必要があります。既存の設定はそのまま残します。
+
+UNIX ソケットの別 network namespace の診断には `CAP_SYS_ADMIN` を付与します。既存版を使うルールは残し、以下の capability 一覧を持つルールを追加してください。配置済みバイナリの権限も、この文書の capability 更新手順に従って反映します。
 
 `command -v setcap` で実行ファイルのパスを確認し、`visudo` で設定を追加します。
 
@@ -39,8 +41,8 @@ sudo visudo -f /etc/sudoers.d/procinsh
 ユーザーが `akira`、`setcap` が `/usr/sbin/setcap` にある場合の設定例です。ユーザー名・ホーム・実行ファイルのパスは実際の環境に合わせ、絶対パスで記載してください。
 
 ```sudoers
-akira ALL=(root) NOPASSWD: /usr/sbin/setcap cap_sys_ptrace\,cap_bpf\,cap_perfmon\,cap_dac_read_search\=ep /home/akira/procinsh-main-preview/candidate
-akira ALL=(root) NOPASSWD: /usr/sbin/setcap cap_sys_ptrace\,cap_bpf\,cap_perfmon\,cap_dac_read_search\=ep /home/akira/procinsh-release-preview/candidate
+akira ALL=(root) NOPASSWD: /usr/sbin/setcap cap_sys_ptrace\,cap_bpf\,cap_perfmon\,cap_dac_read_search\,cap_sys_admin\=ep /home/akira/procinsh-main-preview/candidate
+akira ALL=(root) NOPASSWD: /usr/sbin/setcap cap_sys_ptrace\,cap_bpf\,cap_perfmon\,cap_dac_read_search\,cap_sys_admin\=ep /home/akira/procinsh-release-preview/candidate
 ```
 
 sudoers では capability の区切りのカンマを `\,`、等号を `\=` としてエスケープします。このルールはコマンド・引数・対象パスを指定して許可します。[sudoers の説明](https://www.sudo.ws/docs/man/1.9.14/sudoers.man.pdf)を参照してください。保存後に構文を確認します。

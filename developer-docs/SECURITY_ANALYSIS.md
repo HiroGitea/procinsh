@@ -152,7 +152,9 @@ CO-RE と BTF は構造体配置の違いに対応するが、接続先の意味
 
 ### 6.1 「読取専用 API」は OS の権限制限ではない
 
-[dev_run.sh](../scripts/dev_run.sh) は実行ファイルに `cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search=ep` を付ける。これらを持つ HTTP サーバーが侵害されると、現在の router に書き込み API がなくても、別の syscall を呼ぶことで対象メモリやレジスタを変更できる可能性がある。特に `CAP_SYS_PTRACE` は読み取り専用の capability ではない。`CAP_DAC_READ_SEARCH` は通常のファイル読み取り・ディレクトリの読み取りと探索に対する DAC の権限検査を迂回するので、侵害時の機密ファイル読み取りの影響も広がる。ただし、この権限単独で通常のファイル書き込み権限を迂回するものではなく、LSM 等の別の制約がなくなるわけでもない。root 起動は、さらに広い権限を与える。[capabilities(7)](https://man7.org/linux/man-pages/man7/capabilities.7.html)
+[dev_run.sh](../scripts/dev_run.sh) は実行ファイルに `cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search,cap_sys_admin=ep` を付ける。これらを持つ HTTP サーバーが侵害されると、現在の router に書き込み API がなくても、別の syscall を呼ぶことで対象メモリやレジスタを変更できる可能性がある。特に `CAP_SYS_PTRACE` は読み取り専用の capability ではない。`CAP_DAC_READ_SEARCH` は通常のファイル読み取り・ディレクトリの読み取りと探索に対する DAC の権限検査を迂回するので、侵害時の機密ファイル読み取りの影響も広がる。ただし、この権限単独で通常のファイル書き込み権限を迂回するものではなく、LSM 等の別の制約がなくなるわけでもない。root 起動は、さらに広い権限を与える。[capabilities(7)](https://man7.org/linux/man-pages/man7/capabilities.7.html)
+
+`CAP_SYS_ADMIN` は別 network namespace に診断用ソケットを作るために使いますが、namespace の操作に限定された権限ではなく、マウントなどにも使える広い capability です。namespace の切り替えは短命の専用スレッドだけで行います。HTTP スレッドの namespace は維持されますが、プロセス全体がこの capability を持つことによる侵害時の影響は残ります。
 
 HTTP、`/proc` の解析、libbpf の FFI、perf の unsafe、ELF/DWARF の解析を同じプロセスで行う。Rust は多くのメモリ破壊を防ぐが、unsafe・ネイティブライブラリ・依存クレートの欠陥まで自動的に排除しない。観測対象が作る実行ファイルや mapping の情報も、強い権限を持つ解析器に入る信頼できない入力である。今回、そこからコード実行できる具体的な欠陥を見つけたわけではない。
 

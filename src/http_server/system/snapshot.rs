@@ -147,6 +147,7 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
     let mut infos = HashMap::new();
     let mut inode_ns = HashMap::new();
     let mut namespaces = HashSet::new();
+    let mut namespace_readers = Vec::new();
     let mut denied = 0;
     let mut metadata: HashMap<IpcIdentity, process::SocketMetadata> = HashMap::new();
     let mut truncated = false;
@@ -177,8 +178,14 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
             Err(e) => n.maps_error = Some(e.to_string()),
         }
         if let Ok(ns) = fs::metadata(format!("/proc/{pid}/ns/net"))
-            && namespaces.insert(ns.ino())
+            && namespaces.insert((ns.dev(), ns.ino()))
         {
+            match process::NetworkNamespaceReader::open(n.identity) {
+                Ok(reader) => namespace_readers.push((n.identity, reader)),
+                Err(e) => result
+                    .warnings
+                    .push(format!("UNIX peer namespace for PID {pid}: {e:#}")),
+            }
             for (file, protocol) in [
                 (
                     "tcp",
@@ -218,7 +225,7 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                         process::inet_sockets(&text, protocol)
                     };
                     for inode in table.keys() {
-                        inode_ns.insert(*inode, ns.ino());
+                        inode_ns.insert(*inode, (ns.dev(), ns.ino()));
                     }
                     infos.extend(table);
                 }
@@ -308,9 +315,23 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
             result.processes.push(n);
         }
     }
-    match process::unix_socket_peers(Instant::now() + Duration::from_millis(500)) {
-        Ok(diag) => infos.extend(diag),
-        Err(e) => result.warnings.push(format!("UNIX peer: {e}")),
+    let diag_deadline = Instant::now() + Duration::from_millis(500);
+    for (id, namespace) in namespace_readers {
+        if Instant::now() >= diag_deadline {
+            result.warnings.push(
+                "UNIX peer namespace scan reached its 500ms limit. Some peers may be missing."
+                    .into(),
+            );
+            break;
+        }
+        match process::unix_socket_peers(&namespace, diag_deadline) {
+            Ok(diag) => infos.extend(diag),
+            Err(e) => result.warnings.push(format!(
+                "UNIX peer for PID {} / namespace {:?}: {e:#}",
+                id.pid,
+                namespace.key()
+            )),
+        }
     }
     // Enrich after all table/diag reads so direct observations cannot be overwritten.
     for (resource, observed) in &metadata {
@@ -537,11 +558,6 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
         result
             .warnings
             .push("Scan, mapping, or connection limit reached. Some process or FD information is missing.".into());
-    }
-    if namespaces.len() > 1 {
-        result.warnings.push(
-            "UNIX peers in other network namespaces are unobserved. TCP/UDP peers are address-based candidates.".into(),
-        );
     }
     result
 }

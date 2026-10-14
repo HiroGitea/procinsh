@@ -4,6 +4,73 @@ use std::{
     process::{Command, Stdio},
 };
 struct Child(std::process::Child);
+
+#[test]
+fn netns_snapshot_resolves_multiple_namespaces_and_cross_namespace_holders() {
+    use crate::http_server::{
+        process,
+        socket_types::{SocketConnectionStatus, SocketState},
+    };
+    use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
+    let Some(first) = process::TestNetworkNamespaceTarget::new(true) else {
+        return;
+    };
+    let Some(second) = process::TestNetworkNamespaceTarget::new(true) else {
+        return;
+    };
+    let snapshot = snapshot::collect(&mut Default::default());
+    let connects = |relation: &snapshot::FdRelation,
+                    a: (process::ProcessId, u32),
+                    b: (process::ProcessId, u32)| {
+        relation.peer.as_ref().is_some_and(|peer| {
+            let endpoint = (relation.endpoint.process_id, relation.endpoint.fd);
+            let peer = (peer.process_id, peer.fd);
+            (endpoint == a && peer == b) || (endpoint == b && peer == a)
+        })
+    };
+    for fixture in [&first, &second] {
+        let relation = snapshot
+            .fd_relations
+            .iter()
+            .find(|relation| {
+                !relation.shared
+                    && connects(relation, (fixture.target.id, 61), (fixture.peer_id, 61))
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing UNIX connection for {:?}: {:?}",
+                    fixture.target.id, snapshot.warnings
+                )
+            });
+        assert!(!relation.candidate);
+        assert_eq!(
+            relation.endpoint.connection_status,
+            Some(SocketConnectionStatus::PeerPresent)
+        );
+        assert_eq!(
+            relation.socket.as_ref().unwrap().state,
+            Some(SocketState::Connected)
+        );
+        assert!(snapshot.fd_relations.iter().any(|relation| {
+            relation.shared && connects(relation, (fixture.target.id, 61), (fixture.peer_id, 63))
+        }));
+        let inode = std::fs::metadata(format!("/proc/self/fd/{}", fixture.inherited.as_raw_fd()))
+            .unwrap()
+            .ino();
+        assert!(snapshot.fd_relations.iter().any(|relation| {
+            relation.shared
+                && relation.endpoint.resource.inode == inode
+                && connects(
+                    relation,
+                    (
+                        process::identity(std::process::id() as i32).unwrap(),
+                        fixture.inherited.as_raw_fd() as u32,
+                    ),
+                    (fixture.target.id, 0),
+                )
+        }));
+    }
+}
 impl Drop for Child {
     fn drop(&mut self) {
         let _ = self.0.kill();

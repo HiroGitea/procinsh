@@ -56,3 +56,76 @@ impl Drop for Target {
         let _ = self.child.wait();
     }
 }
+
+/// Two UNIX endpoints in a fresh network namespace, plus a host socket inherited
+/// by the parent. The host endpoint remains owned by the test process as well.
+pub(in crate::http_server) struct NetworkNamespaceTarget {
+    pub(in crate::http_server) target: Target,
+    pub(in crate::http_server) peer_id: process::ProcessId,
+    pub(in crate::http_server) inherited: std::os::unix::net::UnixStream,
+    _inherited_peer: std::os::unix::net::UnixStream,
+}
+
+impl NetworkNamespaceTarget {
+    pub(in crate::http_server) fn new(separate: bool) -> Option<Self> {
+        use std::os::{
+            fd::OwnedFd,
+            unix::{net::UnixStream, process::CommandExt},
+        };
+        super::super::test_support::build_targets();
+        let (inherited, inherited_peer) = UnixStream::pair().unwrap();
+        let stdin: OwnedFd = inherited.try_clone().unwrap().into();
+        let mut command = Command::new("tests/targets/bin/netns_ipc");
+        command
+            .arg("--allow-inspector")
+            .stdin(Stdio::from(stdin))
+            .stdout(Stdio::piped());
+        if separate {
+            // Only an async-signal-safe syscall runs between fork and exec.
+            unsafe {
+                command.pre_exec(|| {
+                    if libc::unshare(libc::CLONE_NEWNET) == 0 {
+                        Ok(())
+                    } else {
+                        Err(std::io::Error::last_os_error())
+                    }
+                });
+            }
+        }
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(e)
+                if separate
+                    && matches!(
+                        e.raw_os_error(),
+                        Some(libc::EPERM | libc::EINVAL | libc::ENOSYS)
+                    ) =>
+            {
+                assert!(
+                    std::env::var("PROCINSH_REQUIRE_NETNS").as_deref() != Ok("1"),
+                    "required network namespace fixture: {e}"
+                );
+                eprintln!("network namespace fixture unavailable: {e}");
+                return None;
+            }
+            Err(e) => panic!("network namespace fixture: {e}"),
+        };
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let id = process::identity(child.id() as i32).unwrap();
+        let peer_id =
+            process::identity(line.split_whitespace().nth(1).unwrap().parse().unwrap()).unwrap();
+        Some(Self {
+            target: Target {
+                child,
+                id,
+                address: 0,
+            },
+            peer_id,
+            inherited,
+            _inherited_peer: inherited_peer,
+        })
+    }
+}

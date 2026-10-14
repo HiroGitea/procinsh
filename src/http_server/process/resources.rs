@@ -108,7 +108,8 @@ pub(in crate::http_server) fn unix_sockets(
 }
 
 pub(in crate::http_server) fn unix_socket_peers(
+    namespace: &super::NetworkNamespaceReader,
     deadline: std::time::Instant,
 ) -> Result<std::collections::HashMap<u64, SocketInfo>> {
-    sockets::unix_diag(deadline)
+    sockets::unix_diag(namespace, deadline)
 }

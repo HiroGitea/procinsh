@@ -233,11 +233,12 @@ fn owners(
 }
 
 fn socket_table(
-    pid: i32,
+    id: ProcessId,
     unix_needed: &HashSet<u64>,
     deadline: Instant,
     warnings: &mut Vec<String>,
 ) -> HashMap<u64, SocketInfo> {
+    let pid = id.pid;
     let mut result = HashMap::new();
     result.extend(super::additional_sockets(pid));
     for (file, protocol) in [
@@ -288,18 +289,17 @@ fn socket_table(
             .get(inode)
             .is_some_and(|s| matches!(s.protocol, SocketProtocol::Unix { .. }))
     }) {
-        let same_ns = fs::metadata(format!("/proc/{pid}/ns/net"))
-            .ok()
-            .zip(fs::metadata("/proc/self/ns/net").ok())
-            .is_some_and(|(a, b)| a.ino() == b.ino() && a.dev() == b.dev());
-        if same_ns {
-            match sockets::unix_diag(deadline.min(Instant::now() + Duration::from_millis(750))) {
-                Ok(diag) => result.extend(diag),
-                Err(e) => warnings.push(format!("Could not identify UNIX socket peers: {e}")),
-            }
-        } else {
-            warnings
-                .push("UNIX socket peer inodes are unavailable across network namespaces.".into());
+        let diag = super::NetworkNamespaceReader::open(id).and_then(|namespace| {
+            sockets::unix_diag(
+                &namespace,
+                deadline.min(Instant::now() + Duration::from_millis(750)),
+            )
+        });
+        match diag {
+            Ok(diag) => result.extend(diag),
+            Err(e) => warnings.push(format!(
+                "Could not identify UNIX socket peers for PID {pid}: {e:#}"
+            )),
         }
     }
     result
@@ -389,7 +389,7 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
     let mut sockets = if needed.is_empty() {
         HashMap::new()
     } else {
-        socket_table(id.pid, &needed, deadline, &mut warnings)
+        socket_table(id, &needed, deadline, &mut warnings)
     };
     let mut metadata_reader = super::SocketMetadataReader::new(id);
     let mut metadata = HashMap::new();
