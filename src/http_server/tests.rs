@@ -235,6 +235,7 @@ async fn gzip_sse_flushes_before_stream_ends() {
     use std::io::Write;
     let mut decoder = flate2::write::GzDecoder::new(Vec::new());
     let started = std::time::Instant::now();
+    let mut saw_snapshot = false;
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let frame = std::future::poll_fn(|cx| std::pin::Pin::new(&mut body).poll_frame(cx))
@@ -246,10 +247,12 @@ async fn gzip_sse_flushes_before_stream_ends() {
             decoder.write_all(&frame).unwrap();
             decoder.flush().unwrap();
             let output = std::str::from_utf8(decoder.get_ref()).unwrap();
-            if output.contains("event: snapshot\n") {
+            if !saw_snapshot && output.contains("event: snapshot\n") {
                 assert!(started.elapsed() < Duration::from_secs(2));
+                saw_snapshot = true;
             }
             if output.contains("event: activity\n") {
+                assert!(saw_snapshot);
                 break;
             }
         }

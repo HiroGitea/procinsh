@@ -8,8 +8,10 @@
 //! | [`read_text`] | `pub(super)` | `fn read_text(path: &`[`str`]`) -> `[`Result`]`<`[`String`]`>` |
 //! | [`parse_inet`] | `pub(super)` | `fn parse_inet(text: &`[`str`]`, protocol: `[`SocketProtocol`]`) -> `[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>` |
 //! | [`parse_unix`] | `pub(super)` | `fn parse_unix(text: &`[`str`]`) -> `[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>` |
-//! | [`unix_diag`] | `pub(super)` | `fn unix_diag(deadline: `[`Instant`]`) -> `[`Result`]`<`[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>>` |
+//! | [`diagnostic_socket`] | `pub(super)` | `fn diagnostic_socket() -> `[`Result`]`<`[`OwnedFd`]`>` |
+//! | [`unix_diag`] | `pub(super)` | `fn unix_diag(namespace: &`[`NetworkNamespaceReader`]`, deadline: `[`Instant`]`) -> `[`Result`]`<`[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>>` |
 
+use super::socket_namespace::NetworkNamespaceReader;
 use crate::http_server::socket_types::{
     SocketConnectionStatus, SocketProtocol, SocketState, SocketType,
 };
@@ -210,12 +212,11 @@ fn parse_diag(bytes: &[u8]) -> Result<(u64, SocketInfo)> {
     Ok((u32_at(bytes, 4)? as u64, info))
 }
 
-// Query only metadata. No endpoint is opened, consumed, or modified.
-pub(super) fn unix_diag(deadline: Instant) -> Result<HashMap<u64, SocketInfo>> {
+pub(super) fn diagnostic_socket() -> Result<OwnedFd> {
     let raw = unsafe {
         libc::socket(
             libc::AF_NETLINK,
-            libc::SOCK_RAW | libc::SOCK_CLOEXEC,
+            libc::SOCK_RAW | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
             libc::NETLINK_SOCK_DIAG,
         )
     };
@@ -224,7 +225,17 @@ pub(super) fn unix_diag(deadline: Instant) -> Result<HashMap<u64, SocketInfo>> {
         "NETLINK_SOCK_DIAG: {}",
         std::io::Error::last_os_error()
     );
-    let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    Ok(unsafe { OwnedFd::from_raw_fd(raw) })
+}
+
+// The socket keeps its creation namespace even when queried by another thread.
+// Query only metadata. No endpoint is opened, consumed, or modified.
+pub(super) fn unix_diag(
+    namespace: &NetworkNamespaceReader,
+    deadline: Instant,
+) -> Result<HashMap<u64, SocketInfo>> {
+    let fd = namespace.diagnostic_socket(deadline)?;
+    ensure!(Instant::now() < deadline, "UNIX diag timed out");
     let mut kernel: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
     kernel.nl_family = libc::AF_NETLINK as u16;
     let mut request = [0u8; 40];
@@ -260,7 +271,9 @@ pub(super) fn unix_diag(deadline: Instant) -> Result<HashMap<u64, SocketInfo>> {
             events: libc::POLLIN,
             revents: 0,
         };
-        let ready = unsafe { libc::poll(&mut poll, 1, 50) };
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let timeout = remaining.as_millis().clamp(1, 50) as i32;
+        let ready = unsafe { libc::poll(&mut poll, 1, timeout) };
         if ready < 0 {
             if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
                 continue;

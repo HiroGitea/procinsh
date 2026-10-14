@@ -52,10 +52,14 @@ If you don't want to use `sudo`, please use setcap instead of it.
 
 ```
 sudo setcap \
-  cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search=ep \
+  cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search,cap_sys_admin=ep \
   "$HOME/.cargo/bin/procinsh"
 "$HOME/.cargo/bin/procinsh" --listen 127.0.0.1:9090
 ```
+
+`CAP_SYS_ADMIN` enables UNIX socket peer diagnostics in other network namespaces.
+Without it, ProcInSh keeps available socket information and reports missing
+peer diagnostics as warnings; an unknown peer does not mean an unconnected socket.
 
 ### Self build
 

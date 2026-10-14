@@ -40,4 +40,4 @@ if [[ -e "$app_binary" ]]; then
 fi
 touch "$test_dir/installed"
 cp "$test_binary" "$app_binary"
-PROCINSH_REQUIRE_SOCKET_METADATA=1 ./scripts/dev_run.sh "$@"
+PROCINSH_REQUIRE_SOCKET_METADATA=1 PROCINSH_REQUIRE_NETNS=1 ./scripts/dev_run.sh "$@"

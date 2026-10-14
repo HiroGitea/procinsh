@@ -28,7 +28,7 @@ if [[ -f "$state/procinsh" ]] && cmp -s "$state/install/bin/procinsh" "$state/pr
 fi
 
 install -m 0755 "$state/install/bin/procinsh" "$state/candidate"
-sudo -n setcap cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search=ep "$state/candidate"
+sudo -n setcap cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search,cap_sys_admin=ep "$state/candidate"
 printf '%s\n' "$version" > "$state/candidate.version"
 if [[ -f "$state/procinsh" ]]; then
   # A hard link retains file capabilities for rollback without another sudo.
