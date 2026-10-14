@@ -81,7 +81,7 @@ cargo publish --dry-run
 | `web/src/` | TypeScript の通常画面・SPACE 画面・描画モデルと CSS（HTML 入口は `web/{list,process,space}/index.html`） |
 | `tests/` | Rust・ブラウザ・ログ・実機センサーのテストと C fixture |
 
-`main.rs` が唯一の crate root で、CLI の検証後は `http_server::run` だけを呼びます。Rust library API は提供しません。モジュールは直接の利用者の最小共通祖先に置き、子モジュールの宣言は private、親に必要な item は原則 `pub(super)` とします。
+`main.rs` が唯一の crate root で、CLI の検証後は `http_server::run` だけを呼びます。起動時に runtime より先に fork し、親が権限付きの取得処理、権限を破棄した子が HTTP を担当します。[権限分離と IPC の境界](PRIVILEGE_SEPARATION.md)に起動、プロトコル、ELF/DWARF 制限と検証を記載しています。Rust library API は提供しません。モジュールは直接の利用者の最小共通祖先に置き、子モジュールの宣言は private、親に必要な item は原則 `pub(super)` とします。
 
 Rust の型名は責務を表します。データ・値は表す内容（`ProcessId`、`ProcessSummary`、`ProcessSnapshot` など）、処理・状態・リソースを管理する型は役割（`ProcessScanner`、`ProcessMonitor`、`FileActivityCollector`、`PerfEventReader`、`PtraceGuard` など）が伝わる名前にします。補助メソッドの有無だけでは分類せず、すべての型に機械的な接尾辞を付けることは求めません。
 
@@ -478,7 +478,7 @@ SPACE は両端が表示中のシグナルを最大256件保持し、紫色の�
 
 待受の既定値は `127.0.0.1:8080` です。IPv4/IPv6 の loopback（`127.0.0.1`、`::1` など）は追加フラグなしで利用できます。LAN アドレスや wildcard（`0.0.0.0`、`::`）など非 loopback の指定は、`--allow-non-loopback` がなければ bind 前に非ゼロ終了します。明示的に許可する例は `procinsh --listen 0.0.0.0:9090 --allow-non-loopback` です。許可した場合も警告を出します。
 
-`--listen` を複数回指定すると、一つのプロセスが各アドレスで待ち受け、収集処理を共有します。明示指定時は既定の待受アドレスを追加しません。すべてのアドレスを検証・bind してから配信を開始し、一つでも失敗すれば非ゼロ終了します。各リスナーは自分のアドレスに対して Host を検証します。SIGINT・SIGTERM はすべてのリスナーと収集処理を停止します。たとえば Tailscale と localhost で同じポートを使う場合は次を実行します。
+`--listen` を複数回指定すると、一つの HTTP worker が各アドレスで待ち受け、親の収集処理を共有します。明示指定時は既定の待受アドレスを追加しません。すべてのアドレスを検証・bind してから配信を開始し、一つでも失敗すれば非ゼロ終了します。各リスナーは自分のアドレスに対して Host を検証します。SIGINT・SIGTERM はすべてのリスナーと収集処理を停止します。たとえば Tailscale と localhost で同じポートを使う場合は次を実行します。
 
 ```sh
 ./scripts/dev_run.sh --listen "$(tailscale ip -4):9090" \
