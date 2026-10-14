@@ -13,6 +13,7 @@ import {
 } from "./model.js";
 export { layoutMaps };
 import { treeLayout, stableLayout } from "./process-layout.js";
+import { emptyActivityRetention } from "./types.js";
 import type {
   Position,
   NetworkGroup,
@@ -22,6 +23,7 @@ import type {
   EdgeStat,
   ActivityRoute,
   ActivityUpdate,
+  ActivityRetention,
   DataEvents,
 } from "./types.js";
 import type {
@@ -136,17 +138,29 @@ class RecentFiles {
     this.entries.clear();
     this.evicted = 0;
   }
-  prune(now: number, live: ReadonlySet<string>) {
+  prune(
+    now: number,
+    live: ReadonlySet<string>,
+    retained: ReadonlySet<string> = new Set(),
+  ) {
     let changed = false;
     for (const [id, file] of this.entries)
-      if (now - file.last >= 30000 || !live.has(key(file.process_id))) {
+      if (
+        !retained.has(id) &&
+        (now - file.last >= 30000 || !live.has(key(file.process_id)))
+      ) {
         this.entries.delete(id);
         changed = true;
       }
     return changed;
   }
-  ingest(events: FileActivity[], now: number, live: ReadonlySet<string>) {
-    let changed = this.prune(now, live);
+  ingest(
+    events: FileActivity[],
+    now: number,
+    live: ReadonlySet<string>,
+    retained: ReadonlySet<string> = new Set(),
+  ) {
+    let changed = this.prune(now, live, retained);
     for (const e of events) {
       if (!live.has(key(e.process_id)) || !(e.bytes > 0) || !(e.count > 0))
         continue;
@@ -292,6 +306,9 @@ export class SpaceDataStore {
   private source: EventSource | null = null;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private running = false;
+  private liveIds = new Set<string>();
+  private liveRelations = new Set<string>();
+  private retained = emptyActivityRetention();
 
   constructor(
     private readonly events: DataEvents = quietEvents,
@@ -299,6 +316,10 @@ export class SpaceDataStore {
       new Set(this.nodes.keys()),
     private readonly openEvents: (url: string) => EventSource = (url) =>
       new EventSource(url),
+    private readonly activeResources: (
+      now: number,
+      suppressed: ReadonlySet<string>,
+    ) => ActivityRetention = emptyActivityRetention,
   ) {}
 
   replaceSnapshot(
@@ -307,8 +328,8 @@ export class SpaceDataStore {
     now = performance.now(),
   ) {
     this.snapshot = snapshot;
-    const relations = snapshot.fd_relations.filter(isSpaceRelationVisible);
-    this.displaySnapshot = { ...snapshot, fd_relations: relations };
+    this.liveIds = new Set(snapshot.processes.map((p) => key(p.identity)));
+    this.liveRelations = new Set(snapshot.fd_relations.map((r) => r.id));
     this.suppressedSocketOwners.clear();
     const visibleOwners = new Set<string>();
     const excludedOwners = new Set<string>();
@@ -324,23 +345,55 @@ export class SpaceDataStore {
     // A relation removed because of its other endpoint must not create a port fallback.
     for (const owner of excludedOwners)
       if (!visibleOwners.has(owner)) this.suppressedSocketOwners.add(owner);
-    const live = new Set(snapshot.processes.map((p) => key(p.identity)));
+    this.updateDisplay(now, rearrange);
+  }
+
+  private updateDisplay(now: number, rearrange = false) {
+    const retained = this.activeResources(now, this.suppressedSocketOwners);
+    const processes = [
+      ...this.snapshot.processes,
+      ...this.displaySnapshot.processes.filter(
+        (p) =>
+          !this.liveIds.has(key(p.identity)) &&
+          retained.processes.has(key(p.identity)),
+      ),
+    ];
+    const currentRelations = this.snapshot.fd_relations.filter(
+      isSpaceRelationVisible,
+    );
+    const relations = [
+      ...currentRelations,
+      ...this.displaySnapshot.fd_relations.filter(
+        (r) =>
+          !this.liveRelations.has(r.id) &&
+          retained.connections.has(r.id) &&
+          [r.endpoint, r.peer].every(
+            (e) => !e || !this.suppressedSocketOwners.has(socketOwnerKey(e)),
+          ),
+      ),
+    ];
+    this.displaySnapshot = {
+      ...this.snapshot,
+      processes,
+      fd_relations: relations,
+    };
+    const live = new Set(processes.map((p) => key(p.identity)));
     for (const id of this.nodes.keys())
       if (!live.has(id)) this.cpuGlows.delete(id);
     const edges = new Set(relations.map((e) => e.id));
     for (const id of this.edgeStats.keys())
       if (!edges.has(id)) this.edgeStats.delete(id);
     const layout = rearrange
-      ? treeLayout(snapshot.processes, undefined, undefined, relations)
+      ? treeLayout(processes, undefined, undefined, relations)
       : stableLayout(
-          snapshot.processes,
+          processes,
           this.positions(),
           undefined,
           undefined,
           relations,
         );
     this.nodes.clear();
-    for (const p of snapshot.processes) {
+    for (const p of processes) {
       const place = layout.get(key(p.identity));
       this.nodes.set(key(p.identity), {
         ...p,
@@ -348,8 +401,8 @@ export class SpaceDataStore {
         regions: layoutMaps(p.maps),
       });
     }
-    this.recentFiles.prune(now, live);
-    this.netlinkSockets.sync(relations, live);
+    this.recentFiles.prune(now, this.liveIds, retained.files);
+    this.netlinkSockets.sync(currentRelations, this.liveIds, retained.netlink);
     this.network = networkGroups(relations);
     this.networkPositions = networkLayout(
       this.network,
@@ -361,6 +414,48 @@ export class SpaceDataStore {
       this.netlinkPositions.clear();
     }
     this.layoutFiles();
+    this.retained = {
+      processes: new Set(
+        processes
+          .map((p) => key(p.identity))
+          .filter((id) => !this.liveIds.has(id)),
+      ),
+      connections: new Set(
+        relations.map((r) => r.id).filter((id) => !this.liveRelations.has(id)),
+      ),
+      networks: new Set(),
+      files: new Set(
+        [...this.recentFiles.entries]
+          .filter(
+            ([, f]) =>
+              !this.liveIds.has(key(f.process_id)) || now - f.last >= 30000,
+          )
+          .map(([id]) => id),
+      ),
+      netlink: new Set(
+        [...this.netlinkSockets.entries.keys()].filter(
+          (id) => !this.netlinkSockets.currentIds.has(id),
+        ),
+      ),
+    };
+  }
+
+  /** Rebuild only when an animation no longer needs an absent observation. */
+  pruneRetention(now = performance.now()) {
+    if (!Object.values(this.retained).some((ids) => ids.size)) return false;
+    const active = this.activeResources(now, this.suppressedSocketOwners);
+    for (const kind of [
+      "processes",
+      "connections",
+      "files",
+      "netlink",
+    ] as const)
+      for (const id of this.retained[kind])
+        if (!active[kind].has(id)) {
+          this.updateDisplay(now);
+          return true;
+        }
+    return false;
   }
   private positions() {
     return new Map([...this.nodes].map(([id, n]) => [id, n.pos]));
@@ -389,7 +484,8 @@ export class SpaceDataStore {
     const grouped = new Set(
       [...this.network.values()].flatMap((g) => g.members.map((e) => e.id)),
     );
-    return this.displaySnapshot.fd_relations.filter((e) => {
+    return this.snapshot.fd_relations.filter((e) => {
+      if (!isSpaceRelationVisible(e)) return false;
       if (
         !visible.has(key(e.endpoint.process_id)) ||
         !this.nodes.has(key(e.endpoint.process_id))
@@ -405,16 +501,18 @@ export class SpaceDataStore {
     visible: ReadonlySet<string> = this.visibleIds(),
     now = performance.now(),
   ): ActivityUpdate {
+    const live = this.liveIds;
     const filesChanged = this.recentFiles.ingest(
       activity.files || [],
       now,
-      new Set(this.nodes.keys()),
+      live,
+      this.activeResources(now, this.suppressedSocketOwners).files,
     );
-    const live = new Set(this.nodes.keys());
     const routes: ActivityRoute[] = [];
     for (const e of activity.files || []) {
       const id = fileKey(e);
       if (
+        live.has(key(e.process_id)) &&
         visible.has(key(e.process_id)) &&
         this.recentFiles.entries.has(id) &&
         e.bytes > 0 &&
@@ -429,7 +527,7 @@ export class SpaceDataStore {
     }
     for (const e of activity.cpu || []) {
       const id = key(e.process_id);
-      if (this.nodes.has(id))
+      if (live.has(id))
         this.cpuGlows.set(id, {
           ...e,
           window_ms: activity.window_ms || 100,
@@ -438,6 +536,7 @@ export class SpaceDataStore {
     }
     const relations = this.visibleRelations(visible);
     for (const e of activity.ipc || []) {
+      if (!live.has(key(e.process_id))) continue;
       const owner =
         e.resource.kind === "socket" ? socketOwnerKey(e) : undefined;
       if (owner && this.suppressedSocketOwners.has(owner)) continue;
@@ -449,6 +548,7 @@ export class SpaceDataStore {
             id: netlink.id,
             direction: e.write ? 1 : -1,
             count: e.count,
+            socketOwnerKey: owner,
           });
         continue;
       }
@@ -487,8 +587,8 @@ export class SpaceDataStore {
         const source = key(event.source_id),
           destination = key(event.destination_id);
         return (
-          this.nodes.has(source) &&
-          this.nodes.has(destination) &&
+          live.has(source) &&
+          live.has(destination) &&
           visible.has(source) &&
           visible.has(destination)
         );
@@ -498,7 +598,11 @@ export class SpaceDataStore {
     return { now, filesChanged, netlinkChanged: false, routes, signals };
   }
   pruneFiles(now = performance.now()) {
-    const changed = this.recentFiles.prune(now, new Set(this.nodes.keys()));
+    const changed = this.recentFiles.prune(
+      now,
+      this.liveIds,
+      this.activeResources(now, this.suppressedSocketOwners).files,
+    );
     if (changed) this.layoutFiles();
     return changed;
   }

@@ -25,10 +25,12 @@ const data = new SpaceDataStore(
     activity: updateActivity,
     reset() {
       renderer.clearParticles();
-      refreshFiles();
+      if (data.pruneRetention()) updateSnapshot();
+      else refreshFiles();
     },
     gap() {
       renderer.clearParticles();
+      if (data.pruneRetention()) updateSnapshot();
     },
     status(message) {
       $("failure").hidden = message === null;
@@ -36,14 +38,16 @@ const data = new SpaceDataStore(
     },
   },
   () => search.visibleIds(),
+  undefined,
+  (now, suppressed) => renderer.activeResources(now, suppressed),
 );
 const search = createSpaceSearch(
   $("search"),
-  () => data.snapshot,
+  () => data.displaySnapshot,
   () => {
     renderer.clearParticles();
-    rebuildScene();
-    retainParticles();
+    data.pruneRetention();
+    updateSnapshot();
   },
   (id) => selectProcess(id, true),
 );
@@ -62,6 +66,7 @@ const renderer = createSpaceRenderer({
   cpuGlows: data.cpuGlows,
   beforeFrame(now) {
     camera.controls.update();
+    if (data.pruneRetention(now)) updateSnapshot();
     if (now - lastFilePrune >= 1000) {
       lastFilePrune = now;
       pruneFiles(now);
@@ -233,10 +238,14 @@ $("rearrange").onclick = () => {
 $("close").onclick = clearSelection;
 $("reset").onclick = () => {
   search.clear();
+  renderer.clearParticles();
+  data.pruneRetention();
+  retainSelection();
   fitScene();
   clearSelection();
   rebuildScene();
   retainParticles();
+  updateDetails();
 };
 addEventListener("resize", () => {
   renderer.resize();

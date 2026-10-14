@@ -644,10 +644,12 @@ try {
     const m=await import(window.spaceTestModule);
     document.getElementById('reset').click();
     const source={pid:810001,start_time_ticks:1},target={pid:810002,start_time_ticks:2};
-    m.renderSystemSnapshot({processes:[{identity:source,name:'signal-source',uid:1000,maps:[],maps_epoch:1},{identity:target,parent_id:source,name:'signal-target',uid:1000,maps:[],maps_epoch:1}],fd_relations:[],warnings:[]});
+    window.signalSnapshot={processes:[{identity:source,name:'signal-source',uid:1000,maps:[],maps_epoch:1},{identity:target,parent_id:source,name:'signal-target',uid:1000,maps:[],maps_epoch:1}],fd_relations:[],warnings:[]};
+    m.renderSystemSnapshot(window.signalSnapshot);
     m.fitScene();
     window.signalFixture={timestamp_ns:123,src_pid:source.pid,dst_pid:target.pid,source_id:source,destination_id:target,signal:15};
     m.renderActivity({signals:[window.signalFixture]});
+    m.renderSystemSnapshot({processes:[],fd_relations:[]});
   })()`);
   const signalFlight = await evaluate<
     { label: string; source: string; destination: string }[]
@@ -656,6 +658,13 @@ try {
   assert.equal(signalFlight[0].label, "SIGTERM");
   assert.equal(signalFlight[0].source, "810001:1");
   assert.equal(signalFlight[0].destination, "810002:2");
+  assert.equal(
+    await evaluate(
+      "import(window.spaceTestModule).then(m=>!!m.processPosition('810001:1')&&!!m.processPosition('810002:2'))",
+    ),
+    true,
+    "exited endpoints remain visible while the signal is in flight",
+  );
   await until(
     () =>
       evaluate(
@@ -671,13 +680,15 @@ try {
     ),
     0,
   );
-  assert.ok(
-    (await evaluate<number>(
-      "import(window.spaceTestModule).then(m=>m.cpuGlowVisual('810002:2').r)",
-    )) < 0.01,
+  assert.equal(
+    await evaluate(
+      "import(window.spaceTestModule).then(m=>!m.processPosition('810001:1')&&!m.processPosition('810002:2'))",
+    ),
+    true,
+    "exited endpoints disappear after the arrival pulse",
   );
   await evaluate(
-    "import(window.spaceTestModule).then(m=>m.renderActivity({signals:Array(5000).fill(window.signalFixture)}))",
+    "import(window.spaceTestModule).then(m=>{m.renderSystemSnapshot(window.signalSnapshot);m.renderActivity({signals:Array(5000).fill(window.signalFixture)});})",
   );
   assert.equal(
     await evaluate(
@@ -695,6 +706,16 @@ try {
     0,
   );
   await evaluate("document.getElementById('reset').click()");
+  assert.equal(
+    await evaluate(`import(window.spaceTestModule).then(m=>{
+      m.renderActivity({signals:[window.signalFixture]});
+      m.renderSystemSnapshot({processes:[],fd_relations:[]});
+      window.spaceTestSources.at(-1).dispatchEvent(new MessageEvent('gap',{data:'{}'}));
+      return m.signalVisuals().length===0&&!m.processPosition('810002:2');
+    })`),
+    true,
+    "SSE gaps immediately release retained endpoints",
+  );
   await checkFileSpace(evaluate, delay, cdp);
   await checkNetlinkSpace(evaluate, delay, cdp);
   await checkSocketVisibility(evaluate);

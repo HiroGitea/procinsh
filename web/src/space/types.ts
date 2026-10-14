@@ -80,6 +80,23 @@ export interface ActivityUpdate {
   routes: ActivityRoute[];
   signals?: SignalEvent[];
 }
+/** Exact identities needed by animations, including staggered particles and pulses. */
+export interface ActivityRetention {
+  processes: Set<string>;
+  connections: Set<string>;
+  networks: Set<string>;
+  files: Set<string>;
+  netlink: Set<string>;
+}
+export function emptyActivityRetention(): ActivityRetention {
+  return {
+    processes: new Set(),
+    connections: new Set(),
+    networks: new Set(),
+    files: new Set(),
+    netlink: new Set(),
+  };
+}
 export interface DataEvents {
   snapshot(): void;
   activity(update: ActivityUpdate): void;

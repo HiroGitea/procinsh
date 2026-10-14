@@ -86,16 +86,24 @@ function socketOwners(
 /** Current snapshot sockets are visible even before any traffic is observed. */
 export class NetlinkSocketStore {
   readonly entries = new Map<string, NetlinkSocketStats>();
+  readonly currentIds = new Set<string>();
 
   clear() {
     this.entries.clear();
+    this.currentIds.clear();
   }
 
-  /** Preserve counters for stable resource identities; remove absent owners immediately. */
-  sync(relations: readonly FdRelation[], live: ReadonlySet<string>) {
+  /** Preserve counters and keep absent owners only while their animations need them. */
+  sync(
+    relations: readonly FdRelation[],
+    live: ReadonlySet<string>,
+    retained: ReadonlySet<string> = new Set(),
+  ) {
     const owners = socketOwners(relations, live);
+    this.currentIds.clear();
+    for (const id of owners.keys()) this.currentIds.add(id);
     for (const id of this.entries.keys()) {
-      if (!owners.has(id)) this.entries.delete(id);
+      if (!owners.has(id) && !retained.has(id)) this.entries.delete(id);
     }
     for (const [id, owner] of owners) {
       const entry = this.entries.get(id);
@@ -114,7 +122,7 @@ export class NetlinkSocketStore {
   /** Events only update current sockets; they never create a plate. */
   ingest(event: IoActivity, live: ReadonlySet<string>) {
     const entry = this.entries.get(ownerKey(event));
-    if (!entry) return null;
+    if (!entry || !this.currentIds.has(entry.id)) return null;
     if (
       !live.has(key(event.process_id)) ||
       !(event.bytes > 0) ||
