@@ -21,7 +21,7 @@ main 用 unit はログインユーザーのホームを基準に、開発用 ch
 
 公開版は `~/procinsh-release-preview/install` を Cargo の専用インストール先として使用します。通常の `~/.cargo/bin/procinsh` は変更しません。Rust とネイティブ・BPF のビルド依存、`curl`、`flock`、`cmp` が必要ですが、公開パッケージには生成済み JavaScript が含まれるため、Node.js・npm・GitHub 認証・開発用 checkout は不要です。Cargo は `~/.cargo/bin` から利用できる必要があります。公開版の更新は専用領域で実行するため、開発用 checkout の `rust-toolchain.toml` は適用されません。rustup の default toolchain は公開版をビルドできるバージョンに設定してください。
 
-ビルド・配置・サービス管理はすべてログインユーザーで行います。ビルド後の候補バイナリに対して `sudo -n setcap cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search,cap_sys_admin=ep` を実行し、観測用の権限を付与します。このコマンドを候補ファイル `~/procinsh-main-preview/candidate` と `~/procinsh-release-preview/candidate` に対してパスワード入力なしで実行できることが前提です。権限付与に失敗した場合は更新を中止し、稼働版を維持します。
+ビルド・配置・サービス管理はすべてログインユーザーで行います。ビルド後の候補バイナリに対して `sudo -n setcap cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search,cap_sys_admin=ep` を実行し、観測用の権限を付与します。`CAP_SYS_ADMIN` は別 network namespace に入ってソケット接続先を取得するために必要です。このコマンドを候補ファイル `~/procinsh-main-preview/candidate` と `~/procinsh-release-preview/candidate` に対してパスワード入力なしで実行できることが前提です。権限付与に失敗した場合は更新を中止し、稼働版を維持します。
 
 ## 登録
 
@@ -97,7 +97,18 @@ systemctl --user start procinsh-release-preview-update.service
 
 初回ビルド成功後に常設サービスが起動します。以降はユーザーマネージャー起動時に自動起動します。ログアウト後も稼働させ、OS 起動時からログインせず利用するには、一度 `loginctl enable-linger "$USER"` を実行してください。これはユーザーの linger 設定を有効にします。[systemd の説明](https://www.freedesktop.org/software/systemd/man/252/loginctl.html)を参照してください。unit と更新スクリプト自身は自動更新の対象ではありません。これらを変更したときは timer を停止して更新処理の終了を待ち、再インストールと `daemon-reload` を行ってから本体サービスを再起動し、timer を再開してください。待受アドレスの設定を反映するには、`preview_bind.sh` の配置と本体サービスの再起動が必要です。再インストールと `daemon-reload` の後に、main は `systemctl --user restart procinsh-preview.service`、公開版は `systemctl --user restart procinsh-release-preview.service` を実行してください。
 
-capability 一覧を変更した場合は、sudoers の許可する引数も新しい一覧に合わせてください。配置済みの更新スクリプトを再インストールするだけでは、既存バイナリの権限は変わりません。同じ commit や同じ公開版バイナリでは更新を省略するため、timer を停止して進行中の更新が終了した後、既存バイナリを `candidate` にコピーし、上記の `sudo -n setcap` をその候補に実行してから `procinsh` に置き換え、サービスを再起動してください。稼働 commit または version の記録は維持し、起動と権限を確認してから timer を再開します。置き換え前のバイナリは hard link で退避すると capability を保持したまま復元できます。未反映の候補が残っている場合は、候補と `candidate.commit`（公開版は `candidate.version`）を先に退避してください。
+### capability の更新
+
+capability 一覧を変更した場合は、sudoers の許可する引数も新しい一覧に合わせてください。配置済みの更新スクリプトを再インストールするだけでは、既存バイナリの権限は変わりません。同じ commit や同じ公開版バイナリでは更新を省略するため、timer を停止して進行中の更新が終了した後、既存バイナリを `candidate` にコピーし、上記の `sudo -n setcap` をその候補に実行してから `procinsh` に置き換え、サービスを再起動してください。稼働 commit または version の記録は維持し、`getcap` で従来の capability と `cap_sys_admin` があること、サービスの起動、各待受での HTTP 応答と別 namespace のソケット接続先を確認してから timer を再開します。置き換え前のバイナリは hard link で退避すると capability を保持したまま復元できます。未反映の候補が残っている場合は、候補と `candidate.commit`（公開版は `candidate.version`）を先に退避してください。
+
+権限を付与するバイナリ自体も namespace に対応している必要があります。capability の追加はコードや公開版の version を変更しません。
+
+稼働バイナリの確認例です。sudoers には候補パスに対する新しい一覧の許可を追加し、既存の許可も維持してください。
+
+```sh
+getcap "$HOME/procinsh-main-preview/procinsh" \
+  "$HOME/procinsh-release-preview/procinsh"
+```
 
 以下のサービス操作では、公開版の場合は `procinsh-preview` を `procinsh-release-preview` に読み替えてください。
 
