@@ -13,7 +13,7 @@ CLI・listen 設定の検証
 
 ## 起動時の権限
 
-親は起動時に利用できる capability のうち、`CAP_DAC_READ_SEARCH`、`CAP_SYS_PTRACE`、`CAP_SYS_ADMIN`、`CAP_PERFMON`、`CAP_BPF` だけを permitted/effective に残します。inheritable/ambient は空にし、`no_new_privs` と dumpable=0 を設定します。CAP_SETPCAP があれば不要な bounding capability も落とし、UID 0 による exec 時の capability 特例を securebits で無効化します。能力が不足していてもサーバーは起動でき、取得に失敗した機能は既存のエラーや sensor status で通知します。
+親は起動時に利用できる capability のうち、`CAP_DAC_READ_SEARCH`、`CAP_SYS_PTRACE`、`CAP_SYS_ADMIN`、`CAP_PERFMON`、`CAP_BPF` だけを permitted/effective に残します。inheritable/ambient は空にし、`no_new_privs` と dumpable=0 を設定します。CAP_SETPCAP があれば不要な bounding capability も落とし、UID 0 による exec 時の capability 特例を securebits で無効化します。能力が不足していてもサーバーは起動でき、取得に失敗した機能は既存のエラーや sensor status で通知します。CAP_SYS_PTRACE のない root コンテナでは、対象 root プロセスの permitted set が親の set を超えると、Linux の ptrace capability 検査により保護された `/proc` 情報を取得できないことがあります。
 
 子は permitted/effective/inheritable/ambient をすべて空にし、`no_new_privs` と dumpable=0 を設定してから runtime を作ります。`no_new_privs` は exec を跨いで保持され、setuid や file capability による再昇格を防ぎます。CAP_SETPCAP がある起動では bounding set も空にします。file capability だけで起動して CAP_SETPCAP がない場合は bounding set が残りますが、exec による能力の取得は許可されません。[Linux capabilities](https://man7.org/linux/man-pages/man7/capabilities.7.html)、[PR_SET_NO_NEW_PRIVS](https://man7.org/linux/man-pages/man2/PR_SET_NO_NEW_PRIVS.2const.html)
 

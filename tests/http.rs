@@ -234,6 +234,15 @@ fn binary_serves_assets_process_api_and_sse_and_shuts_down() {
         server.get(&format!("/api/processes/signals?{query}")).0,
         404
     );
+    let monitor_caps =
+        u64::from_str_radix(&status_fields(server.child.id())["CapPrm"], 16).unwrap();
+    let target_caps = u64::from_str_radix(&status_fields(target.0.id())["CapPrm"], 16).unwrap();
+    // Root containers may lack CAP_SYS_PTRACE. Restricting the monitor to the
+    // inspection capabilities then makes the root fixture's other permitted
+    // capabilities inaccessible under Linux's ptrace capability-superset rule.
+    let restricted_root = unsafe { libc::geteuid() } == 0
+        && monitor_caps & (1 << 19) == 0
+        && target_caps & !monitor_caps != 0;
     for endpoint in [
         "observation",
         "threads",
@@ -243,8 +252,19 @@ fn binary_serves_assets_process_api_and_sse_and_shuts_down() {
         "fds",
     ] {
         let (status, _, body) = server.get(&format!("/api/processes/{endpoint}?{query}"));
-        assert_eq!(status, 200, "{endpoint}: {body}");
-        serde_json::from_str::<serde_json::Value>(&body).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&body).unwrap();
+        if restricted_root && ["environment", "auxv", "fds"].contains(&endpoint) {
+            assert_eq!(status, 422, "{endpoint}: {body}");
+            assert!(
+                payload["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Permission denied"),
+                "{body}"
+            );
+        } else {
+            assert_eq!(status, 200, "{endpoint}: {body}");
+        }
         assert_eq!(
             server
                 .get(&format!(
