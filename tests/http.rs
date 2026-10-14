@@ -253,7 +253,7 @@ fn binary_serves_assets_process_api_and_sse_and_shuts_down() {
     ] {
         let (status, _, body) = server.get(&format!("/api/processes/{endpoint}?{query}"));
         let payload: serde_json::Value = serde_json::from_str(&body).unwrap();
-        if restricted_root && ["environment", "auxv", "fds"].contains(&endpoint) {
+        if restricted_root && ["environment", "auxv"].contains(&endpoint) {
             assert_eq!(status, 422, "{endpoint}: {body}");
             assert!(
                 payload["error"]
@@ -264,6 +264,13 @@ fn binary_serves_assets_process_api_and_sse_and_shuts_down() {
             );
         } else {
             assert_eq!(status, 200, "{endpoint}: {body}");
+            if restricted_root && endpoint == "fds" {
+                assert!(payload["entries"].as_array().unwrap().is_empty());
+                assert!(!payload["warnings"].as_array().unwrap().is_empty());
+            }
+            if restricted_root && endpoint == "maps" {
+                assert!(payload["error"].is_string());
+            }
         }
         assert_eq!(
             server
