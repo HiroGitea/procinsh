@@ -9,8 +9,9 @@
 //! | [`additional_sockets`] | `pub(in crate::http_server)` | `fn additional_sockets(pid: `[`i32`]`) -> `[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>` |
 
 use super::{
-    ProcessId, check_identity,
+    ProcessId,
     sockets::{self, SocketInfo},
+    validate_process_identity,
 };
 use crate::http_server::socket_types::{SocketConnectionStatus, SocketProtocol, SocketType};
 use anyhow::{Result, bail, ensure};
@@ -67,14 +68,14 @@ impl SocketMetadataReader {
         if let Some(reason) = &self.unavailable {
             bail!("{reason}");
         }
-        check_identity(self.process_id)?;
+        validate_process_identity(self.process_id)?;
         if self.pidfd.is_none() {
             let raw = unsafe { libc::syscall(libc::SYS_pidfd_open, self.process_id.pid, 0) };
             if raw < 0 {
                 return self.syscall_error();
             }
             self.pidfd = Some(unsafe { OwnedFd::from_raw_fd(raw as i32) });
-            check_identity(self.process_id)?;
+            validate_process_identity(self.process_id)?;
         }
         let raw = unsafe {
             libc::syscall(
@@ -126,7 +127,7 @@ impl SocketMetadataReader {
             std::io::Error::last_os_error().raw_os_error()
         };
         let connection_status = connection_status(accepting, peer_error);
-        check_identity(self.process_id)?;
+        validate_process_identity(self.process_id)?;
         Ok(SocketMetadata {
             protocol,
             connection_status,

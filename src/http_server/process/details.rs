@@ -1,4 +1,4 @@
-use super::{ProcessId, check_identity, memory, permission_help, timestamp_ms};
+use super::{ProcessId, memory, permission_help, timestamp_ms, validate_process_identity};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use std::{fs::File, io::Read};
@@ -47,14 +47,14 @@ fn parse_environment(bytes: &[u8]) -> Vec<EnvironmentEntry> {
 }
 
 pub(super) fn environment(id: ProcessId) -> Result<Environment> {
-    check_identity(id)?;
+    validate_process_identity(id)?;
     let result = (|| -> Result<Vec<u8>> {
         read_limited(
             File::open(format!("/proc/{}/environ", id.pid))?,
             MAX_ENVIRONMENT,
         )
     })();
-    check_identity(id)?;
+    validate_process_identity(id)?;
     let bytes = result.map_err(|e| anyhow::anyhow!(permission_help("/proc/PID/environ", e)))?;
     Ok(Environment {
         process_id: id,
@@ -183,7 +183,7 @@ fn read_string(pid: i32, address: u64) -> Result<String> {
 }
 
 pub(super) fn auxv(id: ProcessId) -> Result<AuxVector> {
-    check_identity(id)?;
+    validate_process_identity(id)?;
     let result = (|| -> Result<(usize, Vec<AuxEntry>)> {
         // Read the target's ELF class instead of assuming the inspector's word size.
         let mut ident = [0u8; 16];
@@ -205,7 +205,7 @@ pub(super) fn auxv(id: ProcessId) -> Result<AuxVector> {
         }
         Ok((word_bytes, entries))
     })();
-    check_identity(id)?;
+    validate_process_identity(id)?;
     let (word_bytes, entries) =
         result.map_err(|e| anyhow::anyhow!(permission_help("/proc/PID/auxv", e)))?;
     Ok(AuxVector {

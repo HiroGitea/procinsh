@@ -1,8 +1,9 @@
 use super::{
-    ProcessId, check_identity, details,
+    ProcessId, details,
     maps::{self, MemoryMap, SmapsEntry},
     monitoring, procfs,
     sockets::{self, SocketInfo},
+    validate_process_identity,
 };
 use anyhow::Result;
 use serde::Serialize;
@@ -46,10 +47,10 @@ struct MemoryMaps {
 }
 
 pub(in crate::http_server) fn maps(id: ProcessId) -> Result<impl Serialize> {
-    check_identity(id)?;
+    validate_process_identity(id)?;
     let result = maps::read_smaps(id.pid);
     let rollup = maps::rollup(id.pid);
-    check_identity(id)?;
+    validate_process_identity(id)?;
     let (maps, error, captured_at) = match result {
         Ok(maps) => (maps, None, Some(timestamp_ms())),
         Err(e) => (Vec::new(), Some(permission_help("memory maps", e)), None),

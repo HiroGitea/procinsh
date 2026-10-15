@@ -6,7 +6,7 @@
 //! | --- | --- | --- |
 //! | [`NetworkNamespaceReader`] | `pub(in crate::http_server)` | `struct NetworkNamespaceReader` |
 
-use super::{ProcessId, check_identity};
+use super::{ProcessId, validate_process_identity};
 use anyhow::{Context, Result, anyhow, ensure};
 use std::{
     fs::File,
@@ -28,11 +28,11 @@ pub(in crate::http_server) struct NetworkNamespaceReader {
 
 impl NetworkNamespaceReader {
     pub(in crate::http_server) fn open(id: ProcessId) -> Result<Self> {
-        check_identity(id)?;
+        validate_process_identity(id)?;
         let namespace = File::open(format!("/proc/{}/ns/net", id.pid))
             .with_context(|| format!("network namespace for PID {}", id.pid))?;
         let metadata = namespace.metadata()?;
-        check_identity(id)?;
+        validate_process_identity(id)?;
         Ok(Self {
             namespace,
             key: (metadata.dev(), metadata.ino()),

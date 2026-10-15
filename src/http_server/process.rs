@@ -21,7 +21,7 @@
 //!
 //! | Definition | Visibility | Signature |
 //! | --- | --- | --- |
-//! | [`check_identity`] | `pub(super)` | `fn check_identity(id: `[`ProcessId`]`) -> `[`Result`](anyhow::Result)`<()>` |
+//! | [`validate_process_identity`] | `pub(super)` | `fn validate_process_identity(id: `[`ProcessId`]`) -> `[`Result`](anyhow::Result)`<()>` |
 //! | [`observation`] | `pub(super)` | `fn observation(id: `[`ProcessId`]`) -> `[`Result`](anyhow::Result)`<impl `[`Serialize`](serde::Serialize)`>` |
 //! | [`fn@threads`] | `pub(super)` | `fn threads(id: `[`ProcessId`]`) -> `[`Result`](anyhow::Result)`<impl `[`Serialize`](serde::Serialize)`>` |
 //! | [`fn@maps`] | `pub(super)` | `fn maps(id: `[`ProcessId`]`) -> `[`Result`](anyhow::Result)`<impl `[`Serialize`](serde::Serialize)`>` |
@@ -56,7 +56,7 @@ pub(super) use discovery::{ProcessScanner, ProcessSummary};
 use discovery::{summary, users};
 #[cfg(test)]
 pub(super) use identity::identity;
-pub(super) use identity::{ProcessId, check_identity};
+pub(super) use identity::{ProcessId, validate_process_identity};
 pub(super) use maps::MemoryMap;
 pub(super) use monitoring::ProcessMonitor;
 use resources::permission_help;

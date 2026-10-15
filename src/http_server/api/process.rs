@@ -67,7 +67,7 @@ pub(super) async fn maps(Query(id): Query<ProcessId>) -> ApiResult {
 
 pub(super) async fn environment(Query(id): Query<ProcessId>) -> ApiResult {
     blocking(move || {
-        process::check_identity(id)?;
+        process::validate_process_identity(id)?;
         Ok(Json(json!(process::environment(id)?)))
     })
     .await
@@ -75,7 +75,7 @@ pub(super) async fn environment(Query(id): Query<ProcessId>) -> ApiResult {
 
 pub(super) async fn fds(Query(id): Query<ProcessId>) -> ApiResult {
     blocking(move || {
-        process::check_identity(id)?;
+        process::validate_process_identity(id)?;
         Ok(Json(json!(process::fds(id)?)))
     })
     .await
@@ -83,7 +83,7 @@ pub(super) async fn fds(Query(id): Query<ProcessId>) -> ApiResult {
 
 pub(super) async fn auxv(Query(id): Query<ProcessId>) -> ApiResult {
     blocking(move || {
-        process::check_identity(id)?;
+        process::validate_process_identity(id)?;
         Ok(Json(json!(process::auxv(id)?)))
     })
     .await

@@ -171,7 +171,7 @@ fn pipe_unix_tcp_udp_peers_are_distinct_from_shared_descriptors() {
         libc::kill(child, libc::SIGTERM);
     }
     for _ in 0..100 {
-        if process::check_identity(child_id).is_err() {
+        if process::validate_process_identity(child_id).is_err() {
             break;
         }
         std::thread::sleep(Duration::from_millis(5));
