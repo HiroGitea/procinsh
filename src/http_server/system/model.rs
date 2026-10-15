@@ -81,7 +81,6 @@ pub(in crate::http_server) struct SystemMonitorStatus {
 pub(in crate::http_server) enum SensorState {
     #[default]
     Idle,
-    Starting,
     Observing,
     Unavailable(String),
     Error(String),
@@ -90,7 +89,6 @@ impl std::fmt::Display for SensorState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Idle => f.write_str("idle"),
-            Self::Starting => f.write_str("starting"),
             Self::Observing => f.write_str("observing"),
             Self::Unavailable(message) => write!(f, "unavailable: {message}"),
             Self::Error(message) => write!(f, "error: {message}"),
@@ -157,14 +155,10 @@ mod tests {
     }
 
     #[test]
-    fn idle_and_starting_preserve_absent_status_fields() {
+    fn idle_preserves_absent_status_fields() {
         assert_eq!(
             to_value(SystemMonitorStatus::default()).unwrap(),
             json!({"active":false,"signals":{"state":"idle"},"ipc":{"state":"idle"},"cpu":{"state":"idle"},"files":{"state":"idle"}})
-        );
-        assert_eq!(
-            to_value(SensorState::Starting).unwrap(),
-            json!({"state":"starting"})
         );
     }
 }
