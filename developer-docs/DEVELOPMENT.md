@@ -193,7 +193,7 @@ thread の scheduler は `{kind, code?}`、affinity は両端を含む `{start, 
 
 register の mapping は `{pathname, readable, writable, executable, private}` または null、offset は16進文字列または null、kind は分類 enum の snake_case 名です。memory map の権限は `readable`、`writable`、`executable`、`private` の boolean で表し、画面ではこれらから権限表示を生成します。
 
-センサー状態は `{state: "idle" | "starting" | "observing"}` または `{state: "unavailable" | "error", message: "…"}` です。ログレベルの判定はセンサー状態の enum に基づきます。
+センサー状態は `{state: "idle" | "observing"}` または `{state: "unavailable" | "error", message: "…"}` です。ログレベルの判定はセンサー状態の enum に基づきます。
 
 該当活動がない場合やセンサーが利用不能の場合、活動配列は空になります。空配列だけで「活動がなかった」とは判断せず、`status` の各センサーの `state`（observing・unavailable・error） なども確認します。
 

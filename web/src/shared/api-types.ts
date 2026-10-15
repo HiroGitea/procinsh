@@ -1,5 +1,5 @@
 export type SensorState =
-  | { state: "idle" | "starting" | "observing" }
+  | { state: "idle" | "observing" }
   | { state: "unavailable" | "error"; message: string };
 export interface SystemMonitorStatus {
   active: boolean;

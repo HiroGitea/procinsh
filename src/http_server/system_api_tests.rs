@@ -107,7 +107,7 @@ async fn sse_connections_own_viewer_lifetimes() {
                     let state = sensor["state"].as_str().unwrap();
                     assert!(matches!(
                         state,
-                        "idle" | "starting" | "observing" | "unavailable" | "error"
+                        "idle" | "observing" | "unavailable" | "error"
                     ));
                     assert_eq!(
                         sensor.get("message").is_some(),

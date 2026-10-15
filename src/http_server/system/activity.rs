@@ -24,24 +24,27 @@ pub(super) struct ActivityBatch {
 
 impl ActivityCollector {
     pub(super) fn new() -> Self {
-        let mut status = SystemMonitorStatus {
-            ipc: SensorState::Starting,
-            cpu: SensorState::Starting,
+        let (ipc, ipc_state) = initialize(IpcActivityCollector::new());
+        let (scheduler, cpu_state) = initialize(CpuActivityCollector::new());
+        let (files, files_state) = initialize(FileActivityCollector::new());
+        let (signals, signals_state) = if std::env::var_os("PROCINSH_DISABLE_SIGNALS").is_some() {
+            (
+                None,
+                SensorState::Unavailable("disabled by PROCINSH_DISABLE_SIGNALS".into()),
+            )
+        } else {
+            initialize(SignalCollector::new())
+        };
+        let status = SystemMonitorStatus {
+            ipc: ipc_state,
+            cpu: cpu_state,
+            files: files_state,
+            signals: signals_state,
             coverage: Some(
                 "pipe read/write; socket send/recv. splice, sendfile and some io_uring paths are not observed; worker attribution is excluded.",
             ),
             files_coverage: Some(super::files::COVERAGE),
             ..SystemMonitorStatus::default()
-        };
-        let ipc = initialize(IpcActivityCollector::new(), &mut status.ipc);
-        let scheduler = initialize(CpuActivityCollector::new(), &mut status.cpu);
-        let files = initialize(FileActivityCollector::new(), &mut status.files);
-        let signals = if std::env::var_os("PROCINSH_DISABLE_SIGNALS").is_some() {
-            status.signals =
-                SensorState::Unavailable("disabled by PROCINSH_DISABLE_SIGNALS".into());
-            None
-        } else {
-            initialize(SignalCollector::new(), &mut status.signals)
         };
         Self {
             signals,
@@ -53,18 +56,15 @@ impl ActivityCollector {
     }
 
     pub(super) fn poll(&mut self, snapshot: &SystemSnapshot) {
-        update_state(
-            self.signals.as_ref().map(SignalCollector::poll),
-            &mut self.status.signals,
-        );
-        update_state(
-            self.files.as_ref().map(FileActivityCollector::poll),
-            &mut self.status.files,
-        );
-        update_state(
-            self.ipc.as_mut().map(|sensor| sensor.poll(snapshot)),
-            &mut self.status.ipc,
-        );
+        if let Some(sensor) = self.signals.as_ref() {
+            self.status.signals = update_state(sensor.poll());
+        }
+        if let Some(sensor) = self.files.as_ref() {
+            self.status.files = update_state(sensor.poll());
+        }
+        if let Some(sensor) = self.ipc.as_mut() {
+            self.status.ipc = update_state(sensor.poll(snapshot));
+        }
     }
 
     pub(super) fn drain(&mut self, now_ns: u64, snapshot: &SystemSnapshot) -> ActivityBatch {
@@ -78,11 +78,11 @@ impl ActivityCollector {
             .map(|sensor| sensor.collect(now_ns, snapshot));
         let cpu = match result {
             Some(Ok(activity)) => {
-                update_state(Some(Ok(())), &mut self.status.cpu);
+                self.status.cpu = update_state(Ok(()));
                 activity
             }
             Some(Err(error)) => {
-                update_state(Some(Err(error)), &mut self.status.cpu);
+                self.status.cpu = update_state(Err(error));
                 Vec::new()
             }
             None => Vec::new(),
@@ -117,25 +117,17 @@ impl ActivityCollector {
     }
 }
 
-fn initialize<T>(result: anyhow::Result<T>, state: &mut SensorState) -> Option<T> {
+fn initialize<T>(result: anyhow::Result<T>) -> (Option<T>, SensorState) {
     match result {
-        Ok(sensor) => {
-            *state = SensorState::Observing;
-            Some(sensor)
-        }
-        Err(error) => {
-            *state = SensorState::Unavailable(format!("{error:#}"));
-            None
-        }
+        Ok(sensor) => (Some(sensor), SensorState::Observing),
+        Err(error) => (None, SensorState::Unavailable(format!("{error:#}"))),
     }
 }
 
-fn update_state(result: Option<anyhow::Result<()>>, state: &mut SensorState) {
-    if let Some(result) = result {
-        *state = match result {
-            Ok(()) => SensorState::Observing,
-            Err(error) => SensorState::Error(format!("{error:#}")),
-        };
+fn update_state(result: anyhow::Result<()>) -> SensorState {
+    match result {
+        Ok(()) => SensorState::Observing,
+        Err(error) => SensorState::Error(format!("{error:#}")),
     }
 }
 
@@ -146,17 +138,15 @@ mod tests {
 
     #[test]
     fn sensor_failures_are_independent_and_polling_can_recover() {
-        let mut ipc = SensorState::Starting;
-        let mut cpu = SensorState::Starting;
-        assert!(initialize::<()>(Err(anyhow::anyhow!("load denied")), &mut ipc).is_none());
-        assert!(initialize(Ok(()), &mut cpu).is_some());
+        let (ipc_sensor, ipc) = initialize::<()>(Err(anyhow::anyhow!("load denied")));
+        let (cpu_sensor, mut cpu) = initialize(Ok(()));
+        assert!(ipc_sensor.is_none());
+        assert!(cpu_sensor.is_some());
         assert_eq!(ipc, SensorState::Unavailable("load denied".into()));
         assert_eq!(cpu, SensorState::Observing);
-        update_state(None, &mut ipc);
-        assert_eq!(ipc, SensorState::Unavailable("load denied".into()));
-        update_state(Some(Err(anyhow::anyhow!("read failed"))), &mut cpu);
+        cpu = update_state(Err(anyhow::anyhow!("read failed")));
         assert_eq!(cpu, SensorState::Error("read failed".into()));
-        update_state(Some(Ok(())), &mut cpu);
+        cpu = update_state(Ok(()));
         assert_eq!(cpu, SensorState::Observing);
         assert_eq!(ipc, SensorState::Unavailable("load denied".into()));
     }
