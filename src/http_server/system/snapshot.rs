@@ -299,7 +299,7 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                 }
             }
         }
-        if process::check_identity(n.identity).is_ok() {
+        if process::validate_process_identity(n.identity).is_ok() {
             for p in endpoints {
                 let list = owners.entry(p.resource).or_default();
                 if let Some(existing) = list

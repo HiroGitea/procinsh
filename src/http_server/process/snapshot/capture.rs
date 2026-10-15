@@ -114,11 +114,11 @@ impl Sampler {
         }
         // Schedule from completion, including failed attempts; never catch up in a burst.
         self.next_ptrace = Some(Instant::now() + PTRACE_INTERVAL);
-        process::check_identity(self.id)
+        process::validate_process_identity(self.id)
     }
     /// Drains perf samples and captures current threads when the ptrace deadline is due.
     pub(in crate::http_server::process) fn poll(&mut self, maps: &[MemoryMap]) -> Result<()> {
-        process::check_identity(self.id)?;
+        process::validate_process_identity(self.id)?;
         self.unwind.refresh(self.id.pid, maps, &mut self.symbols);
         let mut alive = BTreeSet::new();
         for entry in std::fs::read_dir(format!("/proc/{}/task", self.id.pid))? {
@@ -219,7 +219,7 @@ impl Sampler {
         {
             self.capture_ptrace(maps)?;
         }
-        process::check_identity(self.id)?;
+        process::validate_process_identity(self.id)?;
         Ok(())
     }
     /// Returns the latest samples with ages refreshed from monotonic time.

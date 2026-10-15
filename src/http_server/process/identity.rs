@@ -18,7 +18,7 @@ pub(in crate::http_server) fn identity(pid: i32) -> Result<ProcessId> {
     })
 }
 
-pub(in crate::http_server) fn check_identity(id: ProcessId) -> Result<()> {
+pub(in crate::http_server) fn validate_process_identity(id: ProcessId) -> Result<()> {
     ensure!(id.pid > 0, "PID must be positive");
     let stat = match procfs::read_stat(&format!("/proc/{}/stat", id.pid)) {
         Ok(stat) => stat,

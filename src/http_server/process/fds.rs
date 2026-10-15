@@ -10,9 +10,9 @@
 //! | [`read`] | `pub(super)` | `fn read(id: `[`ProcessId`]`) -> `[`Result`]`<`[`FileDescriptors`]`>` |
 
 use super::{
-    ProcessId, check_identity, permission_help, procfs,
+    ProcessId, permission_help, procfs,
     sockets::{self, SocketInfo},
-    timestamp_ms,
+    timestamp_ms, validate_process_identity,
 };
 use crate::http_server::socket_types::{
     AddressFamily, SocketConnectionStatus, SocketProtocol, SocketState, SocketType,
@@ -218,7 +218,7 @@ fn owners(
             ));
             matches += 1;
         }
-        if check_identity(id).is_ok() {
+        if validate_process_identity(id).is_ok() {
             for (key, owner) in found {
                 result.entry(key).or_default().push(owner);
             }
@@ -321,7 +321,7 @@ fn inet_key(info: &SocketInfo) -> Option<InetKey> {
 }
 
 pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
-    check_identity(id)?;
+    validate_process_identity(id)?;
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut warnings = Vec::new();
     let mut entries = Vec::new();
@@ -557,7 +557,7 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
             .into();
         }
     }
-    check_identity(id)?;
+    validate_process_identity(id)?;
     Ok(FileDescriptors {
         process_id: id,
         captured_at: timestamp_ms(),

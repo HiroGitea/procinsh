@@ -171,7 +171,7 @@ impl ProcessMonitor {
                                 log::warn!("observation failed pid={}: {error}", id.pid);
                             }
                             target.error = Some(error);
-                            target.exited = process::check_identity(id)
+                            target.exited = process::validate_process_identity(id)
                                 .err()
                                 .is_some_and(|e| e.to_string().starts_with("Process exited"));
                         }
@@ -215,7 +215,7 @@ impl ProcessMonitor {
 pub(in crate::http_server::process) fn capture_target(
     id: ProcessId,
 ) -> Result<(ProcessDetailSnapshot, ProcessSample)> {
-    process::check_identity(id)?;
+    process::validate_process_identity(id)?;
     let stat = procfs::read_stat(&format!("/proc/{}/stat", id.pid))?;
     let summary = process::summary(&stat, &process::users());
     ensure!(summary.identity == id, "Process exited (PID reused)");
@@ -237,14 +237,14 @@ pub(in crate::http_server::process) fn capture_target(
         sampling_error: None,
     };
     refresh_maps(&mut target);
-    process::check_identity(id)?;
+    process::validate_process_identity(id)?;
     Ok((target, sample))
 }
 
 fn refresh_maps(target: &mut ProcessDetailSnapshot) {
     let id = target.summary.identity;
     match maps::read_smaps(id.pid).and_then(|m| {
-        process::check_identity(id)?;
+        process::validate_process_identity(id)?;
         Ok(m)
     }) {
         Ok(maps) => {

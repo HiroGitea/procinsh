@@ -57,7 +57,7 @@ pub(in crate::http_server::process) struct ProcessSample {
 }
 
 pub(in crate::http_server::process) fn capture_sample(id: ProcessId) -> Result<ProcessSample> {
-    process::check_identity(id)?;
+    process::validate_process_identity(id)?;
     let stat = procfs::read_stat(&format!("/proc/{}/stat", id.pid))?;
     let now = Instant::now();
     let ts: Vec<_> = threads::tids(id.pid)?
@@ -74,7 +74,7 @@ pub(in crate::http_server::process) fn capture_sample(id: ProcessId) -> Result<P
         .map(|t| t.nonvoluntary_context_switches)
         .sum::<Option<u64>>();
     let io = procfs::read_io(id.pid).ok();
-    process::check_identity(id)?;
+    process::validate_process_identity(id)?;
     Ok(ProcessSample {
         timestamp: process::timestamp_ms(),
         process_id: id,
