@@ -49,7 +49,7 @@ pub(super) async fn config(State(s): State<Arc<AppState>>) -> Json<Value> {
     )
 }
 
-pub(super) async fn processes(State(s): State<Arc<AppState>>) -> ApiResult {
+pub(super) async fn list_processes(State(s): State<Arc<AppState>>) -> ApiResult {
     blocking(move || Ok(Json(json!(s.discovery.lock().unwrap().collect()?)))).await
 }
 
