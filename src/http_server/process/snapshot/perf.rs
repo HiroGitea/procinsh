@@ -12,6 +12,19 @@ use std::{
 // AX/BX/CX/DX/SI/DI/BP/SP/IP/FLAGS and R8–R15, in kernel register order.
 pub(super) const REGS_MASK: u64 = 0x3ff | (0xff << 16);
 const SAMPLE_TYPE: u64 = (1 << 1) | (1 << 2) | (1 << 7) | (1 << 12) | (1 << 13);
+
+// Linux UAPI include/uapi/linux/perf_event.h: sizeof(struct perf_event_header).
+const PERF_EVENT_HEADER_SIZE: usize = 8;
+// Linux UAPI include/uapi/linux/perf_event.h: PERF_RECORD_* event types.
+const PERF_RECORD_LOST: u32 = 2;
+const PERF_RECORD_THROTTLE: u32 = 5;
+const PERF_RECORD_UNTHROTTLE: u32 = 6;
+const PERF_RECORD_SAMPLE: u32 = 9;
+const PERF_RECORD_SWITCH: u32 = 14;
+// Linux UAPI include/uapi/linux/perf_event.h: perf_event_header.misc flags.
+const PERF_RECORD_MISC_SWITCH_OUT: u16 = 1 << 13;
+const PERF_RECORD_MISC_SWITCH_OUT_PREEMPT: u16 = 1 << 14;
+
 // perf_event_attr through PERF_ATTR_SIZE_VER3 (96 bytes); newer fields remain zero.
 #[repr(C)]
 #[derive(Default)]
@@ -150,21 +163,28 @@ impl PerfEventReader {
                 "perf ring overrun"
             );
             while self.tail != head {
-                ensure!(head.wrapping_sub(self.tail) >= 8, "truncated perf header");
-                let header = self.copy(self.tail, 8);
-                let kind = u32::from_ne_bytes(header[..4].try_into()?);
-                let size = u16::from_ne_bytes(header[6..8].try_into()?) as usize;
                 ensure!(
-                    size >= 8
+                    head.wrapping_sub(self.tail) >= PERF_EVENT_HEADER_SIZE as u64,
+                    "truncated perf header"
+                );
+                let header = self.copy(self.tail, PERF_EVENT_HEADER_SIZE);
+                let kind = u32::from_ne_bytes(header[..4].try_into()?);
+                let size =
+                    u16::from_ne_bytes(header[6..PERF_EVENT_HEADER_SIZE].try_into()?) as usize;
+                ensure!(
+                    size >= PERF_EVENT_HEADER_SIZE
                         && size <= self.capacity
                         && size as u64 <= head.wrapping_sub(self.tail),
                     "invalid perf record size"
                 );
-                let bytes = self.copy(self.tail.wrapping_add(8), size - 8);
+                let bytes = self.copy(
+                    self.tail.wrapping_add(PERF_EVENT_HEADER_SIZE as u64),
+                    size - PERF_EVENT_HEADER_SIZE,
+                );
                 self.tail = self.tail.wrapping_add(size as u64);
                 let misc = u16::from_ne_bytes(header[4..6].try_into()?);
                 match kind {
-                    9 => {
+                    PERF_RECORD_SAMPLE => {
                         let sample = parse(&bytes)?;
                         if self.context_switch {
                             self.pending = sample;
@@ -172,7 +192,7 @@ impl PerfEventReader {
                             latest = sample;
                         }
                     }
-                    14 if self.context_switch => {
+                    PERF_RECORD_SWITCH if self.context_switch => {
                         // sample_id_all trailer: TID, TIME, CPU. A switch-in,
                         // missing sample, or loss must never classify an old sample.
                         let mut c = Cursor(&bytes);
@@ -181,21 +201,21 @@ impl PerfEventReader {
                         let time = c.u64()?;
                         let cpu = c.u64()? as u32;
                         if let Some(mut sample) = self.pending.take()
-                            && misc & (1 << 13) != 0
+                            && misc & PERF_RECORD_MISC_SWITCH_OUT != 0
                             && sample.tid == tid
                             && sample.time_ns <= time
                             && sample.cpu == Some(cpu)
                         {
                             sample.source = SampleSource::ContextSwitch {
-                                preempted: misc & (1 << 14) != 0,
+                                preempted: misc & PERF_RECORD_MISC_SWITCH_OUT_PREEMPT != 0,
                             };
                             latest = Some(sample);
                         }
                     }
-                    5 | 6 if self.context_switch => {
+                    PERF_RECORD_THROTTLE | PERF_RECORD_UNTHROTTLE if self.context_switch => {
                         self.pending = None;
                     }
-                    2 => {
+                    PERF_RECORD_LOST => {
                         self.pending = None;
                         let mut cursor = Cursor(&bytes);
                         cursor.u64()?;
@@ -303,7 +323,7 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend(kind.to_ne_bytes());
         bytes.extend(misc.to_ne_bytes());
-        bytes.extend(((payload.len() + 8) as u16).to_ne_bytes());
+        bytes.extend(((payload.len() + PERF_EVENT_HEADER_SIZE) as u16).to_ne_bytes());
         bytes.extend(payload);
         for (i, byte) in bytes.iter().enumerate() {
             unsafe {
@@ -337,12 +357,17 @@ mod tests {
     fn switch_classification_survives_split_drain_and_rejects_loss_and_mismatch() {
         let mut event = fake_event();
         for preempted in [false, true] {
-            push(&event, 9, 0, &sample_bytes(100));
+            push(&event, PERF_RECORD_SAMPLE, 0, &sample_bytes(100));
             assert!(event.drain().unwrap().is_none());
             push(
                 &event,
-                14,
-                (1 << 13) | if preempted { 1 << 14 } else { 0 },
+                PERF_RECORD_SWITCH,
+                PERF_RECORD_MISC_SWITCH_OUT
+                    | if preempted {
+                        PERF_RECORD_MISC_SWITCH_OUT_PREEMPT
+                    } else {
+                        0
+                    },
                 &switch_bytes(42, 101),
             );
             let sample = event.drain().unwrap().unwrap();
@@ -350,33 +375,56 @@ mod tests {
             assert_eq!(sample.registers.0[8], 108);
         }
         for (kind, misc, payload) in [
-            (14, 0, switch_bytes(42, 101)),       // switch-in
-            (14, 1 << 13, switch_bytes(43, 101)), // wrong TID
-            (14, 1 << 13, switch_bytes(42, 99)),  // earlier switch
+            (PERF_RECORD_SWITCH, 0, switch_bytes(42, 101)), // switch-in
             (
-                2,
+                PERF_RECORD_SWITCH,
+                PERF_RECORD_MISC_SWITCH_OUT,
+                switch_bytes(43, 101),
+            ), // wrong TID
+            (
+                PERF_RECORD_SWITCH,
+                PERF_RECORD_MISC_SWITCH_OUT,
+                switch_bytes(42, 99),
+            ), // earlier switch
+            (
+                PERF_RECORD_LOST,
                 0,
                 [1u64, 2].into_iter().flat_map(u64::to_ne_bytes).collect(),
             ),
-            (5, 0, Vec::new()), // throttle
+            (PERF_RECORD_THROTTLE, 0, Vec::new()),
             (
-                14,
-                1 << 13,
+                PERF_RECORD_SWITCH,
+                PERF_RECORD_MISC_SWITCH_OUT,
                 [(42u64 << 32) | 42, 101, 8]
                     .into_iter()
                     .flat_map(u64::to_ne_bytes)
                     .collect(),
             ), // wrong CPU
         ] {
-            push(&event, 9, 0, &sample_bytes(100));
+            push(&event, PERF_RECORD_SAMPLE, 0, &sample_bytes(100));
             push(&event, kind, misc, &payload);
-            push(&event, 14, 1 << 13, &switch_bytes(42, 102));
+            push(
+                &event,
+                PERF_RECORD_SWITCH,
+                PERF_RECORD_MISC_SWITCH_OUT,
+                &switch_bytes(42, 102),
+            );
             assert!(event.drain().unwrap().is_none());
         }
-        push(&event, 9, 0, &sample_bytes(100));
-        push(&event, 14, 1 << 13, &[0; 8]);
+        push(&event, PERF_RECORD_SAMPLE, 0, &sample_bytes(100));
+        push(
+            &event,
+            PERF_RECORD_SWITCH,
+            PERF_RECORD_MISC_SWITCH_OUT,
+            &[0; 8],
+        );
         assert!(event.drain().is_err());
-        push(&event, 14, 1 << 13, &switch_bytes(42, 101));
+        push(
+            &event,
+            PERF_RECORD_SWITCH,
+            PERF_RECORD_MISC_SWITCH_OUT,
+            &switch_bytes(42, 101),
+        );
         assert!(event.drain().unwrap().is_none());
     }
 
@@ -408,7 +456,7 @@ mod tests {
             pending: None,
         };
         let mut bytes = Vec::new();
-        bytes.extend(2u32.to_ne_bytes());
+        bytes.extend(PERF_RECORD_LOST.to_ne_bytes());
         bytes.extend(0u16.to_ne_bytes());
         bytes.extend(24u16.to_ne_bytes());
         bytes.extend(1u64.to_ne_bytes());
