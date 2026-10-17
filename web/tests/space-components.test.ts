@@ -256,18 +256,17 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
                 object.userData.fd_relations?.[0] === edge,
             ) as T.LineSegments;
           const positions = line.geometry.getAttribute("position");
+          const samples = view.curve.getPoints(16);
           assert.equal(
             positions.count,
-            32,
-            "shared and candidate relations draw all 16 path segments",
+            (samples.length - 1) * 2,
+            "shared and candidate relations draw every part of the path",
           );
           for (let i = 0; i < positions.count; i++)
             assert.ok(
               new T.Vector3()
                 .fromBufferAttribute(positions, i)
-                .distanceTo(
-                  view.curve.getPoint((Math.floor(i / 2) + (i % 2)) / 16),
-                ) < 1e-6,
+                .distanceTo(samples[Math.floor(i / 2) + (i % 2)]) < 1e-6,
               "colored relations cover the full curve without dash gaps",
             );
           const current: number[][] = [];
@@ -460,7 +459,7 @@ test("socket paths clear endpoint hulls and loop outside self-connections betwee
   scene.dispose();
 });
 
-test("pipes keep their offsets and dangling sockets terminate at a port", async () => {
+test("pipes and dangling sockets terminate at face-aligned cylinders", async () => {
   const { createSpaceScene } = await import("../src/space/scene.js");
   const node: PlacedProcess = {
     ...processInfo({ identity: { pid: 10, start_time_ticks: 1 } }),
@@ -505,18 +504,11 @@ test("pipes keep their offsets and dangling sockets terminate at a port", async 
     null,
   );
   const [pipeView, externalView] = scene.renderView().edgeViews;
-  assert.deepEqual(pipeView.curve.getPoint(0).toArray(), [
-    1.12,
-    0,
-    1 + 3 * 0.11,
-  ]);
-  assert.deepEqual(pipeView.curve.getPoint(1).toArray(), [
-    10 - 1.12,
-    5,
-    1 + 4 * 0.11,
-  ]);
-  assert.ok(pipeView.curve instanceof T.QuadraticBezierCurve3);
-  assert.equal(pipeView.curve.v1.z, 0.22);
+  assert.deepEqual(pipeView.curve.getPoint(0).toArray(), [1.26, 0, 1.4]);
+  assert.deepEqual(pipeView.curve.getPoint(1).toArray(), [10 - 1.26, 5, 1.4]);
+  assert.ok(pipeView.curve instanceof T.CubicBezierCurve3);
+  assert.ok(pipeView.curve.getTangent(0).x > 0.999);
+  assert.ok(pipeView.curve.getTangent(1).x > 0.999);
   assert.deepEqual(externalView.curve.getPoint(0).toArray(), [1.26, 0, 4]);
   assert.deepEqual(externalView.curve.getPoint(1).toArray(), [
     1.26 + 3.5,
@@ -567,7 +559,7 @@ test("space-components regression", async () => {
             "./dom-types.js",
           ].includes(path) ||
             (name === "data.ts" && path === "./process-layout.js") ||
-            (name === "scene.ts" && path === "./socket-ports.js"),
+            (name === "scene.ts" && path === "./ipc-ports.js"),
           `${name} depends on ${path}`,
         );
     }

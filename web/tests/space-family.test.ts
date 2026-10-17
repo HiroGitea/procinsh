@@ -303,9 +303,11 @@ test("process sockets attach at mid-height, network connections at the roof and 
     const pipeCurve = scene
       .renderView()
       .edgeViews.find((view) => view.e.id === "pipe")!.curve;
-    assert.ok(pipeCurve instanceof T.QuadraticBezierCurve3);
-    assert.equal(pipeCurve.v0.z, 1.33);
-    assert.equal(pipeCurve.v1.z, 0.22);
+    assert.ok(pipeCurve instanceof T.CubicBezierCurve3);
+    assert.equal(pipeCurve.getPoint(0).z, 1.4);
+    assert.ok(pipeCurve.getPoints(24).every((point) => point.z < 2.3));
+    assert.ok(pipeCurve.getTangent(0).y > 0.999);
+    assert.ok(pipeCurve.getTangent(1).y > 0.999);
     scene.updateSelection({ ...selection(null), connection: "socket" });
     const selectedLine = scene.root.getObjectByName(
       "selected-connection",
@@ -384,8 +386,8 @@ test("socket ports are small plain cylinders attached to hulls and cables", () =
       shared: true,
     });
     scene.rebuild(data, null);
-    const stems = scene.root.getObjectByName("socket-port-stems");
-    const group = scene.root.getObjectByName("socket-ports")!;
+    const stems = scene.root.getObjectByName("ipc-port-stems");
+    const group = scene.root.getObjectByName("ipc-ports")!;
     assert.ok(stems instanceof T.InstancedMesh);
     assert.ok(stems.geometry instanceof T.CylinderGeometry);
     assert.equal(stems.count, 24);
@@ -453,8 +455,7 @@ test("socket ports are small plain cylinders attached to hulls and cables", () =
     assert.ok(stemsDisposed, "rebuild releases port geometry");
     assert.equal(instancesDisposed, 1, "rebuild releases instance buffers too");
     assert.equal(
-      (scene.root.getObjectByName("socket-port-stems") as T.InstancedMesh)
-        .count,
+      (scene.root.getObjectByName("ipc-port-stems") as T.InstancedMesh).count,
       0,
     );
   } finally {

@@ -357,6 +357,7 @@ try {
       {id:'unix-exact',endpoint:a,peer:b,label:'UNIX STREAM',shared:false,candidate:false},
       {id:'tcp-candidate',endpoint:a,peer:b,label:'TCP ESTABLISHED',shared:false,candidate:true},
       {id:'pipe-shared',endpoint:{...a,kind:'pipe',resource:{kind:'pipe',device:{major:0,minor:1},inode:'20'}},peer:{...b,kind:'pipe',resource:{kind:'pipe',device:{major:0,minor:1},inode:'20'}},label:'pipe',shared:true,candidate:false},
+      {id:'fifo',endpoint:{...a,fd:19,kind:'fifo',resource:{kind:'pipe',device:{major:0,minor:1},inode:'21'}},peer:{...b,fd:28,kind:'fifo',resource:{kind:'pipe',device:{major:0,minor:1},inode:'21'}},label:'FIFO',shared:false,candidate:false},
       {id:'external',endpoint:{...a,resource:{kind:'socket',device:{major:0,minor:1},inode:'99'}},peer:null,label:'UNIX STREAM external',shared:false,candidate:false},
       {id:'netlink',endpoint:{...a,fd:11,resource:{kind:'socket',device:{major:0,minor:1},inode:'14130'}},peer:null,label:'NETLINK KOBJECT_UEVENT',shared:false,candidate:false,socket:{protocol:{kind:'other',family:16,socket_type:{kind:'dgram'},protocol:15},state:null,local:null,remote:null,path:null,network_peer:false,remote_hostname:null}},
     ];
@@ -397,15 +398,15 @@ try {
     "selected direct child is highlighted",
   );
   const socketHeights = await evaluate<Record<string, boolean>>(`(async()=>{
-    const m=await import(window.spaceTestModule), ports=m.socketPortVisuals();
-    const endpoints=['unix-exact','external'].flatMap(id=>{
+    const m=await import(window.spaceTestModule), ports=m.ipcPortVisuals();
+    const endpoints=['unix-exact','external','pipe-shared','fifo'].flatMap(id=>{
       const points=m.connectionVisual(id).points;
       return id==='external'?[points[0]]:[points[0],points.at(-1)];
     });
     const meets=(a,b)=>Math.hypot(...a.map((v,i)=>v-b[i]))<1e-4;
     return {
       socketsAtMiddle:['unix-exact','tcp-candidate','external'].every(id=>m.connectionVisual(id).points.every(p=>p[2]>3.3&&p[2]<4.7)),
-      pipeStaysLow:m.connectionVisual('pipe-shared').points.every(p=>p[2]<2.3),
+      pipesStayLow:['pipe-shared','fifo'].every(id=>m.connectionVisual(id).points.every(p=>p[2]<2.3)),
       portsAtRest:endpoints.every(point=>ports.some(port=>meets(point,port.position))),
     };
   })()`);
@@ -431,7 +432,7 @@ try {
   await delay(300);
   const socketPortsPng = await cdp("Page.captureScreenshot", { format: "png" });
   await writeFile(
-    repositoryPath("target/browser-space-socket-ports.png"),
+    repositoryPath("target/browser-space-ipc-ports.png"),
     Buffer.from(socketPortsPng.data, "base64"),
   );
   assert.deepEqual(

@@ -1,13 +1,13 @@
-// Allocate one stable hull attachment per process/socket resource identity.
+// Allocate one stable hull attachment per process/IPC resource identity.
 import * as T from "three";
 import type { FdEndpoint } from "../shared/api-types.js";
 import type { SceneInput } from "./contracts.js";
-import { key, PROCESS_SIDE, socketOwnerKey } from "./model.js";
+import { key, PROCESS_SIDE, socketOwnerKey as ipcOwnerKey } from "./model.js";
 import { isKernelNetlink } from "./netlink.js";
 
-export const SOCKET_STEM_LENGTH = 0.16;
-export const SOCKET_PORT_RADIUS = 0.055;
-export interface SocketPort {
+export const IPC_STEM_LENGTH = 0.16;
+export const IPC_PORT_RADIUS = 0.055;
+export interface IpcPort {
   id: string;
   position: T.Vector3;
   normal: T.Vector3;
@@ -19,6 +19,7 @@ type PortRequest = {
   id: string;
   process: string;
   preferred: string;
+  height: number;
   normal: T.Vector3;
   connections: Set<string>;
   networks: Set<string>;
@@ -45,10 +46,10 @@ function slotPosition(index: number) {
 }
 
 /** Retains face slots across snapshots, alias FD changes and relation ordering. */
-export class SocketPortAllocator {
+export class IpcPortAllocator {
   private allocations = new Map<string, { face: string; slot: number }>();
 
-  allocate(input: SceneInput): Map<string, SocketPort> {
+  allocate(input: SceneInput): Map<string, IpcPort> {
     const requests = new Map<string, PortRequest>();
     const request = (
       endpoint: FdEndpoint,
@@ -57,13 +58,14 @@ export class SocketPortAllocator {
       connection: string,
       network?: string,
     ) => {
-      const id = socketOwnerKey(endpoint);
+      const id = ipcOwnerKey(endpoint);
       let port = requests.get(id);
       if (!port) {
         port = {
           id,
           process: key(endpoint.process_id),
           preferred,
+          height: endpoint.resource.kind === "socket" ? 4 : 1.4,
           normal,
           connections: new Set(),
           networks: new Set(),
@@ -94,11 +96,7 @@ export class SocketPortAllocator {
         );
     }
     for (const relation of input.snapshot.fd_relations) {
-      if (
-        grouped.has(relation.id) ||
-        isKernelNetlink(relation.socket) ||
-        relation.endpoint.resource.kind !== "socket"
-      )
+      if (grouped.has(relation.id) || isKernelNetlink(relation.socket))
         continue;
       const a = input.nodes.get(key(relation.endpoint.process_id));
       const b = relation.peer && input.nodes.get(key(relation.peer.process_id));
@@ -108,8 +106,8 @@ export class SocketPortAllocator {
         (b && !input.visible.has(key(b.identity)))
       )
         continue;
-      const aId = socketOwnerKey(relation.endpoint);
-      const bId = relation.peer && socketOwnerKey(relation.peer);
+      const aId = ipcOwnerKey(relation.endpoint);
+      const bId = relation.peer && ipcOwnerKey(relation.peer);
       const dx = b ? b.pos.x - a.pos.x : 1;
       const dy = b ? b.pos.y - a.pos.y : 0;
       const normal =
@@ -131,7 +129,7 @@ export class SocketPortAllocator {
         );
     }
     const faceId = (port: PortRequest) =>
-      `${port.process}:${port.normal.toArray()}`;
+      `${port.process}:${port.height}:${port.normal.toArray()}`;
     for (const [id, allocation] of this.allocations) {
       const port = requests.get(id);
       if (!port || allocation.face !== faceId(port))
@@ -166,7 +164,7 @@ export class SocketPortAllocator {
           slotPosition(allocation.slot).level,
         ),
       );
-    const ports = new Map<string, SocketPort>();
+    const ports = new Map<string, IpcPort>();
     for (const port of requests.values()) {
       const allocation = this.allocations.get(port.id)!;
       const { u, v } = slotPosition(allocation.slot);
@@ -176,12 +174,12 @@ export class SocketPortAllocator {
       const position = new T.Vector3(
         owner.pos.x,
         owner.pos.y,
-        roof ? 8 + SOCKET_STEM_LENGTH : 4,
+        roof ? 8 + IPC_STEM_LENGTH : port.height,
       );
       if (roof) position.add(new T.Vector3(u * span, v * span, 0));
       else
         position
-          .addScaledVector(port.normal, PROCESS_SIDE / 2 + SOCKET_STEM_LENGTH)
+          .addScaledVector(port.normal, PROCESS_SIDE / 2 + IPC_STEM_LENGTH)
           .add(
             new T.Vector3(
               Math.abs(port.normal.y) * u * span,
@@ -194,7 +192,7 @@ export class SocketPortAllocator {
         id: port.id,
         position,
         normal: port.normal,
-        radiusScale: Math.min(1, (spacing * 0.4) / SOCKET_PORT_RADIUS),
+        radiusScale: Math.min(1, (spacing * 0.4) / IPC_PORT_RADIUS),
         connections: port.connections,
         networks: port.networks,
       });

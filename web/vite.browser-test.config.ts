@@ -28,8 +28,8 @@ function processPosition(id: string) {
   const pos = data.nodes.get(id)?.pos;
   return pos && { x: pos.x, y: pos.y, z: pos.z };
 }
-function socketPortVisuals() {
-  const stems = scene.root.getObjectByName("socket-port-stems");
+function ipcPortVisuals() {
+  const stems = scene.root.getObjectByName("ipc-port-stems");
   const matrix = new T.Matrix4();
   return Array.from({length:stems.count}, (_, i) => {
     stems.getMatrixAt(i, matrix);
@@ -48,7 +48,7 @@ function connectionVisual(id: string) {
 }
 export {
   socketVisibilityState,
-  socketPortVisuals,
+  ipcPortVisuals,
   selectNetlink,
   netlinkVisuals,
   netlinkParticles,
