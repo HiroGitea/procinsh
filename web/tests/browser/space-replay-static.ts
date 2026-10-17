@@ -88,7 +88,7 @@ try {
   );
   await evaluate("document.querySelector('#play').click()");
   await waitFor(
-    "Number(document.querySelector('#timeline').value)>200",
+    "Number(document.querySelector('#timeline').value)>200/30000",
     "virtual playback advances",
   );
   await evaluate("document.querySelector('#play').click()");
@@ -101,11 +101,11 @@ try {
     paused,
   );
   await evaluate(
-    "document.querySelector('#timeline').value=12000;document.querySelector('#timeline').dispatchEvent(new Event('input'))",
+    "document.querySelector('#timeline').value=0.4;document.querySelector('#timeline').dispatchEvent(new Event('input'))",
   );
   assert.equal(
     await evaluate("Number(document.querySelector('#timeline').value)"),
-    12000,
+    0.4,
   );
   await evaluate(
     "document.querySelector('select').value='0.1';document.querySelector('select').dispatchEvent(new Event('change'));document.querySelector('#play').click()",
@@ -115,21 +115,21 @@ try {
     "Number(document.querySelector('#timeline').value)",
   );
   assert.ok(
-    slow > 12000 && slow < 12200,
+    slow > 12000 / 30000 && slow < 12200 / 30000,
     `slow playback advances on virtual clock: ${slow}`,
   );
   await evaluate(
-    "document.querySelector('#play').click();document.querySelector('#loop').click();document.querySelector('select').value='1';document.querySelector('select').dispatchEvent(new Event('change'));document.querySelector('#timeline').value=29900;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
+    "document.querySelector('#play').click();document.querySelector('#loop').click();document.querySelector('select').value='1';document.querySelector('select').dispatchEvent(new Event('change'));document.querySelector('#timeline').value=29900/30000;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
   );
   await waitFor(
-    "Number(document.querySelector('#timeline').value)<2000 && document.querySelector('#play').textContent==='Pause'",
+    "Number(document.querySelector('#timeline').value)<2000/30000 && document.querySelector('#play').textContent==='Pause'",
     "loop restarts and keeps playing",
   );
   await evaluate(
-    "document.querySelector('#loop').click();document.querySelector('#timeline').value=29900;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
+    "document.querySelector('#loop').click();document.querySelector('#timeline').value=29900/30000;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
   );
   await waitFor(
-    "Number(document.querySelector('#timeline').value)===30000 && document.querySelector('#play').textContent==='Play'",
+    "Number(document.querySelector('#timeline').value)===1 && document.querySelector('#play').textContent==='Play'",
     "disabling loop stops at the end",
   );
   const timeOrigin = await evaluate<number>("performance.timeOrigin");

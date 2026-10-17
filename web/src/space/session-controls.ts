@@ -100,6 +100,7 @@ export function mountReplayControls(
   timeline.id = "timeline";
   timeline.type = "range";
   timeline.min = "0";
+  timeline.max = "1";
   timeline.step = "any";
   timeline.setAttribute("aria-label", "Replay time");
   const speed = document.createElement("select");
@@ -137,8 +138,16 @@ export function mountReplayControls(
     for (const element of [previous, play, next, timeline, speed, loop])
       element.disabled = !replay;
     play.textContent = replay?.playing ? "Pause" : "Play";
-    timeline.max = String(replay?.duration ?? 0);
-    timeline.value = String(replay?.time ?? 0);
+    timeline.disabled = !replay || replay.duration === 0;
+    timeline.value = String(
+      replay?.duration ? replay.time / replay.duration : 0,
+    );
+    timeline.setAttribute(
+      "aria-valuetext",
+      replay
+        ? `${(replay.time / 1000).toFixed(1)} / ${(replay.duration / 1000).toFixed(1)} seconds`
+        : "",
+    );
     status.textContent = replay
       ? `${label} · ${(replay.time / 1000).toFixed(1)} / ${(replay.duration / 1000).toFixed(1)}s`
       : label;
@@ -200,7 +209,7 @@ export function mountReplayControls(
   timeline.oninput = () => {
     if (replay) {
       replay.playing = false;
-      replay.seek(Number(timeline.value));
+      replay.seek(Number(timeline.value) * replay.duration);
     }
     refresh();
   };
