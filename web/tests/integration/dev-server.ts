@@ -28,7 +28,10 @@ async function address(child: TestProcess) {
   throw new Error(`Startup timed out: ${child.output}`);
 }
 try {
-  const backend = launch("./target/debug/procinsh", ["--listen", "127.0.0.1:0"]);
+  const backend = launch("./target/debug/procinsh", [
+    "--listen",
+    "127.0.0.1:0",
+  ]);
   const backendUrl = await address(backend);
   const vite = launch(
     process.execPath,

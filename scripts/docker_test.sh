@@ -37,7 +37,10 @@ if [[ $suite == browser ]]; then
   browser=true
   image+="-browser"
 fi
-docker build --network "$network" --file "$root/scripts/docker/Dockerfile" \
+build_options=()
+# BuildKit calls its default network "default"; Docker run calls it "bridge".
+if [[ $network != bridge ]]; then build_options+=(--network "$network"); fi
+docker build "${build_options[@]}" --file "$root/scripts/docker/Dockerfile" \
   --build-arg "BASE_IMAGE=$distro" --build-arg "INSTALL_BROWSER=$browser" \
   --tag "$image" "$root"
 

@@ -51,26 +51,59 @@ case "$suite" in
       rm -f "$log"
     }
     trap cleanup EXIT
-    base=$(python3 - "$log" "$server" <<'PY'
+    python3 - "$log" "$server" <<'PYTHON'
+import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
+import threading
 import time
+sys.path.insert(0, 'tests')
+from sse import Stream
+
 for _ in range(200):
     os.kill(int(sys.argv[2]), 0)
     match = re.search(r'listening on (http://127\.0\.0\.1:\d+)', Path(sys.argv[1]).read_text())
     if match:
-        print(match[1])
+        base = match[1]
         break
     time.sleep(0.05)
 else:
     raise SystemExit('Live test server did not become ready')
-PY
-    )
-    python3 tests/space-live.py "$base"
-    python3 tests/space-files-live.py "$base"
-    python3 tests/space-signals-live.py "$base"
+
+# Keep a viewer connected before spawning fixtures: attaching an fexit program
+# cannot observe a pipe read that entered the kernel before the attachment.
+stream = Stream(base + '/api/system/events')
+reader = None
+try:
+    for line in stream:
+        if not line.startswith(b'data: '):
+            continue
+        status = json.loads(line[6:]).get('status', {})
+        states = [status.get(name, {}).get('state') for name in ('cpu', 'ipc', 'files', 'signals')]
+        if any(state in ('unavailable', 'error') for state in states):
+            raise RuntimeError(f'Live sensors are required: {status}')
+        if all(state == 'observing' for state in states):
+            break
+    else:
+        raise RuntimeError('Live sensor stream ended before readiness')
+
+    def drain():
+        try:
+            for _ in stream:
+                pass
+        except (OSError, ValueError):
+            pass
+
+    reader = threading.Thread(target=drain, daemon=True)
+    reader.start()
+    for test in ('space-live.py', 'space-files-live.py', 'space-signals-live.py'):
+        subprocess.run([sys.executable, 'tests/' + test, base], check=True)
+finally:
+    stream.close(reader)
+PYTHON
     ;;
   browser)
     cargo build --locked

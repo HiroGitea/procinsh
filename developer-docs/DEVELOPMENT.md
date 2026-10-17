@@ -623,7 +623,7 @@ kill -TERM "$(cat /tmp/procinsh-chrome-load.pid)"
 bash scripts/docker_test.sh kernel
 ```
 
-コンテナ内で一時サーバーを起動し、[space-live.py](../tests/space-live.py)、[space-files-live.py](../tests/space-files-live.py)、[space-signals-live.py](../tests/space-signals-live.py) で CPU/IPC、ファイル I/O、シグナルを検証します。センサー利用不可は失敗とし、成功・失敗のどちらでもサーバーを終了してログを出力します。
+コンテナ内で一時サーバーとセンサーを起動して観測可能になってから fixture を作り、[space-live.py](../tests/space-live.py)、[space-files-live.py](../tests/space-files-live.py)、[space-signals-live.py](../tests/space-signals-live.py) で CPU/IPC、ファイル I/O、シグナルを検証します。センサー利用不可は失敗とし、成功・失敗のどちらでもサーバーを終了してログを出力します。
 
 `tests/targets/` の C fixture には計算、sleep、スレッド増減、メモリ確保、再帰、mmap、IPC、活動計測用のプログラムがあります。手動観測には次を使えます。
 
