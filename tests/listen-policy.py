@@ -1,7 +1,4 @@
-"""Run after cargo build: python3 tests/listen-policy.py.
-
-Set PROCINSH_BINARY=./scripts/dev_run.sh to use the local capability launcher.
-"""
+"""Check CLI/listen policy inside the Docker ordinary test suite."""
 from contextlib import contextmanager
 import http.client
 import os

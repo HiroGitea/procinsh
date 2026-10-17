@@ -6,9 +6,7 @@ fn netns_fd_list_resolves_peers_separately_from_shared_holders() {
     use crate::http_server::socket_types::{SocketConnectionStatus, SocketState};
     use std::os::fd::AsRawFd;
     for separate in [false, true] {
-        let Some(fixture) = process::TestNetworkNamespaceTarget::new(separate) else {
-            continue;
-        };
+        let fixture = process::TestNetworkNamespaceTarget::new(separate);
         let details = process::fds::read(fixture.target.id).unwrap();
         let entry = details.entries.iter().find(|entry| entry.fd == 61).unwrap();
         assert_eq!(entry.state, Some(SocketState::Connected));

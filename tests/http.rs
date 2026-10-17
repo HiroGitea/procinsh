@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-// Keep the observed process ordinary even when the server has file capabilities.
+// Own the observed fixture so failed HTTP assertions still reap it.
 struct Target(Child);
 impl Drop for Target {
     fn drop(&mut self) {

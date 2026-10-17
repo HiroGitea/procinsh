@@ -47,7 +47,7 @@ function launch(program: string, args: string[]) {
 const profile = await mkdtemp(join(tmpdir(), "procinsh-browser-"));
 let socket: WebSocket | undefined;
 try {
-  const app = launch("./scripts/dev_run.sh", ["--listen", "127.0.0.1:0"]);
+  const app = launch("./target/debug/procinsh", ["--listen", "127.0.0.1:0"]);
   const url = await until(
     () => app.output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0],
     "HTTP server",
@@ -408,15 +408,18 @@ try {
   await evaluate(
     "import(window.spaceTestModule).then(m=>m.selectProcess('424242:7',true))",
   );
-  await delay(100);
-  const hoverText = await evaluate<string>(`(()=>{
-    const canvas=document.getElementById('world'),hover=document.getElementById('hover');
-    for(let y=80;y<innerHeight;y+=12) for(let x=0;x<innerWidth;x+=12){
-      canvas.dispatchEvent(new PointerEvent('pointermove',{clientX:x,clientY:y}));
-      if(!hover.hidden&&hover.textContent.includes('cpu-glow-test'))return hover.textContent;
-    }
-    return null;
-  })()`);
+  const hoverText = await until(
+    () =>
+      evaluate<string | null>(`(()=>{
+      const canvas=document.getElementById('world'),hover=document.getElementById('hover');
+      for(let y=80;y<innerHeight;y+=12) for(let x=0;x<innerWidth;x+=12){
+        canvas.dispatchEvent(new PointerEvent('pointermove',{clientX:x,clientY:y}));
+        if(!hover.hidden&&hover.textContent.includes('cpu-glow-test'))return hover.textContent;
+      }
+      return null;
+    })()`),
+    "process hover retains name and PID",
+  );
   assert.ok(hoverText, "process hover retains name and PID");
   assert.match(hoverText, /424242/);
   await delay(300);

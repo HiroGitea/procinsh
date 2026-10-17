@@ -26,7 +26,6 @@ Rust, a C compiler, clang with the BPF backend, bpftool, pkg-config, libelf and
 zlib development files, and BTF information at `/sys/kernel/btf/vmlinux`.
 
 Support on WSL2 is very limited, I recommend building procinsh from source rather than installing it from crates.io.
-I haven't tested it in container environment such as Docker.
 
 ### Install from crates.io
 

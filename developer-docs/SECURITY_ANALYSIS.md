@@ -193,6 +193,6 @@ file capability は一度付けると、通常の終了で消えない。実行�
 5. **強い権限を持つ部分を小さくする。** 特権 collector の分離、対象 allowlist、低権限での ELF/DWARF 解析、配備パスと sudoers の監査を行う。
 6. **kernel ごとの試験を行う。** ロード失敗だけでなく、部分 attach 失敗、購読終了、センサー異常、プロセス終了後の link/map 解放を確認する。
 
-このリポジトリの権限付き Rust テストは `./scripts/dev_test.sh` を使い、perf の検証では `PROCINSH_REQUIRE_PERF=1 ./scripts/dev_test.sh` として権限不足によるスキップを禁止する。サーバー起動を含む対応する結合テストは `PROCINSH_BINARY=./scripts/dev_run.sh` を使う。障害・負荷系の追加検証は、重要なプロセスのない使い捨て VM で行う。
+このリポジトリのテストは `bash scripts/docker_test.sh` でコンテナ内実行する。すべての Rust テストは `ordinary` または `rust` suite の明示的な capability を持つコンテナで実行し、権限不足では失敗する。live eBPF の `kernel` suite は同じ capability に加えて host PID namespace を使用する。checkout は読み取り専用とし、ビルドと fixture の生成物はコンテナと Docker volume 内に置く。Docker の既定 seccomp・AppArmor profile を維持する。障害・負荷系の追加検証は、重要なプロセスのない使い捨て VM で行う。
 
 対策実装前の運用では、観測対象と接続者を信頼できる範囲に絞り、短い停止でも困るプロセスの詳細 SSE を開かない。loopback は外部からの到達を減らすが、ptrace の意味や eBPF の負荷を変えない。
