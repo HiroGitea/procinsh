@@ -26,7 +26,6 @@ Rust, a C compiler, clang with the BPF backend, bpftool, pkg-config, libelf and
 zlib development files, and BTF information at `/sys/kernel/btf/vmlinux`.
 
 Support on WSL2 is very limited, I recommend building procinsh from source rather than installing it from crates.io.
-For containerized development tests, see [Testing](#testing).
 
 ### Install from crates.io
 
@@ -113,18 +112,5 @@ Then run:
 ```sh
 sudo ./target/release/procinsh --listen 127.0.0.1:9090
 ```
-
-## Testing
-
-From a Linux x86-64 host with Docker Engine access:
-
-```sh
-bash scripts/docker_test.sh
-```
-
-Builds and all tests run inside containers; no host Rust toolchain, sudo, or
-setcap setup is needed. The checkout stays read-only. Kernel tests require host
-BTF and explicitly added capabilities. See the [development guide](developer-docs/DEVELOPMENT.md#検証)
-for individual suites, distro selection, browser tests, and kernel requirements.
 
 _Now, where shall I go? The process space is vast._
