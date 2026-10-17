@@ -18,7 +18,6 @@ import type {
   RenderView,
   PickingView,
 } from "./contracts.js";
-import type { FdEndpoint } from "../shared/api-types.js";
 
 const PARENT_LINE_WIDTH = 0.6;
 const PARENT_LINE_Z = 0.06;
@@ -28,13 +27,14 @@ const SOCKET_HEIGHT = 4;
 const SHARED_FD_COLOR = 0x54828b;
 const CANDIDATE_PEER_COLOR = 0xc69a50;
 
-// The lower endpoint attaches to +X regardless of the snapshot's orientation.
-function socketFaceOffset(endpoint: FdEndpoint, peer: FdEndpoint): number {
-  const order =
-    endpoint.process_id.pid - peer.process_id.pid ||
-    endpoint.process_id.start_time_ticks - peer.process_id.start_time_ticks ||
-    endpoint.fd - peer.fd;
-  return order <= 0 ? 1.12 : -1.12;
+// Attach to the side facing the peer, with a small gap outside the process hull.
+function socketFaceOffset(position: T.Vector3, peer: T.Vector3): T.Vector3 {
+  const dx = peer.x - position.x,
+    dy = peer.y - position.y,
+    offset = PROCESS_SIDE / 2 + 0.02;
+  return Math.abs(dx) >= Math.abs(dy)
+    ? new T.Vector3(Math.sign(dx) * offset, 0, 0)
+    : new T.Vector3(0, Math.sign(dy) * offset, 0);
 }
 
 type ParentPath = {
@@ -498,19 +498,26 @@ export function createSpaceScene() {
         continue;
       const socket = e.endpoint.resource.kind === "socket";
       const faceOffset =
-        socket && e.peer ? socketFaceOffset(e.endpoint, e.peer) : 1.12;
+        socket && b && a !== b
+          ? socketFaceOffset(a.pos, b.pos)
+          : new T.Vector3(1.12, 0, 0);
       const height = (fd: number) =>
         socket
           ? SOCKET_HEIGHT + ((fd % 12) - 5.5) * 0.11
           : 1 + (fd % 12) * 0.11;
       const start = a.pos
         .clone()
-        .add(new T.Vector3(faceOffset, 0, height(e.endpoint.fd)));
+        .add(faceOffset)
+        .add(new T.Vector3(0, 0, height(e.endpoint.fd)));
       const end = b
-        ? b.pos.clone().add(new T.Vector3(-faceOffset, 0, height(e.peer!.fd)))
+        ? b.pos
+            .clone()
+            .addScaledVector(faceOffset, socket && a === b ? 1 : -1)
+            .add(new T.Vector3(0, 0, height(e.peer!.fd)))
         : start.clone().add(new T.Vector3(3.5, -2.5, socket ? 0 : -0.6));
       const mid = start.clone().lerp(end, 0.5);
       if (!socket) mid.z = 0.22;
+      else if (a === b) mid.x += PROCESS_SIDE;
       const curve = new T.QuadraticBezierCurve3(start, mid, end);
       edgeViews.push({ e, curve });
       const pts = curve.getPoints(16);
