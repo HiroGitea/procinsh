@@ -501,6 +501,8 @@ export function createSpaceScene() {
         socket && b && a !== b
           ? socketFaceOffset(a.pos, b.pos)
           : new T.Vector3(1.12, 0, 0);
+      // A self-connection keeps each FD on its own opposing face across reversals.
+      if (socket && a === b && e.endpoint.fd > e.peer!.fd) faceOffset.negate();
       const height = (fd: number) =>
         socket
           ? SOCKET_HEIGHT + ((fd % 12) - 5.5) * 0.11
@@ -512,12 +514,11 @@ export function createSpaceScene() {
       const end = b
         ? b.pos
             .clone()
-            .addScaledVector(faceOffset, socket && a === b ? 1 : -1)
+            .sub(faceOffset)
             .add(new T.Vector3(0, 0, height(e.peer!.fd)))
         : start.clone().add(new T.Vector3(3.5, -2.5, socket ? 0 : -0.6));
       const mid = start.clone().lerp(end, 0.5);
       if (!socket) mid.z = 0.22;
-      else if (a === b) mid.x += PROCESS_SIDE;
       const curve = new T.QuadraticBezierCurve3(start, mid, end);
       edgeViews.push({ e, curve });
       const pts = curve.getPoints(16);

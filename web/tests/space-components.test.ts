@@ -182,7 +182,7 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
     const expected = endpoints.map((endpoint, index) => {
       const pos = nodes.get(key(endpoint.process_id))!.pos;
       return new T.Vector3(
-        pos.x + (index === 0 || nodes.size === 1 ? 1.12 : -1.12),
+        pos.x + (index === 0 ? 1.12 : -1.12),
         pos.y,
         4 + ((endpoint.fd % 12) - 5.5) * 0.11,
       );
@@ -297,7 +297,7 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
   }
 });
 
-test("socket paths clear their endpoint hulls as process positions change", async () => {
+test("socket paths clear distinct endpoint hulls and cross self-connections between opposite faces", async () => {
   const { createSpaceScene } = await import("../src/space/scene.js");
   const { PROCESS_SIDE, key } = await import("../src/space/model.js");
   const owner: PlacedProcess = {
@@ -364,9 +364,7 @@ test("socket paths clear their endpoint hulls as process positions change", asyn
         destination.pos.y,
         4 + ((peerFd % 12) - 5.5) * 0.11,
       ).add(
-        new T.Vector3(nx, ny, 0).multiplyScalar(
-          (self ? 1 : -1) * (PROCESS_SIDE / 2 + 0.02),
-        ),
+        new T.Vector3(nx, ny, 0).multiplyScalar(-(PROCESS_SIDE / 2 + 0.02)),
       );
       for (const style of [{}, { candidate: true }, { shared: true }]) {
         let forward: T.QuadraticBezierCurve3 | undefined;
@@ -395,7 +393,13 @@ test("socket paths clear their endpoint hulls as process positions change", asyn
               assert.ok(
                 curve.getPoint(t).distanceTo(forward!.getPoint(1 - t)) < 1e-9,
               );
-          if (self) assert.ok(curve.getPoint(0.5).x > expectedStart.x + 0.5);
+          if (self) {
+            const middle = curve.getPoint(0.5);
+            assert.ok(Math.abs(middle.x - owner.pos.x) < 1e-9);
+            assert.equal(middle.y, owner.pos.y);
+            assert.ok(curve.v0.distanceTo(curve.v2) > PROCESS_SIDE);
+            continue;
+          }
           const line = scene
             .pickingView()
             .objects.find(
