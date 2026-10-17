@@ -42,7 +42,11 @@ Payload definitions are in `web/src/shared/api-types.ts`; the shared runtime
 parser is in `web/src/space/recording.ts`. Unknown versions, other view types,
 invalid nested values and out-of-order/out-of-duration timestamps are rejected
 before rendering. Local files and public recordings use this parser and the
-same replay engine. Seeking reconstructs state from the initial snapshot; this
+same replay engine. Playback, seeking and looping end at the last event timestamp
+(or zero for snapshot-only recordings). The timeline accepts fractional
+milliseconds so its right edge reaches that exact timestamp. `duration_ms` retains
+the elapsed recording time, which can include an interval between the last event
+and stopping the recording. Seeking reconstructs state from the initial snapshot; this
 bounds format complexity but can take longer for large recordings.
 
 ## Static site and Cloudflare Pages Free

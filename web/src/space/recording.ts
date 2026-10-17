@@ -305,6 +305,8 @@ export class SpaceRecorder {
 
 /** Seeking rebuilds from the complete baseline, preserving event order. */
 export class SpaceReplay {
+  /** Last event time in milliseconds; a snapshot-only recording ends at zero. */
+  readonly duration: number;
   time = 0;
   speed = 1;
   playing = false;
@@ -316,6 +318,7 @@ export class SpaceReplay {
     private readonly apply: (event: RecordingEvent) => void,
     private readonly clock: (time: number) => void,
   ) {
+    this.duration = recording.events.at(-1)?.at_ms ?? 0;
     this.seek(0);
   }
   seek(time: number) {
@@ -326,7 +329,7 @@ export class SpaceReplay {
     this.advanceTo(time);
   }
   private advanceTo(time: number) {
-    this.time = Math.min(this.recording.duration_ms, Math.max(0, time));
+    this.time = Math.min(this.duration, Math.max(0, time));
     while (
       this.cursor < this.recording.events.length &&
       this.recording.events[this.cursor].at_ms <= this.time
@@ -336,12 +339,12 @@ export class SpaceReplay {
       this.apply(event);
     }
     this.clock(this.time);
-    if (this.time >= this.recording.duration_ms) this.playing = false;
+    if (this.time >= this.duration) this.playing = false;
   }
   tick(delta: number) {
     if (!this.playing) return;
     const target = this.time + Math.max(0, delta) * this.speed;
-    const duration = this.recording.duration_ms;
+    const duration = this.duration;
     if (this.loop && duration > 0 && target >= duration) {
       this.advanceTo(duration);
       this.seek(target % duration);
@@ -355,11 +358,11 @@ export class SpaceReplay {
     const times = [
       0,
       ...this.recording.events.map((e) => e.at_ms),
-      this.recording.duration_ms,
+      this.duration,
     ];
     this.seek(
       direction > 0
-        ? (times.find((t) => t > this.time) ?? this.recording.duration_ms)
+        ? (times.find((t) => t > this.time) ?? this.duration)
         : ([...times].reverse().find((t) => t < this.time) ?? 0),
     );
   }

@@ -73,6 +73,19 @@ export async function checkSpaceRecording(
     "document.querySelector('#replay-status').textContent.includes('local-recording.json')",
     "downloaded JSON opens unchanged",
   );
+  const endTime = recording.events.at(-1)?.at_ms ?? 0;
+  assert.equal(
+    await evaluate("Number(document.querySelector('#timeline').max)"),
+    endTime,
+  );
+  await evaluate(
+    "const timeline=document.querySelector('#timeline');timeline.value=timeline.max;timeline.dispatchEvent(new Event('input'))",
+  );
+  assert.equal(
+    await evaluate("document.querySelector('#timeline').valueAsNumber"),
+    endTime,
+    "the slider can reach the exact final event, including fractional milliseconds",
+  );
   await evaluate("document.querySelector('#play').click()");
   await delay(100);
   await evaluate("document.querySelector('#play').click()");

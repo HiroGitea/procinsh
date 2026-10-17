@@ -238,3 +238,66 @@ test("looping a zero-duration recording stops cleanly", () => {
   expect(replay.time).toBe(0);
   expect(replay.playing).toBe(false);
 });
+
+test("replay stops, seeks and loops at the final fractional event time instead of the recording stop time", () => {
+  const recording = sample();
+  recording.duration_ms = 500;
+  recording.events = [
+    { at_ms: 25.125, type: "activity", data: spaceActivity() },
+    { at_ms: 103.375, type: "activity", data: spaceActivity() },
+  ];
+  const applied: number[] = [];
+  let clock = -1;
+  const replay = new SpaceReplay(
+    recording,
+    () => {
+      applied.length = 0;
+    },
+    (event) => {
+      applied.push(event.at_ms);
+    },
+    (time) => {
+      clock = time;
+    },
+  );
+  expect(replay.duration).toBe(103.375);
+  replay.playing = true;
+  replay.tick(200);
+  expect(replay.time).toBe(103.375);
+  expect(clock).toBe(103.375);
+  expect(replay.playing).toBe(false);
+  expect(applied).toEqual([25.125, 103.375]);
+  replay.seek(500);
+  expect(replay.time).toBe(103.375);
+  replay.step(-1);
+  expect(replay.time).toBe(25.125);
+  replay.step(1);
+  expect(replay.time).toBe(103.375);
+  replay.loop = true;
+  replay.playing = true;
+  replay.tick(30);
+  expect(replay.time).toBe(30);
+  expect(clock).toBe(30);
+  expect(applied).toEqual([25.125]);
+  expect(replay.playing).toBe(true);
+  expect(recording.duration_ms).toBe(500);
+});
+
+test("a recording without events has no empty playback tail", () => {
+  const recording = sample();
+  recording.duration_ms = 500;
+  recording.events = [];
+  const replay = new SpaceReplay(
+    recording,
+    () => {},
+    () => {},
+    () => {},
+  );
+  expect(replay.duration).toBe(0);
+  replay.seek(500);
+  expect(replay.time).toBe(0);
+  replay.loop = true;
+  replay.playing = true;
+  replay.tick(100);
+  expect(replay.playing).toBe(false);
+});
