@@ -87,7 +87,9 @@ export async function checkSpaceRecording(
     "the slider reaches its right edge",
   );
   assert.equal(
-    await evaluate("(await import(window.spaceTestModule)).replayTime"),
+    await evaluate(
+      "import(window.spaceTestModule).then(module => module.replayTime)",
+    ),
     endTime,
     "the right edge seeks to the exact final event, including fractional milliseconds",
   );
