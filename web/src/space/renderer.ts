@@ -155,6 +155,10 @@ export function createSpaceRenderer({
   let signalFlights: SignalFlight[] = [];
   const signalPulses = new Map<string, number>();
   const labelPoint = new graphics.Vector3();
+  const labelCameraWorld = new graphics.Matrix4();
+  const labelCameraProjection = new graphics.Matrix4();
+  let labelsDirty = true;
+  let hadSignalLabels = false;
   let renderer: T.WebGLRenderer;
   try {
     renderer = new graphics.WebGLRenderer({
@@ -212,6 +216,7 @@ export function createSpaceRenderer({
   signalPoints.frustumCulled = false;
   scene.add(points, signalPoints);
   function resizeLabels() {
+    labelsDirty = true;
     const ratio = Math.min(devicePixelRatio, 2);
     labelCanvas.width = Math.round(innerWidth * ratio);
     labelCanvas.height = Math.round(innerHeight * ratio);
@@ -553,7 +558,21 @@ export function createSpaceRenderer({
       if (haloGlow.instanceColor) haloGlow.instanceColor.needsUpdate = true;
     }
     renderer.render(scene, camera);
-    drawLabels(now);
+    // Camera matrices include OrbitControls damping and projection changes.
+    // Signal labels move until expiry; their final frame clears the overlay.
+    if (
+      labelsDirty ||
+      !labelCameraWorld.equals(camera.matrixWorld) ||
+      !labelCameraProjection.equals(camera.projectionMatrix) ||
+      signalFlights.length > 0 ||
+      hadSignalLabels
+    ) {
+      drawLabels(now);
+      labelsDirty = false;
+      labelCameraWorld.copy(camera.matrixWorld);
+      labelCameraProjection.copy(camera.projectionMatrix);
+      hadSignalLabels = signalFlights.length > 0;
+    }
     frames++;
     if (now - frameTime > 1000) {
       const fps = Math.round((frames * 1000) / (now - frameTime));
@@ -616,6 +635,10 @@ export function createSpaceRenderer({
   }
 
   return {
+    /** Scene label content, positions, selection, or hover state changed. */
+    invalidateLabels() {
+      labelsDirty = true;
+    },
     activity,
     activeResources,
     signalVisuals() {
@@ -639,6 +662,7 @@ export function createSpaceRenderer({
     netlinkParticles,
     resetSampling: resetRenderSampling,
     clearParticles() {
+      labelsDirty = true;
       particles = [];
       signalFlights = [];
       signalPulses.clear();
@@ -655,6 +679,7 @@ export function createSpaceRenderer({
     },
     resume() {
       if (running) return;
+      labelsDirty = true;
       running = true;
       resetRenderSampling();
       frame = requestAnimationFrame(animate);

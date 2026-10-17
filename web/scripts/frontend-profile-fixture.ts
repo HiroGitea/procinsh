@@ -68,24 +68,20 @@ export async function profileFixture(backend: string, busy: boolean) {
           tick++;
           const updates = busy
             ? {
-                cpu: processes
-                  .slice(0, 64)
-                  .map((p) =>
-                    cpuActivity({
-                      process_id: p.identity,
-                      runtime_ns: 20_000_000,
-                      running_threads: 1,
-                    }),
-                  ),
-                ipc: relations
-                  .slice(0, 64)
-                  .map((r) => ({
-                    process_id: r.endpoint.process_id,
-                    resource: r.endpoint.resource,
-                    write: true,
-                    count: 8,
-                    bytes: 4096,
-                  })),
+                cpu: processes.slice(0, 64).map((p) =>
+                  cpuActivity({
+                    process_id: p.identity,
+                    runtime_ns: 20_000_000,
+                    running_threads: 1,
+                  }),
+                ),
+                ipc: relations.slice(0, 64).map((r) => ({
+                  process_id: r.endpoint.process_id,
+                  resource: r.endpoint.resource,
+                  write: true,
+                  count: 8,
+                  bytes: 4096,
+                })),
                 signals:
                   tick % 10 === 0
                     ? [
