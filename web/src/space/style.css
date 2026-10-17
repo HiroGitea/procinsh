@@ -22,6 +22,7 @@ header #build-commit{text-decoration:underline;text-underline-offset:3px;font-si
 .tools input[type="range"] { width: 180px; }
 .recording-notice { flex-basis: 100%; max-width: 650px; font-size: 11px; line-height: 1.5; color: #a7b9ba; margin: 0; }
 #recording-status { color: #ffb3a5; }
+#recording-status:empty { display: none; }
 .left-hud { max-height: calc(100vh - 130px); overflow-y: auto; }
 body[data-mode="replay"] .left-hud { width: min(680px, calc(100vw - 64px)); }
 body[data-mode="replay"] .tools { flex-direction: row; width: 100%; }
