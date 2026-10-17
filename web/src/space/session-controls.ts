@@ -24,16 +24,14 @@ export function mountRecordingControls(
   const status = document.createElement("span");
   status.setAttribute("role", "status");
   status.id = "recording-status";
-  const open = document.createElement("a");
+  const open = document.createElement("button");
   open.id = "open-recording";
-  open.href = `${import.meta.env.BASE_URL}replay/space/`;
+  open.type = "button";
+  open.onclick = () => {
+    location.assign(`${import.meta.env.BASE_URL}replay/space/`);
+  };
   open.textContent = "Open recording";
-  const notice = document.createElement("p");
-  notice.id = "recording-notice";
-  notice.className = "recording-notice";
-  notice.textContent =
-    "Local recordings may contain paths, arguments, user names and IP addresses. Review before publishing. Recording stops on connection loss or a hidden tab. Limit: 128 MiB.";
-  host.append(record, download, status, open, notice);
+  host.append(record, download, status, open);
   function refresh() {
     record.disabled = recorder.active || !!recorder.recording || !ready();
     download.hidden = !recorder.recording;

@@ -59,7 +59,7 @@ export async function checkSpaceRecording(
     await evaluate<string>("window.downloadBlobs[1].text()"),
   );
   assert.match(interrupted.end_reason, /interrupted/);
-  await cdp("Page.navigate", { url: base + "/replay/space/" });
+  await evaluate("document.querySelector('button#open-recording').click()");
   await waitFor(
     "document.querySelector('#replay-status')",
     "direct replay route",

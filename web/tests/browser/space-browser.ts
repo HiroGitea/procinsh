@@ -260,7 +260,6 @@ try {
       "download-recording",
       "recording-status",
       "open-recording",
-      "recording-notice",
     ],
   );
   await delay(1000);
