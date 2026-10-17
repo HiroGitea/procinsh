@@ -43,8 +43,8 @@ export async function checkNetworkSpace(
   for (const start of attachments.starts)
     assert.deepEqual(
       start,
-      [attachments.owner.x, attachments.owner.y, 8],
-      "external connections start at the center of the process roof",
+      [attachments.owner.x, attachments.owner.y, 8.16],
+      "external connections start at the cylinder tip above the process roof",
     );
   assert.deepEqual(
     await evaluate(

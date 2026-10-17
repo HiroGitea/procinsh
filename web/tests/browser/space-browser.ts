@@ -397,13 +397,16 @@ try {
     "selected direct child is highlighted",
   );
   const socketHeights = await evaluate<Record<string, boolean>>(`(async()=>{
-    const m=await import(window.spaceTestModule);
+    const m=await import(window.spaceTestModule), ports=m.socketPortVisuals();
+    const endpoints=['unix-exact','external'].flatMap(id=>{
+      const points=m.connectionVisual(id).points;
+      return id==='external'?[points[0]]:[points[0],points.at(-1)];
+    });
+    const meets=(a,b)=>Math.hypot(...a.map((v,i)=>v-b[i]))<1e-4;
     return {
       socketsAtMiddle:['unix-exact','tcp-candidate','external'].every(id=>m.connectionVisual(id).points.every(p=>p[2]>3.3&&p[2]<4.7)),
       pipeStaysLow:m.connectionVisual('pipe-shared').points.every(p=>p[2]<2.3),
-      portsAtRest:m.socketPortVisuals().length===3 && m.socketPortVisuals().every(port=>port.hasStem &&
-        ['unix-exact','external'].some(id=>{const points=m.connectionVisual(id).points;
-          return [points[0],points.at(-1)].some(point=>Math.hypot(...point.map((v,i)=>v-port.position[i]))<1e-6);})),
+      portsAtRest:endpoints.every(point=>ports.some(port=>meets(point,port.position))),
     };
   })()`);
   for (const [check, passed] of Object.entries(socketHeights))

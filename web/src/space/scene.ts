@@ -25,8 +25,8 @@ const PARENT_LINE_Z = 0.06;
 const PARENT_LINE_BRIGHTNESS = 0.22;
 const PROCESS_HEIGHT = 8;
 const SOCKET_HEIGHT = 4;
-const SOCKET_STEM_LENGTH = 0.22;
-const SOCKET_PORT_COLOR = 0x55dfe8;
+const SOCKET_STEM_LENGTH = 0.16;
+const SOCKET_PORT_COLOR = 0x43c4d4;
 
 type SocketPort = {
   position: T.Vector3;
@@ -47,7 +47,7 @@ function socketFaceNormal(position: T.Vector3, peer: T.Vector3): T.Vector3 {
 }
 
 function socketPosition(node: RenderNode, fd: number, normal: T.Vector3) {
-  // Three lanes separate neighboring FD rings while keeping ports at mid-height.
+  // Three lanes separate neighboring FD ports while keeping ports at mid-height.
   const lane = ((fd % 3) - 1) * 0.38;
   return node.pos
     .clone()
@@ -235,7 +235,7 @@ export function createSpaceScene() {
     haloGlow: T.InstancedMesh | null = null,
     hullIds: string[] = [];
   let socketPorts: SocketPort[] = [],
-    portRings: T.InstancedMesh<T.RingGeometry, T.MeshBasicMaterial> | null =
+    portStems: T.InstancedMesh<T.CylinderGeometry, T.MeshBasicMaterial> | null =
       null;
   const portGroup = new T.Group();
   portGroup.name = "socket-ports";
@@ -655,45 +655,28 @@ export function createSpaceScene() {
       }
     }
     socketPorts = [...ports.values()];
-    portRings = new T.InstancedMesh(
-      new T.RingGeometry(0.09, 0.16, 12),
-      new T.MeshBasicMaterial({
-        color: 0xffffff,
-        side: T.DoubleSide,
-        depthWrite: false,
-      }),
+    portStems = new T.InstancedMesh(
+      new T.CylinderGeometry(0.055, 0.055, SOCKET_STEM_LENGTH, 8).rotateX(
+        Math.PI / 2,
+      ),
+      new T.MeshBasicMaterial({ color: 0xffffff }),
       Math.max(1, socketPorts.length),
     );
-    portRings.name = "socket-port-rings";
-    portRings.count = socketPorts.length;
-    const stems = new T.InstancedMesh(
-      new T.CylinderGeometry(
-        0.095,
-        0.095,
-        SOCKET_STEM_LENGTH,
-        8,
-        1,
-        true,
-      ).rotateX(Math.PI / 2),
-      new T.MeshBasicMaterial({ color: 0x247c86, side: T.DoubleSide }),
-      Math.max(1, socketPorts.length),
-    );
-    stems.name = "socket-port-stems";
-    stems.count = socketPorts.length;
+    portStems.name = "socket-port-stems";
+    portStems.count = socketPorts.length;
     const transform = new T.Object3D(),
       axis = new T.Vector3(0, 0, 1);
     for (let i = 0; i < socketPorts.length; i++) {
       const port = socketPorts[i];
       transform.quaternion.setFromUnitVectors(axis, port.normal);
-      transform.position.copy(port.position);
+      transform.position
+        .copy(port.position)
+        .addScaledVector(port.normal, -SOCKET_STEM_LENGTH / 2);
       transform.updateMatrix();
-      portRings.setMatrixAt(i, transform.matrix);
-      portRings.setColorAt(i, new T.Color(SOCKET_PORT_COLOR));
-      transform.position.addScaledVector(port.normal, -SOCKET_STEM_LENGTH / 2);
-      transform.updateMatrix();
-      stems.setMatrixAt(i, transform.matrix);
+      portStems.setMatrixAt(i, transform.matrix);
+      portStems.setColorAt(i, new T.Color(SOCKET_PORT_COLOR));
     }
-    portGroup.add(stems, portRings);
+    portGroup.add(portStems);
     const lines = new T.BufferGeometry();
     lines.setAttribute("position", new T.Float32BufferAttribute(linePos, 3));
     lines.setAttribute("color", new T.Float32BufferAttribute(lineColors, 3));
@@ -922,7 +905,7 @@ export function createSpaceScene() {
           : edgeViews.find((v) => v.e.id === selectionState.connection);
     edgeSelection.visible = !!view;
     if (view) edgeSelection.geometry.setFromPoints(view.curve.getPoints(32));
-    if (portRings?.instanceColor) {
+    if (portStems?.instanceColor) {
       const color = new T.Color();
       socketPorts.forEach((port, i) => {
         const active =
@@ -930,12 +913,12 @@ export function createSpaceScene() {
             port.connections.has(selectionState.connection)) ||
           (selectionState.network !== null &&
             port.networks.has(selectionState.network));
-        portRings!.setColorAt(
+        portStems!.setColorAt(
           i,
           color.set(active ? 0xc9fff2 : SOCKET_PORT_COLOR),
         );
       });
-      portRings.instanceColor.needsUpdate = true;
+      portStems.instanceColor.needsUpdate = true;
     }
     updateParentSelection(selectionState);
   }

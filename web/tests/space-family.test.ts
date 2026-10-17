@@ -341,7 +341,7 @@ test("process sockets attach at mid-height, network connections at the roof and 
     assert.deepEqual(network.curve.v0.toArray(), [
       owner.pos.x,
       owner.pos.y,
-      8.22,
+      8.16,
     ]);
     assert.deepEqual(network.pos.toArray(), [3, -3, 12]);
     assert.equal(network.curve.getPoint(1).z, 12);
@@ -356,7 +356,7 @@ test("process sockets attach at mid-height, network connections at the roof and 
   }
 });
 
-test("socket ports stay hollow, instanced, selectable through cables and attached to collars", () => {
+test("socket ports are small plain cylinders attached to hulls and cables", () => {
   const scene = createSpaceScene();
   try {
     const data = input([process(1, 0, 0), process(2, 10, 5)]);
@@ -385,50 +385,41 @@ test("socket ports stay hollow, instanced, selectable through cables and attache
       shared: true,
     });
     scene.rebuild(data, null);
-    const rings = scene.root.getObjectByName("socket-port-rings");
     const stems = scene.root.getObjectByName("socket-port-stems");
     const group = scene.root.getObjectByName("socket-ports")!;
-    assert.ok(rings instanceof T.InstancedMesh);
     assert.ok(stems instanceof T.InstancedMesh);
-    assert.ok(rings.geometry instanceof T.RingGeometry);
     assert.ok(stems.geometry instanceof T.CylinderGeometry);
-    assert.equal(rings.count, 24);
-    assert.equal(stems.count, rings.count);
+    assert.equal(stems.count, 24);
     assert.equal(
       group.children.length,
-      2,
-      "port draw calls do not grow with connection count",
+      1,
+      "all ports share one draw call without separate rings or discs",
     );
+    assert.equal(
+      stems.geometry.parameters.openEnded,
+      false,
+      "ports are solid cylinders",
+    );
+    assert.ok(stems.geometry.parameters.radiusTop <= 0.06);
+    assert.ok(stems.geometry.parameters.height <= 0.16);
     assert.ok(
       !scene.pickingView().objects.includes(group),
       "decorations do not add picking work or steal cable hits",
     );
-    const vertices = rings.geometry.getAttribute("position");
-    for (let i = 0; i < vertices.count; i++)
-      assert.ok(
-        Math.hypot(vertices.getX(i), vertices.getY(i)) >= 0.089,
-        "ring centers remain open, unlike white activity particles",
-      );
-    const matrix = new T.Matrix4(),
-      stemMatrix = new T.Matrix4();
+    const matrix = new T.Matrix4();
     const positions: T.Vector3[] = [];
-    for (let i = 0; i < rings.count; i++) {
-      rings.getMatrixAt(i, matrix);
-      stems.getMatrixAt(i, stemMatrix);
-      const position = new T.Vector3().setFromMatrixPosition(matrix);
-      const stem = new T.Vector3().setFromMatrixPosition(stemMatrix);
+    for (let i = 0; i < stems.count; i++) {
+      stems.getMatrixAt(i, matrix);
+      const stem = new T.Vector3().setFromMatrixPosition(matrix);
       const normal = new T.Vector3(0, 0, 1).transformDirection(matrix);
+      const position = stem.clone().addScaledVector(normal, 0.08);
       assert.ok(Math.abs(normal.x) > 0.999);
       assert.ok(
-        stem.clone().addScaledVector(normal, 0.11).distanceTo(position) < 1e-6,
-        "collar tip meets ring and cable",
-      );
-      assert.ok(
         Math.abs(
-          stem.clone().addScaledVector(normal, -0.11).x -
+          stem.clone().addScaledVector(normal, -0.08).x -
             (normal.x > 0 ? 1.1 : 8.9),
         ) < 1e-6,
-        "collar base meets hull face",
+        "cylinder base meets hull face",
       );
       assert.ok(
         scene
@@ -441,36 +432,29 @@ test("socket ports stay hollow, instanced, selectable through cables and attache
       );
       assert.ok(
         positions.every((other) => other.distanceTo(position) > 0.32),
-        "neighboring FDs have distinct rings",
+        "neighboring FDs have distinct ports",
       );
       positions.push(position);
     }
     scene.updateSelection({ ...selection(null), connection: "socket-0" });
     const highlighted = new T.Color();
-    rings.getColorAt(0, highlighted);
+    stems.getColorAt(0, highlighted);
     assert.ok(highlighted.r > 0.5, "selected cables highlight their ports");
-    rings.getColorAt(2, highlighted);
+    stems.getColorAt(2, highlighted);
     assert.ok(highlighted.r < 0.2, "other ports retain cyan styling");
-    let ringsDisposed = false,
-      stemsDisposed = false,
+    let stemsDisposed = false,
       instancesDisposed = 0;
-    rings.addEventListener("dispose", () => {
-      instancesDisposed++;
-    });
     stems.addEventListener("dispose", () => {
       instancesDisposed++;
-    });
-    rings.geometry.addEventListener("dispose", () => {
-      ringsDisposed = true;
     });
     stems.geometry.addEventListener("dispose", () => {
       stemsDisposed = true;
     });
     scene.rebuild({ ...data, visible: new Set(["1:1"]) }, null);
-    assert.ok(ringsDisposed && stemsDisposed, "rebuild releases port geometry");
-    assert.equal(instancesDisposed, 2, "rebuild releases instance buffers too");
+    assert.ok(stemsDisposed, "rebuild releases port geometry");
+    assert.equal(instancesDisposed, 1, "rebuild releases instance buffers too");
     assert.equal(
-      (scene.root.getObjectByName("socket-port-rings") as T.InstancedMesh)
+      (scene.root.getObjectByName("socket-port-stems") as T.InstancedMesh)
         .count,
       0,
     );
