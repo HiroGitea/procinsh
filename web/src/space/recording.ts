@@ -308,6 +308,7 @@ export class SpaceReplay {
   time = 0;
   speed = 1;
   playing = false;
+  loop = false;
   private cursor = 0;
   constructor(
     readonly recording: SpaceRecording,
@@ -338,8 +339,16 @@ export class SpaceReplay {
     if (this.time >= this.recording.duration_ms) this.playing = false;
   }
   tick(delta: number) {
-    if (this.playing)
-      this.advanceTo(this.time + Math.max(0, delta) * this.speed);
+    if (!this.playing) return;
+    const target = this.time + Math.max(0, delta) * this.speed;
+    const duration = this.recording.duration_ms;
+    if (this.loop && duration > 0 && target >= duration) {
+      this.advanceTo(duration);
+      this.seek(target % duration);
+      this.playing = true;
+    } else {
+      this.advanceTo(target);
+    }
   }
   step(direction: -1 | 1) {
     this.playing = false;

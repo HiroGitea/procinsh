@@ -177,3 +177,64 @@ test("Cloudflare Pages Free build guard accepts the boundary and rejects oversiz
     rmSync(directory, { recursive: true });
   }
 });
+
+test("loop playback wraps the virtual clock and rebuilds state without losing overflow", () => {
+  const recording = sample();
+  let resets = 0;
+  let clock = -1;
+  const events: number[] = [];
+  const replay = new SpaceReplay(
+    recording,
+    () => {
+      resets++;
+      events.length = 0;
+    },
+    (event) => {
+      events.push(event.at_ms);
+    },
+    (time) => {
+      clock = time;
+    },
+  );
+  replay.loop = true;
+  replay.speed = 0.5;
+  replay.seek(recording.duration_ms - 100);
+  replay.playing = true;
+  replay.tick(600);
+  expect(replay.time).toBe(200);
+  expect(clock).toBe(200);
+  expect(events).toEqual([0, 100, 200]);
+  expect(resets).toBe(3);
+  expect(replay.playing).toBe(true);
+  replay.tick(recording.duration_ms * 4);
+  expect(replay.time).toBe(200);
+  replay.seek(recording.duration_ms - 100);
+  replay.tick(200);
+  expect(replay.time).toBe(0);
+  expect(replay.playing).toBe(true);
+  replay.playing = false;
+  replay.tick(1000);
+  expect(replay.time).toBe(0);
+  replay.loop = false;
+  replay.playing = true;
+  replay.tick(recording.duration_ms * 2);
+  expect(replay.time).toBe(recording.duration_ms);
+  expect(replay.playing).toBe(false);
+});
+
+test("looping a zero-duration recording stops cleanly", () => {
+  const recording = sample();
+  recording.duration_ms = 0;
+  recording.events = [];
+  const replay = new SpaceReplay(
+    recording,
+    () => {},
+    () => {},
+    () => {},
+  );
+  replay.loop = true;
+  replay.playing = true;
+  replay.tick(1000);
+  expect(replay.time).toBe(0);
+  expect(replay.playing).toBe(false);
+});

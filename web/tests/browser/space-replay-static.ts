@@ -118,6 +118,20 @@ try {
     slow > 12000 && slow < 12200,
     `slow playback advances on virtual clock: ${slow}`,
   );
+  await evaluate(
+    "document.querySelector('#play').click();document.querySelector('#loop').click();document.querySelector('select').value='1';document.querySelector('select').dispatchEvent(new Event('change'));document.querySelector('#timeline').value=29900;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
+  );
+  await waitFor(
+    "Number(document.querySelector('#timeline').value)<2000 && document.querySelector('#play').textContent==='Pause'",
+    "loop restarts and keeps playing",
+  );
+  await evaluate(
+    "document.querySelector('#loop').click();document.querySelector('#timeline').value=29900;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
+  );
+  await waitFor(
+    "Number(document.querySelector('#timeline').value)===30000 && document.querySelector('#play').textContent==='Play'",
+    "disabling loop stops at the end",
+  );
   const timeOrigin = await evaluate<number>("performance.timeOrigin");
   await cdp("Page.reload");
   await waitFor(

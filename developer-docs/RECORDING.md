@@ -22,7 +22,9 @@ JSON. Files are read with the browser File API and never uploaded. Choose anothe
 file on the same page. Play/pause, timeline seeking, event stepping in either
 direction, and 0.1×/0.25×/0.5×/1×/2× speeds use a virtual clock shared with SPACE
 activity animation. Orbit, pan and zoom remain available while paused. Hiding the
-replay tab pauses playback. Process inspection links are disabled in replay.
+replay tab pauses playback. Enable **Loop** to repeat from the beginning at the
+selected speed; disabling it stops playback at the end. Process inspection links
+are disabled in replay.
 
 ## JSON contract
 
