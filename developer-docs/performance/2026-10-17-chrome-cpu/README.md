@@ -22,12 +22,17 @@ measurement. Chrome's CPU use is excluded from these backend numbers.
 |---|---:|---:|---:|---:|---|---|
 | Baseline: server idle, observer blank | 0.00% | 0.00 | 0.00 | 0 | — | — |
 | Chrome load, observer blank | 0.00% | 0.00 | 0.00 | 0 | — | — |
-| Browser process detail | 21.83% | 11.84 | 1.26 | 1,283 | [Combined](flamegraphs/browser-detail-all.svg) | [By thread](flamegraphs/browser-detail-threads.svg) |
-| Busy renderer detail | 16.92% | 8.77 | 1.38 | 996 | [Combined](flamegraphs/renderer-detail-all.svg) | [By thread](flamegraphs/renderer-detail-threads.svg) |
-| SPACE | 32.62% | 15.07 | 4.50 | 1,932 | [Combined](flamegraphs/space-all.svg) | [By thread](flamegraphs/space-threads.svg) |
+| Browser process detail | 21.83% | 11.84 | 1.26 | 1,283 | [PNG](flamegraphs/browser-detail-all.png) / [SVG](flamegraphs/browser-detail-all.svg) | [PNG](flamegraphs/browser-detail-threads.png) / [SVG](flamegraphs/browser-detail-threads.svg) |
+| Busy renderer detail | 16.92% | 8.77 | 1.38 | 996 | [PNG](flamegraphs/renderer-detail-all.png) / [SVG](flamegraphs/renderer-detail-all.svg) | [PNG](flamegraphs/renderer-detail-threads.png) / [SVG](flamegraphs/renderer-detail-threads.svg) |
+| SPACE | 32.62% | 15.07 | 4.50 | 1,932 | [PNG](flamegraphs/space-all.png) / [SVG](flamegraphs/space-all.svg) | [PNG](flamegraphs/space-threads.png) / [SVG](flamegraphs/space-threads.svg) |
 
 Zero means no CPU ticks or samples were observed in that interval, within the
 measurement resolution. No graph is generated for an empty interval.
+
+PNG links work as static images on phones; the PNGs are rendered at twice the
+SVG dimensions so labels remain legible when zoomed.
+
+![SPACE backend CPU flamegraph](flamegraphs/space-all.png)
 
 Download an SVG and open it directly in a browser to use its search and zoom
 controls. GitHub's image preview may disable those controls. Width represents
@@ -219,12 +224,13 @@ interval sample counts.
 - [measurements.json](measurements.json): CPU counters, intervals, top threads,
   sample-quality counts, symbol statistics and sensor/loss summaries.
 - [flamegraphs/](flamegraphs/): six SVGs generated with
-  [FlameGraph](https://github.com/brendangregg/FlameGraph).
+  [FlameGraph](https://github.com/brendangregg/FlameGraph), plus six static PNGs
+  rendered from those SVGs with `rsvg-convert --zoom=2`.
 - [stacks/](stacks/): the corresponding six folded-stack inputs, including
   explicit caller-unavailable samples. These can regenerate the visualizations
   with `flamegraph.pl --width 1600 stacks/<condition>-<kind>.folded > graph.svg`.
-- [artifact-sha256.json](artifact-sha256.json): checksums of all six graphs and
-  their six inputs.
+- [artifact-sha256.json](artifact-sha256.json): checksums of all six SVGs, six PNGs and
+  six folded-stack inputs.
 - [unwind-map-adjustments.json](unwind-map-adjustments.json) and
   [sample-integrity.json](sample-integrity.json): address-translation and
   sample-preservation evidence.
