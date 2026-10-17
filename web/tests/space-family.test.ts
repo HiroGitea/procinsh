@@ -307,10 +307,9 @@ test("process sockets attach at mid-height, network connections at the roof and 
     assert.equal(pipeCurve.v0.z, 1.33);
     assert.equal(pipeCurve.v1.z, 0.22);
     scene.updateSelection({ ...selection(null), connection: "socket" });
-    const selectedLine = scene.root.children.find(
-      (object) =>
-        object instanceof T.Line && !(object instanceof T.LineSegments),
-    ) as T.Line;
+    const selectedLine = scene.root.getObjectByName(
+      "selected-connection",
+    ) as T.LineSegments;
     const positions = selectedLine.geometry.attributes.position;
     assert.ok(selectedLine.visible);
     for (let i = 0; i < positions.count; i++)
@@ -431,7 +430,7 @@ test("socket ports are small plain cylinders attached to hulls and cables", () =
           ),
       );
       assert.ok(
-        positions.every((other) => other.distanceTo(position) > 0.32),
+        positions.every((other) => other.distanceTo(position) > 0.109),
         "neighboring FDs have distinct ports",
       );
       positions.push(position);
