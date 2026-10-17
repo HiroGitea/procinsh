@@ -70,7 +70,7 @@ pub(super) use sockets::SocketInfo;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
-pub(super) use socket_metadata::metadata_available;
+pub(super) use socket_metadata::require_metadata_access;
 #[cfg(test)]
 pub(super) use test_support::NetworkNamespaceTarget as TestNetworkNamespaceTarget;
 #[cfg(test)]
