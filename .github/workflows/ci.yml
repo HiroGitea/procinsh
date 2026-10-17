@@ -180,5 +180,14 @@ jobs:
           "$HOME/.cargo/bin/rustup" show active-toolchain
       - name: Build
         run: cargo build --locked --all-targets
-      - name: Run Rust tests
-        run: cargo test --locked
+
+  kernel-tests:
+    name: Privileged kernel tests (Docker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test perf, ptrace, sockets, network namespaces and eBPF
+        run: bash scripts/docker_test.sh
