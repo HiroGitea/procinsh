@@ -1,7 +1,7 @@
-"""File I/O integration test. Requires CAP_BPF/CAP_PERFMON (or root).
+"""File I/O integration test, executed by the Docker kernel suite.
 
-Run: python3 tests/space-files-live.py [http://127.0.0.1:PORT]
-Without a URL, starts and stops a private test server on an ephemeral port.
+The optional URL selects the suite's capability-enabled server. Without a URL,
+starts and stops a private test server inside the container on an ephemeral port.
 """
 from sse import Stream
 import json

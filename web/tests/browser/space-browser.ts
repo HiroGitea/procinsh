@@ -47,7 +47,7 @@ function launch(program: string, args: string[]) {
 const profile = await mkdtemp(join(tmpdir(), "procinsh-browser-"));
 let socket: WebSocket | undefined;
 try {
-  const app = launch("./scripts/dev_run.sh", ["--listen", "127.0.0.1:0"]);
+  const app = launch("./target/debug/procinsh", ["--listen", "127.0.0.1:0"]);
   const url = await until(
     () => app.output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0],
     "HTTP server",

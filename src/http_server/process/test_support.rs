@@ -67,7 +67,7 @@ pub(in crate::http_server) struct NetworkNamespaceTarget {
 }
 
 impl NetworkNamespaceTarget {
-    pub(in crate::http_server) fn new(separate: bool) -> Option<Self> {
+    pub(in crate::http_server) fn new(separate: bool) -> Self {
         use std::os::{
             fd::OwnedFd,
             unix::{net::UnixStream, process::CommandExt},
@@ -92,24 +92,9 @@ impl NetworkNamespaceTarget {
                 });
             }
         }
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(e)
-                if separate
-                    && matches!(
-                        e.raw_os_error(),
-                        Some(libc::EPERM | libc::EINVAL | libc::ENOSYS)
-                    ) =>
-            {
-                assert!(
-                    std::env::var("PROCINSH_REQUIRE_NETNS").as_deref() != Ok("1"),
-                    "required network namespace fixture: {e}"
-                );
-                eprintln!("network namespace fixture unavailable: {e}");
-                return None;
-            }
-            Err(e) => panic!("network namespace fixture: {e}"),
-        };
+        let mut child = command
+            .spawn()
+            .expect("network namespace fixture requires the kernel test container");
         let mut line = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)
@@ -117,7 +102,7 @@ impl NetworkNamespaceTarget {
         let id = process::identity(child.id() as i32).unwrap();
         let peer_id =
             process::identity(line.split_whitespace().nth(1).unwrap().parse().unwrap()).unwrap();
-        Some(Self {
+        Self {
             target: Target {
                 child,
                 id,
@@ -126,6 +111,6 @@ impl NetworkNamespaceTarget {
             peer_id,
             inherited,
             _inherited_peer: inherited_peer,
-        })
+        }
     }
 }

@@ -6,18 +6,15 @@ use std::{
 struct Child(std::process::Child);
 
 #[test]
+#[ignore = "requires the capability-enabled Docker kernel suite"]
 fn netns_snapshot_resolves_multiple_namespaces_and_cross_namespace_holders() {
     use crate::http_server::{
         process,
         socket_types::{SocketConnectionStatus, SocketState},
     };
     use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
-    let Some(first) = process::TestNetworkNamespaceTarget::new(true) else {
-        return;
-    };
-    let Some(second) = process::TestNetworkNamespaceTarget::new(true) else {
-        return;
-    };
+    let first = process::TestNetworkNamespaceTarget::new(true);
+    let second = process::TestNetworkNamespaceTarget::new(true);
     let snapshot = snapshot::collect(&mut Default::default());
     let connects = |relation: &snapshot::FdRelation,
                     a: (process::ProcessId, u32),
@@ -79,6 +76,7 @@ impl Drop for Child {
 }
 
 #[test]
+#[ignore = "requires the capability-enabled Docker kernel suite"]
 fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
     use crate::http_server::{
         process,
@@ -124,8 +122,8 @@ fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
         })
         .collect();
     let id = process::identity(std::process::id() as i32).unwrap();
-    let metadata_available = process::metadata_available(id, sockets[0].as_raw_fd());
-    // A bound Netlink socket stays visible through procfs when duplication is denied.
+    process::require_socket_metadata(id, sockets[0].as_raw_fd());
+    // Bind the Netlink socket so it has a peer-present connection status.
     let mut address: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
     address.nl_family = libc::AF_NETLINK as u16;
     assert_eq!(
@@ -154,35 +152,14 @@ fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
             .find(|e| e["fd"] == fd)
             .unwrap();
         assert!(relation.peer.is_none());
-        if !metadata_available && protocol.is_tcp_or_udp() {
-            assert!(relation.socket.is_none());
-            assert_eq!(relation.label, "Socket · Type unavailable");
-            assert!(entry["protocol"].is_null());
-            assert!(entry["state"].is_null());
-            assert!(entry["peers"].as_array().unwrap().is_empty());
-            continue;
-        }
-        let protocol = if !metadata_available && matches!(protocol, SocketProtocol::Other { .. }) {
-            SocketProtocol::Other {
-                family: 16,
-                socket_type: None,
-                protocol: 15,
-            }
-        } else {
-            protocol
-        };
         assert!(!relation.socket.as_ref().unwrap().network_peer);
         assert_eq!(relation.socket.as_ref().unwrap().protocol, protocol);
         assert!(relation.label.starts_with(&protocol.to_string()));
         assert_eq!(entry["protocol"], serde_json::to_value(protocol).unwrap());
-        let expected = if metadata_available {
-            if matches!(protocol, SocketProtocol::Other { family: 16, .. }) {
-                SocketConnectionStatus::PeerPresent
-            } else {
-                SocketConnectionStatus::Unconnected
-            }
+        let expected = if matches!(protocol, SocketProtocol::Other { family: 16, .. }) {
+            SocketConnectionStatus::PeerPresent
         } else {
-            SocketConnectionStatus::Unknown
+            SocketConnectionStatus::Unconnected
         };
         assert_eq!(relation.endpoint.connection_status, Some(expected));
         assert_eq!(
@@ -198,6 +175,7 @@ fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
 }
 
 #[test]
+#[ignore = "requires the capability-enabled Docker kernel suite"]
 fn socket_connection_status_is_retained_for_shared_listening_and_unconnected_fds() {
     use crate::http_server::{process, socket_types::SocketConnectionStatus};
     use std::{
@@ -209,9 +187,7 @@ fn socket_connection_status_is_retained_for_shared_listening_and_unconnected_fds
     let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
     let udp_duplicate = udp.try_clone().unwrap();
     let id = process::identity(std::process::id() as i32).unwrap();
-    if !process::metadata_available(id, listener.as_raw_fd()) {
-        return;
-    }
+    process::require_socket_metadata(id, listener.as_raw_fd());
     let snapshot = snapshot::collect(&mut Default::default());
     let fds = serde_json::to_value(process::fds(id).unwrap()).unwrap();
     for (fd, expected) in [

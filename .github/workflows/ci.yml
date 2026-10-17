@@ -10,175 +10,42 @@ permissions:
   contents: read
 
 jobs:
-  format:
-    name: Format
+  checks:
+    name: Format, lint, documentation and packaging
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Install web dependencies
-        run: npm --prefix web ci
-      - name: Check TypeScript formatting
-        run: npm --prefix web run format:check
-      - name: Install Rust
-        # rustup reads the version and components from rust-toolchain.toml.
-        run: rustup show active-toolchain
-      - name: Check Rust formatting
-        run: cargo fmt --all --check
-      - name: Install pinned clang-format
-        run: |
-          python3 -m venv "$RUNNER_TEMP/clang-format"
-          "$RUNNER_TEMP/clang-format/bin/python" -m pip install -r requirements-format.txt
-          echo "$RUNNER_TEMP/clang-format/bin" >> "$GITHUB_PATH"
-      - name: Check C formatting
-        run: python3 scripts/format_c.py --check
-
-  build:
-    name: Build and test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install Rust
-        # rustup reads the version and components from rust-toolchain.toml.
-        run: rustup show active-toolchain
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Install web dependencies
-        run: npm --prefix web ci
-      - name: Check TypeScript
-        run: npm --prefix web run typecheck
-      - name: Build web assets
-        run: npm --prefix web run build
-      - name: Run frontend unit tests
-        run: npm --prefix web test
-      - name: Check TypeScript API documentation
-        run: npm --prefix web run docs
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            build-essential clang llvm pkg-config libelf-dev zlib1g-dev python3 \
-            linux-tools-common linux-tools-generic graphviz
-      - name: Check TypeScript module dependency graphs
-        run: npm --prefix web run docs:architecture
-      - name: Configure bpftool and check kernel BTF
-        shell: bash
-        run: |
-          # Use the packaged binary directly: the wrapper requires tools matching
-          # the runner's kernel, which may differ from the installed generic kernel.
-          shopt -s nullglob
-          bpftools=(/usr/lib/linux-tools/*/bpftool)
-          if (( ${#bpftools[@]} == 0 )); then
-            echo "::error::No packaged bpftool binary found"
-            exit 1
-          fi
-          echo "BPFTOOL=${bpftools[0]}" >> "$GITHUB_ENV"
-          test -r /sys/kernel/btf/vmlinux
-          "${bpftools[0]}" version
-      - name: Build
-        run: cargo build --locked --all-targets
-      - name: Check rustdoc
-        env:
-          RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links"
-        run: cargo doc --locked --workspace --no-deps --document-private-items
-      - name: Check Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
-      - name: Check listen policy
-        run: python3 tests/listen-policy.py
-      - name: Check crate packaging and embedded assets
-        run: python3 scripts/check_web_package.py
-
-  distro-build:
-    name: Build and test (${{ matrix.distro }})
-    # Containers vary userspace only. Keep runner/kernel checks in the build job.
-    runs-on: ubuntu-24.04
-    container:
-      image: ${{ matrix.image }}
     timeout-minutes: 30
-    defaults:
-      run:
-        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run checks in Docker
+        run: bash scripts/docker_test.sh checks
+
+  distro-test:
+    name: Build and test (${{ matrix.distro }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - distro: Ubuntu 24.04
-            image: ubuntu:24.04
-            family: ubuntu
-            bpf_package: linux-tools-generic
-          - distro: Ubuntu 26.04
-            image: ubuntu:26.04
-            family: ubuntu
-            bpf_package: bpftool
-          - distro: Fedora 44
-            image: fedora:44
-            family: fedora
+        distro: [ubuntu:24.04, ubuntu:26.04, fedora:44]
     steps:
-      - name: Install Ubuntu native dependencies
-        if: matrix.family == 'ubuntu'
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          BPF_PACKAGE: ${{ matrix.bpf_package }}
-        run: |
-          apt-get update
-          apt-get install --yes --no-install-recommends \
-            ca-certificates curl git tar gzip build-essential clang llvm \
-            pkg-config libelf-dev zlib1g-dev python3 "$BPF_PACKAGE"
-          if [[ "$BPF_PACKAGE" == linux-tools-generic ]]; then
-            # Bypass the kernel-version-dependent Ubuntu 24.04 wrapper.
-            shopt -s nullglob
-            bpftools=(/usr/lib/linux-tools/*/bpftool)
-            if (( ${#bpftools[@]} == 0 )); then
-              echo "::error::No packaged bpftool binary found"
-              exit 1
-            fi
-            echo "BPFTOOL=${bpftools[0]}" >> "$GITHUB_ENV"
-          else
-            # Ubuntu 26.04 ships a standalone bpftool package.
-            echo "BPFTOOL=$(command -v bpftool)" >> "$GITHUB_ENV"
-          fi
-      - name: Install Fedora native dependencies
-        if: matrix.family == 'fedora'
-        run: |
-          dnf install --assumeyes \
-            ca-certificates curl git tar gzip gcc gcc-c++ make clang llvm \
-            pkgconf-pkg-config elfutils-libelf-devel zlib-devel python3 bpftool
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Install Node.js and npm
-        uses: actions/setup-node@v4
+      - name: Run ordinary tests in distro container
+        run: bash scripts/docker_test.sh --distro '${{ matrix.distro }}' ordinary
+
+  kernel-test:
+    name: Kernel and live eBPF tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Install web dependencies
-        run: npm --prefix web ci
-      - name: Build web assets
-        run: npm --prefix web run build
-      - name: Install Rust
-        run: |
-          curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
-            https://sh.rustup.rs -o "$RUNNER_TEMP/rustup-init.sh"
-          sh "$RUNNER_TEMP/rustup-init.sh" -y --profile minimal --default-toolchain none
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          "$HOME/.cargo/bin/rustup" show active-toolchain
-      - name: Build
-        run: cargo build --locked --all-targets
-      - name: Run Rust tests
-        run: cargo test --locked
+          persist-credentials: false
+      - name: Run tests with explicit kernel capabilities
+        # The entry point specifies BPF, PERFMON, SYS_PTRACE, DAC_READ_SEARCH
+        # and SYS_ADMIN, host PIDs for BPF identity, and a read-only BTF mount.
+        # Docker's default seccomp and AppArmor profiles remain enabled.
+        run: bash scripts/docker_test.sh kernel

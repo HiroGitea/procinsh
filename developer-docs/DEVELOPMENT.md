@@ -234,7 +234,7 @@ system snapshot の関係の両端にある FD と、プロセス FD API の ent
 
 SPACE は、関係のどちらかのソケット FD が `listening` / `unconnected` の場合、共有 FD の線も含めて可視化から除外します。除外ソケットの IPC イベントは、粒子や操作元ポートの発光にも使いません。接続処理中でも peer 照会が `ENOTCONN` の間は除外し、未接続 UDP の `sendto` / `sendmsg` による通信も SPACE には表示しません。`unknown`、旧サーバーのフィールド欠落は表示対象として扱います。API と受信した生のスナップショットには全 FD を保持し、状態が変わったら選択・粒子・保持中の Netlink 表示も更新します。
 
-`dev_test.sh` は `PROCINSH_REQUIRE_SOCKET_METADATA=1` と `PROCINSH_REQUIRE_NETNS=1` を設定し、pidfd による種類取得と別 network namespace の実機テストについて、権限不足・非対応によるスキップを禁止します。通常の `cargo test` は、コンテナなどで FD の複製が制限されている場合にも procfs の種類取得と種類未取得の部分結果を検証します。
+pidfd による種類取得と別 network namespace の実機テストは `bash scripts/docker_test.sh kernel` で実行します。観測権限やカーネル機能を利用できない場合は失敗します。
 
 UNIX の診断は、対象の PID と開始時刻を確認して開いた network namespace の FD を使います。別 namespace では短命の専用スレッドが `setns(CLONE_NEWNET)` を実行して診断用 Netlink ソケットを作成し、その FD を呼び元へ返して終了します。要求と応答の処理は作成先の namespace に属するソケットを通じて行い、HTTP・収集スレッドの namespace は変更しません。SPACE は走査で発見した namespace を device/inode でまとめ、一回の走査で各 namespace を一度診断します。全 namespace の診断予算は合計500ms、プロセス FD 一覧は750msと全体3秒の締切の短い方を使います。診断ができない場合は既存の procfs 情報を保持し、対象 PID と失敗理由を警告に含めます。
 
@@ -382,9 +382,9 @@ Environment・Auxiliary Vector・Pipe / Socket はパネルを開くたびに単
 
 | 対象 | テストソース | 実行手順 |
 |---|---|---|
-| 一覧の検索・並べ替え・更新キャンセル、詳細の識別子検証・SSE・追加 GET・選択 | [page-data.test.ts](../web/tests/page-data.test.ts)、[list/search.ts](../web/src/list/search.ts) と [process/data.ts](../web/src/process/data.ts) の in-source test | `npm --prefix web test` |
-| CPU/RSS の軸・スケール、サンプル欠落、描画倍率 | [history.ts の in-source test](../web/src/process/history.ts) | `npm --prefix web test` |
-| 一覧から詳細への遷移、追加パネル、サンプル表示、モバイル、ページキャッシュ・終了 | [browser.ts](../web/tests/browser/browser.ts) | [ブラウザテスト](#ブラウザテスト)の準備後に `npm --prefix web run test:browser:list` |
+| 一覧の検索・並べ替え・更新キャンセル、詳細の識別子検証・SSE・追加 GET・選択 | [page-data.test.ts](../web/tests/page-data.test.ts)、[list/search.ts](../web/src/list/search.ts) と [process/data.ts](../web/src/process/data.ts) の in-source test | `bash scripts/docker_test.sh web` |
+| CPU/RSS の軸・スケール、サンプル欠落、描画倍率 | [history.ts の in-source test](../web/src/process/history.ts) | `bash scripts/docker_test.sh web` |
+| 一覧から詳細への遷移、追加パネル、サンプル表示、モバイル、ページキャッシュ・終了 | [browser.ts](../web/tests/browser/browser.ts) | [ブラウザテスト](#ブラウザテスト)の準備後に `bash scripts/docker_test.sh browser` |
 
 ### SPACE `/`・`/space`
 
@@ -392,7 +392,7 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 
 `data.ts` の `SpaceDataStore` は SSE・観測状態・活動集計・配置を所有し、座標を `{x, y, z}` の数値データで提供します。`scene.ts` が描画の境界で Three.js の Vector3 や描画オブジェクトに変換します。データの部品を生成するだけでは通信を開始せず、配置や状態更新を Node.js 単体で検証できます。
 
-プロセス配置は [process-layout.ts](../web/src/space/process-layout.ts) の `treeLayout` と `stableLayout` が計算します。入力は `ProcessLayoutNode[]`（プロセス識別子と親識別子）、出力は識別子をキーにした `Map<string, TreePosition>`（`x`・`y`・正規化した `depth`・`parent`）です。`treeLayout` は初期表示と Rearrange の全体配置、`stableLayout` は通常更新時の既存座標の維持と新規プロセスの配置を担当します。`xGap`（既定値 `4.8`）・`yGap`（既定値 `6.5`）で間隔を指定できます。サーバーや描画処理を起動せず、`npm --prefix web test -- src/space/process-layout.ts` で配置だけを検証できます。
+プロセス配置は [process-layout.ts](../web/src/space/process-layout.ts) の `treeLayout` と `stableLayout` が計算します。入力は `ProcessLayoutNode[]`（プロセス識別子と親識別子）、出力は識別子をキーにした `Map<string, TreePosition>`（`x`・`y`・正規化した `depth`・`parent`）です。`treeLayout` は初期表示と Rearrange の全体配置、`stableLayout` は通常更新時の既存座標の維持と新規プロセスの配置を担当します。`xGap`（既定値 `4.8`）・`yGap`（既定値 `6.5`）で間隔を指定できます。サーバーや描画処理を起動せず、`bash scripts/docker_test.sh web src/space/process-layout.ts` で配置だけを検証できます。
 
 各部品は他の部品の具象型を import せず、[contracts.ts](../web/src/space/contracts.ts) と [types.ts](../web/src/space/types.ts) の共有契約を使います。`app.ts` はシーンに構造・配置・表示対象を渡し、選択状態を `updateSelection` に明示します。構造更新・ファイル更新では、選択の保持、シーンの更新、選択の強調、粒子の保持、カメラの範囲調整、詳細表示を順に実行します。
 
@@ -463,13 +463,13 @@ SPACE は両端が表示中のシグナルを最大256件保持し、紫色の�
 
 | 対象 | テストソース | 実行手順 |
 |---|---|---|
-| 部品間の import 境界、シーンへの入力、当たり判定・選択、カメラ範囲、詳細表示のリンク・操作、描画の通知・停止復帰 | [space-components.test.ts](../web/tests/space-components.test.ts) | `npm --prefix web test` |
-| プロセス配置 | [process-layout.ts](../web/src/space/process-layout.ts) の in-source test と [process-layout.test.ts](../web/tests/process-layout.test.ts) のソケット通信相手・配置安定性の回帰テスト | `npm --prefix web test -- src/space/process-layout.ts tests/process-layout.test.ts` |
-| データのマージ、接続先・ファイルの配置、活動モデル、解像度調整 | [data.ts](../web/src/space/data.ts)・[renderer.ts](../web/src/space/renderer.ts) の in-source test | `npm --prefix web test` |
-| netlink の常時表示、分類、共有FD、終了・状態変化、配置 | [space-netlink.test.ts](../web/tests/space-netlink.test.ts) | `npm --prefix web test` |
-| 表示ラベルと UID 色 | [space-formatting.test.ts](../web/tests/space-formatting.test.ts) | `npm --prefix web test` |
-| 観測状態・活動経路、SSE の停止・再同期・古い通知の破棄 | [data.ts の in-source test](../web/src/space/data.ts) | `npm --prefix web test` |
-| WebGL 描画、配置・選択・カメラ操作、接続管理 | [space-browser.ts](../web/tests/browser/space-browser.ts)。ネットワーク・netlink・ファイルは [space-netlink.ts](../web/tests/browser/space-netlink.ts)・[space-network.ts](../web/tests/browser/space-network.ts)・[space-files.ts](../web/tests/browser/space-files.ts) を呼び出して検証 | [ブラウザテスト](#ブラウザテスト)の準備後に `npm --prefix web run test:browser:space` |
+| 部品間の import 境界、シーンへの入力、当たり判定・選択、カメラ範囲、詳細表示のリンク・操作、描画の通知・停止復帰 | [space-components.test.ts](../web/tests/space-components.test.ts) | `bash scripts/docker_test.sh web` |
+| プロセス配置 | [process-layout.ts](../web/src/space/process-layout.ts) の in-source test と [process-layout.test.ts](../web/tests/process-layout.test.ts) のソケット通信相手・配置安定性の回帰テスト | `bash scripts/docker_test.sh web src/space/process-layout.ts tests/process-layout.test.ts` |
+| データのマージ、接続先・ファイルの配置、活動モデル、解像度調整 | [data.ts](../web/src/space/data.ts)・[renderer.ts](../web/src/space/renderer.ts) の in-source test | `bash scripts/docker_test.sh web` |
+| netlink の常時表示、分類、共有FD、終了・状態変化、配置 | [space-netlink.test.ts](../web/tests/space-netlink.test.ts) | `bash scripts/docker_test.sh web` |
+| 表示ラベルと UID 色 | [space-formatting.test.ts](../web/tests/space-formatting.test.ts) | `bash scripts/docker_test.sh web` |
+| 観測状態・活動経路、SSE の停止・再同期・古い通知の破棄 | [data.ts の in-source test](../web/src/space/data.ts) | `bash scripts/docker_test.sh web` |
+| WebGL 描画、配置・選択・カメラ操作、接続管理 | [space-browser.ts](../web/tests/browser/space-browser.ts)。ネットワーク・netlink・ファイルは [space-netlink.ts](../web/tests/browser/space-netlink.ts)・[space-network.ts](../web/tests/browser/space-network.ts)・[space-files.ts](../web/tests/browser/space-files.ts) を呼び出して検証 | [ブラウザテスト](#ブラウザテスト)の準備後に `bash scripts/docker_test.sh browser` |
 | 実機の CPU・IPC・ファイル I/O センサー | [space-live.py](../tests/space-live.py)、[space-files-live.py](../tests/space-files-live.py) | [実機センサーテスト](#実機センサーテスト)を参照 |
 
 ## 権限
@@ -507,27 +507,33 @@ HTTP アクセスログだけを絞り込む例は `RUST_LOG=info,procinsh::http
 
 ## 検証
 
-ビルドと fixture の準備後に実行します。
+ホストには Linux x86-64 と Docker Engine、一般アカウントから Docker daemon へ接続できる設定が必要です。テスト、テスト用ビルド、fixture の準備はすべてコンテナ内で行います。ホスト側の Rust・Node.js・sudo・setcap は不要です。
 
 ```sh
-npm --prefix web ci
-npm --prefix web run format:check
-npm --prefix web run typecheck
-npm --prefix web run build
-npm --prefix web test
-cargo build --locked
-sh tests/targets/build.sh
-PROCINSH_BINARY=./scripts/dev_run.sh cargo test --locked --test http --test build_git
-# ローカルの権限付き単体テスト（perf のスキップを禁止）
-PROCINSH_REQUIRE_PERF=1 ./scripts/dev_test.sh
-PROCINSH_BINARY=./scripts/dev_run.sh python3 tests/listen-policy.py
-npm --prefix web run test:dev
+# 通常テスト、フォーマット・静的解析、カーネル・実機センサー検証
+bash scripts/docker_test.sh
 
-# フォーマット・静的解析
-cargo fmt --all --check
-cargo clippy --all-targets --locked -- -D warnings
-RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links" cargo doc --locked --workspace --no-deps --document-private-items
+# 個別実行
+bash scripts/docker_test.sh ordinary
+bash scripts/docker_test.sh checks
+bash scripts/docker_test.sh kernel
+bash scripts/docker_test.sh browser
+
+# ディストリビューションとテストの指定
+bash scripts/docker_test.sh --distro fedora:44 ordinary
+bash scripts/docker_test.sh rust live_threads_churn_sleep_and_exit --nocapture
+bash scripts/docker_test.sh web src/space/process-layout.ts
 ```
+
+Docker bridge の DNS や外向き通信が制限されているホストでは、`bash scripts/docker_test.sh --network host` でビルドと実行に host network を指定できます。既定は bridge で、テスト用ポートをホストに公開しません。
+
+`ordinary` は追加 capability なしで全ターゲットのビルド、通常の Rust テスト、Vitest、listen policy、Vite 開発サーバーの結合テストを実行します。`checks` は Rust・C・TypeScript のフォーマット、Clippy、rustdoc、TypeDoc、TypeScript の依存関係グラフ、crate packaging を検証します。各 suite は Web の依存関係を導入して型チェックとビルドを行います。
+
+`kernel` は Rust の `#[ignore]` で明示したカーネル依存テストを `--ignored` で必ず実行し、CPU/IPC・ファイル I/O・シグナルの live eBPF テストも実行します。`rust` はフィルターと `--nocapture` などのテスト引数を受け取り、`--include-ignored` で実行します。権限や機能の不足を検出してもスキップしません。通常 suite の ignored 件数はテストの分類を表し、既定の全 suite 実行と CI の kernel job でこれらを検証します。
+
+カーネルには BTF（`CONFIG_DEBUG_INFO_BTF=y` と `/sys/kernel/btf/vmlinux`）、eBPF、perf、ptrace、network namespace、pidfd_getfd、およびアプリケーションが使う BPF フックが必要です。Docker Desktop の VM カーネルや rootless Docker、user namespace remapping、強い LSM 制約のある daemon は必要なアクセスを提供できない場合があります。`kernel`・`rust`・`browser` には `BPF`・`PERFMON`・`SYS_PTRACE`・`DAC_READ_SEARCH`・`SYS_ADMIN` を明示的に追加します。BPF イベントの PID と procfs の PID を一致させるため、これらの suite だけ `--pid=host` を使います。全 suite でカーネル BTF を読み取り専用でマウントし、Docker 既定の seccomp と AppArmor は維持します。`--privileged` や unrestricted profile は使用しません。
+
+checkout は読み取り専用でマウントし、ソースをコンテナ内の `/work` にコピーします。fixture、Web の生成物、HMR の変更もコピー上で扱います。Rust のビルドキャッシュは distro ごとの `procinsh-test-target-*`、依存 crate は `procinsh-test-registry` という Docker volume に保存します。checkout に root 所有の生成物を書き込みません。同じ distro の suite はビルドキャッシュを共有するため順番に実行してください。コンテナを終了してもキャッシュは残り、不要なら `docker volume rm <volume名>` で削除できます。
 
 TypeScript のソース・テスト・設定（`web/src/**/*.ts`、`web/tests/**/*.ts`、`web/*.ts`）は [Prettier](https://prettier.io/docs/install) で整形します。バージョンは [package.json](../web/package.json) で固定し、[.prettierrc.json](../web/.prettierrc.json) に従って標準の書式と LF 改行を使います。[.prettierignore](../web/.prettierignore) は生成物と node_modules を除外します。ローカルと CI は同じチェックコマンドを使います。
 
@@ -549,7 +555,7 @@ CLANG_FORMAT="$PWD/.venv-format/bin/clang-format" python3 scripts/format_c.py --
 
 `--check` はファイルを書き換えず、整形差分があれば失敗します。Git 管理対象と未追跡の `.c` / `.h` を検査し、無視された生成物（`vmlinux.h` など）は対象にしません。C の変更時は整形してからコミットしてください。clang-format の更新は固定バージョンの変更と全 C ファイルの再整形を合わせて行います。
 
-CI は Rust・C・TypeScript のフォーマット確認、TypeScript の型チェックと Vite ビルド、Vitest、crate のアセット同梱と Node 不要のビルド、Rust の全ターゲットのビルド、Clippy、rustdoc のリンク検証、Rust テスト、ログ検証、一覧・詳細のデータと履歴グラフ、SPACE モデルとデータの検証を実行します。ブラウザと実機センサーのテストは別途実行します。
+CI は Rust・C・TypeScript のフォーマット確認、TypeScript の型チェックと Vite ビルド、Vitest、crate のアセット同梱と Node 不要のビルド、Rust の全ターゲットのビルド、Clippy、rustdoc のリンク検証、Rust テスト、ログ検証、一覧・詳細のデータと履歴グラフ、SPACE モデルとデータの検証を実行します。実機センサーは kernel job で検証し、ブラウザは Docker の browser suite で別途実行します。
 
 [Publish API documentation](../.github/workflows/docs.yml) workflow は `main` への push と手動実行時に、rustdoc・TypeDoc・Rust と TypeScript のモジュール依存関係グラフを生成し、`target/doc/` を単一の GitHub Pages artifact として公開します。Rust は既存の `/procinsh/`、TypeScript は `/typescript/`、Rust の依存関係グラフは `/rust-architecture/`、TypeScript の依存関係グラフは `/typescript-architecture/` に配置し、トップページから各ドキュメントへリンクします。PR の `CI` workflow は rustdoc のリンク、TypeDoc と TypeScript の依存関係グラフの生成を検証します。Rust のグラフ生成と `cargo-modules` のインストールは公開 workflow で実行します。
 
@@ -565,34 +571,19 @@ TypeScript の依存関係グラフは [module-dependencies.ts](../web/scripts/m
 npm --prefix web run docs:architecture
 ```
 
-`cargo build --locked --all-targets` と `cargo test --locked` は Ubuntu 24.04・Ubuntu 26.04・Fedora 44 のコンテナで実行します。matrix は `fail-fast: false` とし、各ディストリビューションの結果を個別に表示します。各コンテナで Node.js 22 と npm をインストールし、`npm --prefix web ci`、`npm --prefix web run build`（TypeScript 型チェックを含む）から実行します。フォーマット、Clippy、listen policy、SPACE モデルと明示的な bpftool・カーネル BTF 検査は単一環境に残します。各コンテナは Ubuntu 24.04 runner のカーネルと BTF を使うため、この matrix はディストリビューションのユーザー空間の差を検証します。各ディストリビューション固有のカーネルでの BPF センサー動作は検証しません。
+CI は `bash scripts/docker_test.sh` と同じ入口を使います。Ubuntu 24.04・Ubuntu 26.04・Fedora 44 の matrix で `ordinary` を実行し、`fail-fast: false` で各結果を表示します。`checks` と `kernel` は Ubuntu 24.04 の別 job で実行します。distro container は runner のカーネルと BTF を共有し、ユーザー空間の差を検証します。ディストリビューション固有のカーネルを検証するものではありません。
 
-matrix の native dependency は Ubuntu では `build-essential clang llvm pkg-config libelf-dev zlib1g-dev python3` に加えて Ubuntu 24.04 は `linux-tools-generic`、Ubuntu 26.04 は `bpftool`、Fedora では `gcc gcc-c++ make clang llvm pkgconf-pkg-config elfutils-libelf-devel zlib-devel python3 bpftool` をインストールします。両方で Rust 導入・checkout に必要な `ca-certificates curl git tar gzip` もインストールします。Ubuntu 26.04 では独立した `bpftool` パッケージの実行ファイルを使います。Ubuntu 24.04 の bpftool は実行カーネルのバージョンに依存する wrapper を避け、`/usr/lib/linux-tools/*/bpftool` の実体を `BPFTOOL` に指定します。
-
-Rust テストは明示的な識別子の必須性、SSEの独立した履歴・切断・接続上限、`/proc` の解析、PID 再利用、メモリ読み取り、perf sample と欠落処理、シンボル、HTTP、システム全体の構造・SSE接続管理・集計を検証します。ログテストは既定レベル、debug、off、標準エラー、SIGTERM、ポート競合、クエリ非出力、IPv4/IPv6 の loopback 起動、非 loopback の bind 前拒否と明示的許可・警告、CLI ヘルプを検証します。プロセス観測を拒否するサンドボックスでは一部テストが失敗するため、テスト対象への perf_event_open/process_vm_readv とローカル通信が許可された環境が必要です。
-
-`./scripts/dev_test.sh [テスト名フィルター] [--nocapture]` は単体テストをビルドし、既存の sudoers で許可された実行パスに一時配置して capability を付けます。テスト成功・失敗のいずれでも元のアプリケーションバイナリを復元します。権限設定と実行は `dev_run.sh` に委譲します。この実行中は同じ checkout でビルドや dev_run を並行実行しないでください。
-
-perf の実機 fixture は権限が利用できない環境では明示メッセージとともにスキップします。`PROCINSH_REQUIRE_PERF=1` を設定するとスキップを禁止して権限不足も失敗にします。実機テストは `blocked_stack` fixture の100ms nanosleepで3秒間に30回の更新を確認しました（Linux 7.0.0-15-generic）。R12〜R15をasmで既知値にして照合し、12段再帰はmainまで復元、96段再帰（各 frame に256バイトの領域）は16 KiB dumpの範囲で停止することを検証します。全18レジスタの独立照合や全kernelでの精度・性能を保証する検証ではありません。開始前からsleep中のfixtureで初回・定期 ptrace 取得・detach と後続 perf への切り替えを検証します。frame pointer を省略した PIE／非 PIE と `.debug_frame` fixture は実際の call 命令から組み立てた snapshot でも main までの unwind を検証します。実機 fixture には共有ライブラリの再帰から libc の nanosleep を跨いで main まで復元するケースもあります。CAP_PERFMON を持つテストプロセスで busy-loop の更新、再帰 frame、複数 TID、churn の追加・削除、sleep 後の age、対象終了を確認してください。
+Rust テストは識別子、SSE、procfs、PID 再利用、メモリ読み取り、perf sample、シンボル、HTTP、システム全体の構造と集計を検証します。実機 perf fixture は R12〜R15 の既知値、再帰とスタックサイズ上限、sleep 中の初回・定期 ptrace と perf への切り替え、frame pointer を省略した PIE／非 PIE と共有ライブラリ、複数 TID、churn、対象終了を検証します。
 
 ### ブラウザテスト
 
-上記の Web・Rust ビルドと fixture の準備に加え、Google Chrome または Chromium が必要です。テストは `web/tests/browser/` に配置し、`npm --prefix web ci` で導入する tsx から実行します。Node.js 標準機能で DevTools Protocol に接続し、コマンドと応答は devtools-protocol の型で検査します。
-
 ```sh
-npm --prefix web run test:browser:list
-npm --prefix web run test:browser:space
-
-# ブラウザのパスを指定する場合
-CHROME=/usr/bin/chromium npm --prefix web run test:browser:list
-CHROME=/usr/bin/chromium npm --prefix web run test:browser:space
+bash scripts/docker_test.sh browser
 ```
 
-`test:browser:space` は [vite.browser-test.config.ts](../web/vite.browser-test.config.ts) でブラウザの検査用 export を SPACE モジュールに追加した Web fixture をビルドし、Cargo でバイナリへ同梱してから実行します。検査用 export は通常の TypeScript ソースには定義しません。テスト後に配布用バイナリを作る場合は `npm --prefix web run build` と `cargo build --locked` を実行します。
+Docker image に Google Chrome を追加し、一覧・詳細と SPACE の両方をコンテナ内で検証します。ブラウザは一時プロファイルを作り、テストサーバーとともに終了時に片付けます。SPACE は [vite.browser-test.config.ts](../web/vite.browser-test.config.ts) の検査用 Web fixture をビルドし、Cargo でバイナリへ同梱してから実行します。生成物はコンテナ内だけに置かれます。
 
-[dev-server.ts](../web/tests/integration/dev-server.ts)（`npm --prefix web run test:dev`）は dev_run 経由でバックエンドと Vite を起動し、画面ルート、CSS 編集による HMR 更新、Origin 検査、JSON と両方の SSE のプロキシを確認します。
-
-通常画面は検索・選択・SSE・ライブサンプル・詳細パネル・終了処理を、SPACE は WebGL、配置、選択、ネットワーク・netlink・ファイルの描画を検証します。ブラウザテストは一時サーバーとブラウザプロファイルを作り、終了時に片付けます。画面・モデルの検証と実機センサーの検証は別です。
+[dev-server.ts](../web/tests/integration/dev-server.ts) は `ordinary` suite に含まれ、ビルド済みバイナリと Vite を起動し、画面ルート、CSS 編集による HMR、Origin 検査、JSON と両方の SSE のプロキシを確認します。
 
 ### Chrome による通信・IPC の負荷生成
 
@@ -628,15 +619,11 @@ kill -TERM "$(cat /tmp/procinsh-chrome-load.pid)"
 
 ### 実機センサーテスト
 
-BPF の観測権限（`CAP_BPF`・`CAP_PERFMON` など）と対応するカーネルのフックを利用できるサーバーに対して実行します。CPU/IPC とファイル I/O を検証します。センサー利用不可を成功扱いにはしません。
-
 ```sh
-python3 tests/space-live.py http://127.0.0.1:9090
-python3 tests/space-files-live.py http://127.0.0.1:9090
-python3 tests/space-signals-live.py http://127.0.0.1:9090
+bash scripts/docker_test.sh kernel
 ```
 
-URL を省略した場合は一時サーバーを起動・終了しますが、そのサーバーにも観測権限が必要です。
+コンテナ内で一時サーバーを起動し、[space-live.py](../tests/space-live.py)、[space-files-live.py](../tests/space-files-live.py)、[space-signals-live.py](../tests/space-signals-live.py) で CPU/IPC、ファイル I/O、シグナルを検証します。センサー利用不可は失敗とし、成功・失敗のどちらでもサーバーを終了してログを出力します。
 
 `tests/targets/` の C fixture には計算、sleep、スレッド増減、メモリ確保、再帰、mmap、IPC、活動計測用のプログラムがあります。手動観測には次を使えます。
 

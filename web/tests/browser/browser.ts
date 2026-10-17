@@ -49,7 +49,7 @@ try {
     () => recursive.output.includes("\n") && threads.output.includes("\n"),
     "test fixtures",
   );
-  const app = launch("./scripts/dev_run.sh", ["--listen", "127.0.0.1:0"]);
+  const app = launch("./target/debug/procinsh", ["--listen", "127.0.0.1:0"]);
   const url = await until(
     () => app.output.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0],
     "HTTP server",
@@ -526,7 +526,7 @@ try {
   // An open SSE connection must not hang graceful shutdown.
   app.kill("SIGTERM");
   await until(() => app.exitCode !== null, "shutdown with active SSE", 5000);
-  const removed = launch("./scripts/dev_run.sh", [
+  const removed = launch("./target/debug/procinsh", [
     "--pid",
     String(recursive.pid),
   ]);

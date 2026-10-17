@@ -97,10 +97,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn netns_socket_creation_preserves_callers_namespace_and_closes_fds() {
-        let Some(fixture) = super::super::TestNetworkNamespaceTarget::new(true) else {
-            return;
-        };
+        let fixture = super::super::TestNetworkNamespaceTarget::new(true);
         let reader = NetworkNamespaceReader::open(fixture.target.id).unwrap();
         let original = current_namespace();
         assert_ne!(reader.key(), original);
@@ -134,10 +133,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn netns_permission_denial_keeps_partial_results_and_unknown_is_not_unconnected() {
-        let Some(fixture) = super::super::TestNetworkNamespaceTarget::new(true) else {
-            return;
-        };
+        let fixture = super::super::TestNetworkNamespaceTarget::new(true);
         let id = fixture.target.id;
         thread::spawn(move || {
             // Drop only this thread's effective CAP_SYS_ADMIN; its child worker
