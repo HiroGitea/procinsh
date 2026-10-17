@@ -602,58 +602,57 @@ mod live_tests {
     #[test]
     fn live_blocked_samples_refresh_known_registers_and_bound_deep_stacks() {
         let target = TestTarget::new("blocked_stack");
-        if !perf_available(target.id.pid) {
-            return;
-        }
-        PerfEventReader::context_switch(target.id.pid).unwrap();
-        let maps = process::maps::read_maps(target.id.pid).unwrap();
-        let mut sampler = Sampler::new(target.id);
-        let mut complete = false;
-        let mut truncated = false;
-        let mut previous = None;
-        let mut updates = 0;
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while Instant::now() < deadline {
-            sampler.poll(&maps).unwrap();
-            let sample = &sampler.latest()[0];
-            if sample.sample_source == Some(SampleSource::ContextSwitch { preempted: false }) {
-                assert!(sample.error.is_none(), "{:?}", sample.error);
-                for (name, expected) in [
-                    ("R12", 0x12345678u64),
-                    ("R13", 0x23456789),
-                    ("R14", 0x3456789a),
-                    ("R15", 0x456789ab),
-                ] {
-                    let register = sample.registers.iter().find(|r| r.name == name).unwrap();
-                    assert_eq!(register.value, expected);
-                }
-                assert!(
-                    sample
+        if perf_available(target.id.pid) {
+            PerfEventReader::context_switch(target.id.pid).unwrap();
+            let maps = process::maps::read_maps(target.id.pid).unwrap();
+            let mut sampler = Sampler::new(target.id);
+            let mut complete = false;
+            let mut truncated = false;
+            let mut previous = None;
+            let mut updates = 0;
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < deadline {
+                sampler.poll(&maps).unwrap();
+                let sample = &sampler.latest()[0];
+                if sample.sample_source == Some(SampleSource::ContextSwitch { preempted: false }) {
+                    assert!(sample.error.is_none(), "{:?}", sample.error);
+                    for (name, expected) in [
+                        ("R12", 0x12345678u64),
+                        ("R13", 0x23456789),
+                        ("R14", 0x3456789a),
+                        ("R15", 0x456789ab),
+                    ] {
+                        let register = sample.registers.iter().find(|r| r.name == name).unwrap();
+                        assert_eq!(register.value, expected);
+                    }
+                    assert!(
+                        sample
+                            .call_stack
+                            .iter()
+                            .any(|f| f.symbol.as_deref() == Some("blocked_leaf"))
+                    );
+                    complete |= sample
                         .call_stack
                         .iter()
-                        .any(|f| f.symbol.as_deref() == Some("blocked_leaf"))
-                );
-                complete |= sample
-                    .call_stack
-                    .iter()
-                    .any(|f| f.symbol.as_deref() == Some("main"));
-                truncated |= sample.unwind_stop.contains("stack snapshot exhausted");
-                if sample.sampled_at != previous {
-                    updates += 1;
-                    previous = sample.sampled_at;
+                        .any(|f| f.symbol.as_deref() == Some("main"));
+                    truncated |= sample.unwind_stop.contains("stack snapshot exhausted");
+                    if sample.sampled_at != previous {
+                        updates += 1;
+                        previous = sample.sampled_at;
+                    }
                 }
+                std::thread::sleep(Duration::from_millis(20));
             }
-            std::thread::sleep(Duration::from_millis(20));
+            assert!(
+                complete && truncated && updates >= 5,
+                "complete={complete} truncated={truncated} updates={updates}: {:?}",
+                sampler.latest()
+            );
+            eprintln!(
+                "Blocked fixture: {updates} distinct updates in 3s; R12–R15 matched; complete and bounded deep stacks verified"
+            );
+            target.assert_detached();
         }
-        assert!(
-            complete && truncated && updates >= 5,
-            "complete={complete} truncated={truncated} updates={updates}: {:?}",
-            sampler.latest()
-        );
-        eprintln!(
-            "Blocked fixture: {updates} distinct updates in 3s; R12–R15 matched; complete and bounded deep stacks verified"
-        );
-        target.assert_detached();
     }
 
     #[test]
@@ -665,169 +664,166 @@ mod live_tests {
             "recursive_no_fp_nopie",
         ] {
             let target = TestTarget::new(name);
-            if !perf_available(target.id.pid) {
-                return;
+            if perf_available(target.id.pid) {
+                let maps = process::maps::read_maps(target.id.pid).unwrap();
+                let mut sampler = Sampler::new(target.id);
+                poll_until(&mut sampler, &maps, |s| {
+                    s.latest().iter().any(|t| t.sampled_at.is_some())
+                });
+                let first = sampler.latest()[0].clone();
+                assert_eq!(first.registers.len(), 18);
+                assert!(!first.disassembly.as_ref().unwrap().instructions.is_empty());
+                if name.starts_with("recursive") {
+                    assert!(first.call_stack.len() >= 4, "{:?}", first.call_stack);
+                    assert!(
+                        first
+                            .call_stack
+                            .iter()
+                            .any(|f| f.symbol.as_deref() == Some("main")),
+                        "{:?}",
+                        first.call_stack
+                    );
+                    assert!(
+                        first
+                            .call_stack
+                            .iter()
+                            .any(|f| f.source_file.is_some() && f.line.is_some())
+                    );
+                    assert!(
+                        first
+                            .call_stack
+                            .iter()
+                            .any(|f| f.symbol.as_deref() == Some("foo"))
+                    );
+                }
+                poll_until(&mut sampler, &maps, |s| {
+                    s.latest()[0].sampled_at > first.sampled_at
+                });
+                target.assert_detached();
+                drop(sampler);
+                target.assert_detached();
             }
-            let maps = process::maps::read_maps(target.id.pid).unwrap();
-            let mut sampler = Sampler::new(target.id);
-            poll_until(&mut sampler, &maps, |s| {
-                s.latest().iter().any(|t| t.sampled_at.is_some())
-            });
-            let first = sampler.latest()[0].clone();
-            assert_eq!(first.registers.len(), 18);
-            assert!(!first.disassembly.as_ref().unwrap().instructions.is_empty());
-            if name.starts_with("recursive") {
-                assert!(first.call_stack.len() >= 4, "{:?}", first.call_stack);
-                assert!(
-                    first
-                        .call_stack
-                        .iter()
-                        .any(|f| f.symbol.as_deref() == Some("main")),
-                    "{:?}",
-                    first.call_stack
-                );
-                assert!(
-                    first
-                        .call_stack
-                        .iter()
-                        .any(|f| f.source_file.is_some() && f.line.is_some())
-                );
-                assert!(
-                    first
-                        .call_stack
-                        .iter()
-                        .any(|f| f.symbol.as_deref() == Some("foo"))
-                );
-            }
-            poll_until(&mut sampler, &maps, |s| {
-                s.latest()[0].sampled_at > first.sampled_at
-            });
-            target.assert_detached();
-            drop(sampler);
-            target.assert_detached();
         }
     }
 
     #[test]
     fn live_no_fp_unwinds_across_shared_library_and_libc() {
         let target = TestTarget::new("shared_no_fp");
-        if !perf_available(target.id.pid) {
-            return;
-        }
-        PerfEventReader::context_switch(target.id.pid).unwrap();
-        let maps = process::maps::read_maps(target.id.pid).unwrap();
-        let mut sampler = Sampler::new(target.id);
-        poll_until(&mut sampler, &maps, |s| {
-            let latest = s.latest();
-            latest.iter().any(|sample| {
-                sample
-                    .call_stack
-                    .iter()
-                    .filter(|f| f.symbol.as_deref() == Some("shared_recurse"))
-                    .count()
-                    >= 13
-                    && sample
+        if perf_available(target.id.pid) {
+            PerfEventReader::context_switch(target.id.pid).unwrap();
+            let maps = process::maps::read_maps(target.id.pid).unwrap();
+            let mut sampler = Sampler::new(target.id);
+            poll_until(&mut sampler, &maps, |s| {
+                let latest = s.latest();
+                latest.iter().any(|sample| {
+                    sample
                         .call_stack
                         .iter()
-                        .any(|f| f.symbol.as_deref() == Some("main"))
-                    && sample.call_stack.iter().any(|f| {
-                        maps.iter().any(|map| {
-                            map.contains(f.address)
-                                && map
-                                    .pathname
-                                    .as_deref()
-                                    .is_some_and(|p| p.contains("libc.so"))
+                        .filter(|f| f.symbol.as_deref() == Some("shared_recurse"))
+                        .count()
+                        >= 13
+                        && sample
+                            .call_stack
+                            .iter()
+                            .any(|f| f.symbol.as_deref() == Some("main"))
+                        && sample.call_stack.iter().any(|f| {
+                            maps.iter().any(|map| {
+                                map.contains(f.address)
+                                    && map
+                                        .pathname
+                                        .as_deref()
+                                        .is_some_and(|p| p.contains("libc.so"))
+                            })
                         })
-                    })
-            })
-        });
-        target.assert_detached();
+                })
+            });
+            target.assert_detached();
+        }
     }
 
     #[test]
     fn live_threads_churn_sleep_and_exit() {
         let mut target = TestTarget::new("threads");
-        if !perf_available(target.id.pid) {
-            return;
-        }
-        let maps = process::maps::read_maps(target.id.pid).unwrap();
-        let mut sampler = Sampler::new(target.id);
-        poll_until(&mut sampler, &maps, |s| {
-            s.latest().iter().filter(|t| t.sampled_at.is_some()).count() >= 4
-        });
-        let main = sampler
-            .latest()
-            .into_iter()
-            .find(|t| t.tid == target.id.pid)
-            .unwrap();
-        // A main already sleeping can initially have no sample; busy workers continue.
-        let worker = sampler
-            .latest()
-            .into_iter()
-            .find(|t| t.sampled_at.is_some())
-            .unwrap();
-        poll_until(&mut sampler, &maps, |s| {
-            s.latest()
-                .iter()
-                .any(|t| t.tid == worker.tid && t.sampled_at > worker.sampled_at)
-        });
-        let sleeping = sampler
-            .latest()
-            .into_iter()
-            .find(|t| t.tid == main.tid)
-            .unwrap();
-        if sleeping.sampled_at != main.sampled_at {
-            assert!(matches!(
-                sleeping.sample_source,
-                Some(SampleSource::ContextSwitch { .. })
-            ));
-        }
-        // Short-lived TIDs are removed, and newly created TIDs get their own event.
-        poll_until(&mut sampler, &maps, |s| s.threads.len() == 7);
-        let old_tids: BTreeSet<_> = sampler.threads.keys().copied().collect();
-        poll_until(&mut sampler, &maps, |s| {
-            old_tids.iter().any(|tid| !s.threads.contains_key(tid))
-                && s.threads.keys().any(|tid| !old_tids.contains(tid))
-        });
-        assert!(sampler.threads.len() <= 7);
-        let sleeper_tid = *sampler
-            .threads
-            .keys()
-            .find(|tid| {
-                std::fs::read_to_string(format!("/proc/{}/task/{tid}/comm", target.id.pid))
-                    .is_ok_and(|name| name.trim() == "procinsh-sleep")
-            })
-            .unwrap();
-        assert_eq!(unsafe { libc::kill(target.id.pid, libc::SIGUSR1) }, 0);
-        std::thread::sleep(Duration::from_millis(300));
-        sampler.poll(&maps).unwrap();
-        let sleeping_at = sampler.threads[&sleeper_tid].latest.sampled_at;
-        assert!(sleeping_at.is_some());
-        let busy_at = sampler.threads[&worker.tid].latest.sampled_at;
-        std::thread::sleep(Duration::from_millis(400));
-        sampler.poll(&maps).unwrap();
-        let sleeper = sampler
-            .latest()
-            .into_iter()
-            .find(|t| t.tid == sleeper_tid)
-            .unwrap();
-        assert_eq!(sleeper.sampled_at, sleeping_at);
-        assert!(sleeper.sample_age_ms.unwrap() >= 400);
-        assert!(
-            sampler
+        if perf_available(target.id.pid) {
+            let maps = process::maps::read_maps(target.id.pid).unwrap();
+            let mut sampler = Sampler::new(target.id);
+            poll_until(&mut sampler, &maps, |s| {
+                s.latest().iter().filter(|t| t.sampled_at.is_some()).count() >= 4
+            });
+            let main = sampler
                 .latest()
-                .iter()
-                .any(|t| t.tid != sleeper_tid && t.sampled_at > busy_at)
-        );
-        target.assert_detached();
-        let stale = ProcessId {
-            start_time_ticks: target.id.start_time_ticks + 1,
-            ..target.id
-        };
-        assert!(Sampler::new(stale).poll(&maps).is_err());
-        target.child.kill().unwrap();
-        target.child.wait().unwrap();
-        assert!(sampler.poll(&maps).is_err());
-        drop(sampler);
+                .into_iter()
+                .find(|t| t.tid == target.id.pid)
+                .unwrap();
+            // A main already sleeping can initially have no sample; busy workers continue.
+            let worker = sampler
+                .latest()
+                .into_iter()
+                .find(|t| t.sampled_at.is_some())
+                .unwrap();
+            poll_until(&mut sampler, &maps, |s| {
+                s.latest()
+                    .iter()
+                    .any(|t| t.tid == worker.tid && t.sampled_at > worker.sampled_at)
+            });
+            let sleeping = sampler
+                .latest()
+                .into_iter()
+                .find(|t| t.tid == main.tid)
+                .unwrap();
+            if sleeping.sampled_at != main.sampled_at {
+                assert!(matches!(
+                    sleeping.sample_source,
+                    Some(SampleSource::ContextSwitch { .. })
+                ));
+            }
+            // Short-lived TIDs are removed, and newly created TIDs get their own event.
+            poll_until(&mut sampler, &maps, |s| s.threads.len() == 7);
+            let old_tids: BTreeSet<_> = sampler.threads.keys().copied().collect();
+            poll_until(&mut sampler, &maps, |s| {
+                old_tids.iter().any(|tid| !s.threads.contains_key(tid))
+                    && s.threads.keys().any(|tid| !old_tids.contains(tid))
+            });
+            assert!(sampler.threads.len() <= 7);
+            let sleeper_tid = *sampler
+                .threads
+                .keys()
+                .find(|tid| {
+                    std::fs::read_to_string(format!("/proc/{}/task/{tid}/comm", target.id.pid))
+                        .is_ok_and(|name| name.trim() == "procinsh-sleep")
+                })
+                .unwrap();
+            assert_eq!(unsafe { libc::kill(target.id.pid, libc::SIGUSR1) }, 0);
+            std::thread::sleep(Duration::from_millis(300));
+            sampler.poll(&maps).unwrap();
+            let sleeping_at = sampler.threads[&sleeper_tid].latest.sampled_at;
+            assert!(sleeping_at.is_some());
+            let busy_at = sampler.threads[&worker.tid].latest.sampled_at;
+            std::thread::sleep(Duration::from_millis(400));
+            sampler.poll(&maps).unwrap();
+            let sleeper = sampler
+                .latest()
+                .into_iter()
+                .find(|t| t.tid == sleeper_tid)
+                .unwrap();
+            assert_eq!(sleeper.sampled_at, sleeping_at);
+            assert!(sleeper.sample_age_ms.unwrap() >= 400);
+            assert!(
+                sampler
+                    .latest()
+                    .iter()
+                    .any(|t| t.tid != sleeper_tid && t.sampled_at > busy_at)
+            );
+            target.assert_detached();
+            let stale = ProcessId {
+                start_time_ticks: target.id.start_time_ticks + 1,
+                ..target.id
+            };
+            assert!(Sampler::new(stale).poll(&maps).is_err());
+            target.child.kill().unwrap();
+            target.child.wait().unwrap();
+            assert!(sampler.poll(&maps).is_err());
+            drop(sampler);
+        }
     }
 }
