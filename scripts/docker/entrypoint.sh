@@ -78,7 +78,10 @@ else:
 stream = Stream(base + '/api/system/events')
 reader = None
 try:
+    deadline = time.monotonic() + 20
     for line in stream:
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Live sensors did not become ready within 20 seconds")
         if not line.startswith(b'data: '):
             continue
         status = json.loads(line[6:]).get('status', {})

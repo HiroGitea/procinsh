@@ -408,15 +408,18 @@ try {
   await evaluate(
     "import(window.spaceTestModule).then(m=>m.selectProcess('424242:7',true))",
   );
-  await delay(100);
-  const hoverText = await evaluate<string>(`(()=>{
-    const canvas=document.getElementById('world'),hover=document.getElementById('hover');
-    for(let y=80;y<innerHeight;y+=12) for(let x=0;x<innerWidth;x+=12){
-      canvas.dispatchEvent(new PointerEvent('pointermove',{clientX:x,clientY:y}));
-      if(!hover.hidden&&hover.textContent.includes('cpu-glow-test'))return hover.textContent;
-    }
-    return null;
-  })()`);
+  const hoverText = await until(
+    () =>
+      evaluate<string | null>(`(()=>{
+      const canvas=document.getElementById('world'),hover=document.getElementById('hover');
+      for(let y=80;y<innerHeight;y+=12) for(let x=0;x<innerWidth;x+=12){
+        canvas.dispatchEvent(new PointerEvent('pointermove',{clientX:x,clientY:y}));
+        if(!hover.hidden&&hover.textContent.includes('cpu-glow-test'))return hover.textContent;
+      }
+      return null;
+    })()`),
+    "process hover retains name and PID",
+  );
   assert.ok(hoverText, "process hover retains name and PID");
   assert.match(hoverText, /424242/);
   await delay(300);
