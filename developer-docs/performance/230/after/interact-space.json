@@ -1,11 +1,11 @@
 {
   "scenario": "interact-space",
   "fixture": true,
-  "url": "http://127.0.0.1:40381/space",
+  "url": "http://127.0.0.1:44381/space",
   "releaseBackend": "http://127.0.0.1:9110",
-  "collectedAt": "2026-10-17T11:56:15.967Z",
-  "commit": "e9038e641a38b558a17dfc4ad8a8a4980850f68f",
-  "dirty": "M developer-docs/DEVELOPMENT.md\n?? developer-docs/FRONTEND_PROFILING.md\n?? developer-docs/performance/",
+  "collectedAt": "2026-10-17T12:09:57.661Z",
+  "commit": "271a33aa941328dbd9ab2f95c076b8f5fbcda717",
+  "dirty": "",
   "hardware": {
     "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
     "logicalCpus": 32,
@@ -17,7 +17,7 @@
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
     "V8-Version": "14.1.146.11",
     "WebKit-Version": "537.36 (@b2ec783d2b51a396804a4e3e33f6586be09a4e2d)",
-    "webSocketDebuggerUrl": "ws://127.0.0.1:43765/devtools/browser/81a1715b-596f-47e1-a9a0-d6b37435cb2f"
+    "webSocketDebuggerUrl": "ws://127.0.0.1:35439/devtools/browser/a1450007-65c1-4af8-86c6-a4ec37e60d40"
   },
   "gpu": {
     "devices": [
@@ -46,7 +46,7 @@
       "glWsVersion": "1.5 (ANGLE 2.1.26018 git hash: bb55ea10fcef)",
       "hardwareSupportsVulkan": false,
       "inProcessGpu": false,
-      "initializationTime": 0.234368,
+      "initializationTime": 0.262325,
       "isAsan": false,
       "isClangCoverage": false,
       "jpegDecodeAcceleratorSupported": false,
@@ -103,7 +103,7 @@
     "--use-gl=angle",
     "--use-angle=gl-egl",
     "--remote-debugging-port=0",
-    "--user-data-dir=/tmp/procinsh-profile-zqbpL2",
+    "--user-data-dir=/tmp/procinsh-profile-EhOH8m",
     "about:blank"
   ],
   "counts": {
@@ -111,14 +111,16 @@
     "maps": 4096,
     "relations": 255
   },
-  "elapsedSeconds": 15.034543756000003,
+  "elapsedSeconds": 15.014270915000004,
   "beforeState": {
     "hidden": false,
     "width": 1440,
     "height": 1100,
     "dpr": 1,
-    "fps": "59 FPS · 100% render",
-    "heap": 21589751
+    "fps": "60 FPS · 100% render",
+    "heap": 13077794,
+    "buildRevision": "https://github.com/akawashiro/procinsh/commit/271a33aa941328dbd9ab2f95c076b8f5fbcda717",
+    "buildLabel": "271a33a"
   },
   "afterState": {
     "hidden": false,
@@ -126,24 +128,26 @@
     "height": 1100,
     "dpr": 1,
     "fps": "60 FPS · 100% render",
-    "heap": 14563861
+    "heap": 38631588,
+    "buildRevision": "https://github.com/akawashiro/procinsh/commit/271a33aa941328dbd9ab2f95c076b8f5fbcda717",
+    "buildLabel": "271a33a"
   },
   "processCpuPercentOfOneCore": {
-    "browser": 1.7293507819034344,
-    "renderer": 18.2912101932094,
-    "GPU": 20.15358795833618,
-    "network.mojom.NetworkService": 0.13302698322334122,
+    "browser": 1.731685817259678,
+    "renderer": 17.450064773924453,
+    "GPU": 19.448163793839463,
+    "network.mojom.NetworkService": 0.1332066013276673,
     "storage.mojom.StorageService": 0
   },
-  "taskBusyPercent": 11.54373573396516,
-  "scriptSeconds": 1.3111410000000001,
-  "layoutSeconds": 0.0015080000000000007,
+  "taskBusyPercent": 11.244482063483527,
+  "scriptSeconds": 1.279211,
+  "layoutSeconds": 0.001268,
   "animationFrames": {
-    "count": 902,
-    "totalMs": 600.3710000000001,
-    "p50Ms": 0.528,
-    "p95Ms": 0.786,
-    "maxMs": 8.871
+    "count": 900,
+    "totalMs": 612.6899999999996,
+    "p50Ms": 0.536,
+    "p95Ms": 0.856,
+    "maxMs": 8.811
   },
   "longTasks": {
     "count": 0,
@@ -153,31 +157,31 @@
     "maxMs": 0
   },
   "gc": {
-    "count": 24,
-    "totalMs": 36.544,
-    "p50Ms": 1.51,
-    "p95Ms": 2.119,
-    "maxMs": 2.547
+    "count": 20,
+    "totalMs": 29.487000000000002,
+    "p50Ms": 1.459,
+    "p95Ms": 1.965,
+    "maxMs": 1.965
   },
   "layout": {
-    "count": 2,
-    "totalMs": 1.3039999999999998,
-    "p50Ms": 1.273,
-    "p95Ms": 1.273,
-    "maxMs": 1.273
+    "count": 4,
+    "totalMs": 1.2469999999999999,
+    "p50Ms": 0.112,
+    "p95Ms": 1.007,
+    "maxMs": 1.007
   },
   "paint": {
-    "count": 5,
-    "totalMs": 0.198,
-    "p50Ms": 0.042,
-    "p95Ms": 0.082,
-    "maxMs": 0.082
+    "count": 7,
+    "totalMs": 0.21999999999999997,
+    "p50Ms": 0.032,
+    "p95Ms": 0.052,
+    "maxMs": 0.052
   },
   "beforeMetrics": {
     "metrics": [
       {
         "name": "Timestamp",
-        "value": 967547.77905
+        "value": 968369.523286
       },
       {
         "name": "AudioHandlers",
@@ -253,7 +257,7 @@
       },
       {
         "name": "ArrayBufferContents",
-        "value": 123
+        "value": 68
       },
       {
         "name": "LayoutCount",
@@ -265,19 +269,19 @@
       },
       {
         "name": "LayoutDuration",
-        "value": 0.012025
+        "value": 0.010974
       },
       {
         "name": "RecalcStyleDuration",
-        "value": 0.005553
+        "value": 0.005773
       },
       {
         "name": "DevToolsCommandDuration",
-        "value": 0.001099
+        "value": 0.001288
       },
       {
         "name": "ScriptDuration",
-        "value": 0.747077
+        "value": 0.745114
       },
       {
         "name": "V8CompileDuration",
@@ -285,39 +289,39 @@
       },
       {
         "name": "TaskDuration",
-        "value": 0.855984
+        "value": 0.840294
       },
       {
         "name": "TaskOtherDuration",
-        "value": 0.09023
+        "value": 0.077145
       },
       {
         "name": "ThreadTime",
-        "value": 0.442317
+        "value": 0.379932
       },
       {
         "name": "ProcessTime",
-        "value": 0.78
+        "value": 0.72
       },
       {
         "name": "JSHeapUsedSize",
-        "value": 17220500
+        "value": 8114068
       },
       {
         "name": "JSHeapTotalSize",
-        "value": 45449216
+        "value": 43778048
       },
       {
         "name": "FirstMeaningfulPaint",
-        "value": 967541.564852
+        "value": 968363.254514
       },
       {
         "name": "DomContentLoaded",
-        "value": 967541.735823
+        "value": 968363.484162
       },
       {
         "name": "NavigationStart",
-        "value": 967516.655987
+        "value": 968338.381387
       }
     ]
   },
@@ -325,7 +329,7 @@
     "metrics": [
       {
         "name": "Timestamp",
-        "value": 967562.876835
+        "value": 968384.593485
       },
       {
         "name": "AudioHandlers",
@@ -401,31 +405,31 @@
       },
       {
         "name": "ArrayBufferContents",
-        "value": 68
+        "value": 123
       },
       {
         "name": "LayoutCount",
-        "value": 8
+        "value": 9
       },
       {
         "name": "RecalcStyleCount",
-        "value": 662
+        "value": 598
       },
       {
         "name": "LayoutDuration",
-        "value": 0.013533
+        "value": 0.012242
       },
       {
         "name": "RecalcStyleDuration",
-        "value": 0.012664
+        "value": 0.012794
       },
       {
         "name": "DevToolsCommandDuration",
-        "value": 0.046561
+        "value": 0.039684
       },
       {
         "name": "ScriptDuration",
-        "value": 2.058218
+        "value": 2.024325
       },
       {
         "name": "V8CompileDuration",
@@ -433,39 +437,39 @@
       },
       {
         "name": "TaskDuration",
-        "value": 2.591532
+        "value": 2.528571
       },
       {
         "name": "TaskOtherDuration",
-        "value": 0.460556
+        "value": 0.439526
       },
       {
         "name": "ThreadTime",
-        "value": 2.293411
+        "value": 2.186397
       },
       {
         "name": "ProcessTime",
-        "value": 3.51
+        "value": 3.33
       },
       {
         "name": "JSHeapUsedSize",
-        "value": 10388536
+        "value": 34253644
       },
       {
         "name": "JSHeapTotalSize",
-        "value": 62128128
+        "value": 68067328
       },
       {
         "name": "FirstMeaningfulPaint",
-        "value": 967541.564852
+        "value": 968363.254514
       },
       {
         "name": "DomContentLoaded",
-        "value": 967541.735823
+        "value": 968363.484162
       },
       {
         "name": "NavigationStart",
-        "value": 967516.655987
+        "value": 968338.381387
       }
     ]
   },
@@ -473,32 +477,32 @@
     "processInfo": [
       {
         "type": "browser",
-        "id": 3452391,
-        "cpuTime": 1.35
+        "id": 3638357,
+        "cpuTime": 1.26
       },
       {
         "type": "renderer",
-        "id": 3452466,
-        "cpuTime": 0
+        "id": 3638433,
+        "cpuTime": 0.01
       },
       {
         "type": "renderer",
-        "id": 3452452,
-        "cpuTime": 0.78
+        "id": 3638420,
+        "cpuTime": 0.72
       },
       {
         "type": "GPU",
-        "id": 3452427,
-        "cpuTime": 3.5
+        "id": 3638393,
+        "cpuTime": 3.3
       },
       {
         "type": "network.mojom.NetworkService",
-        "id": 3452429,
-        "cpuTime": 0.35
+        "id": 3638395,
+        "cpuTime": 0.34
       },
       {
         "type": "storage.mojom.StorageService",
-        "id": 3452431,
+        "id": 3638397,
         "cpuTime": 0
       }
     ]
@@ -507,44 +511,44 @@
     "processInfo": [
       {
         "type": "browser",
-        "id": 3452391,
-        "cpuTime": 1.61
+        "id": 3638357,
+        "cpuTime": 1.52
       },
       {
         "type": "renderer",
-        "id": 3452466,
+        "id": 3638433,
         "cpuTime": 0.02
       },
       {
         "type": "renderer",
-        "id": 3452452,
-        "cpuTime": 3.51
+        "id": 3638420,
+        "cpuTime": 3.33
       },
       {
         "type": "GPU",
-        "id": 3452427,
-        "cpuTime": 6.53
+        "id": 3638393,
+        "cpuTime": 6.22
       },
       {
         "type": "network.mojom.NetworkService",
-        "id": 3452429,
-        "cpuTime": 0.37
+        "id": 3638395,
+        "cpuTime": 0.36
       },
       {
         "type": "storage.mojom.StorageService",
-        "id": 3452431,
+        "id": 3638397,
         "cpuTime": 0
       },
       {
         "type": "tracing.mojom.TracingService",
-        "id": 3452857,
+        "id": 3644076,
         "cpuTime": 0.01
       }
     ]
   },
   "topSelf": [
     {
-      "milliseconds": 13364.527,
+      "milliseconds": 13374.424,
       "frame": {
         "functionName": "(idle)",
         "scriptId": "0",
@@ -554,7 +558,7 @@
       }
     },
     {
-      "milliseconds": 350.438,
+      "milliseconds": 371.899,
       "frame": {
         "functionName": "(program)",
         "scriptId": "0",
@@ -564,25 +568,25 @@
       }
     },
     {
-      "milliseconds": 125.588,
+      "milliseconds": 110.181,
       "frame": {
         "functionName": "S",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 3831,
-        "columnNumber": 81197
+        "columnNumber": 81277
       },
       "source": {
         "generatedLine": 3831,
-        "generatedColumn": 81195,
+        "generatedColumn": 81275,
         "originalSource": "../../src/space/renderer.ts",
-        "originalLine": 252,
+        "originalLine": 259,
         "originalColumn": 10,
         "name": "add"
       }
     },
     {
-      "milliseconds": 94.221,
+      "milliseconds": 100.683,
       "frame": {
         "functionName": "measureText",
         "scriptId": "0",
@@ -592,46 +596,29 @@
       }
     },
     {
-      "milliseconds": 71.042,
-      "frame": {
-        "functionName": "multiplyMatrices",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 0,
-        "columnNumber": 57332
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 57316,
-        "originalSource": "../../node_modules/three/build/three.core.js",
-        "originalLine": 11842,
-        "originalColumn": 1
-      }
-    },
-    {
-      "milliseconds": 64.562,
+      "milliseconds": 74.166,
       "frame": {
         "functionName": "re",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 3831,
-        "columnNumber": 80827
+        "columnNumber": 80907
       },
       "source": {
         "generatedLine": 3831,
-        "generatedColumn": 80825,
+        "generatedColumn": 80905,
         "originalSource": "../../src/space/renderer.ts",
-        "originalLine": 224,
+        "originalLine": 231,
         "originalColumn": 11,
         "name": "drawLabels"
       }
     },
     {
-      "milliseconds": 57.945,
+      "milliseconds": 58.228,
       "frame": {
         "functionName": "raycast",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 39,
         "columnNumber": 22232
       },
@@ -644,7 +631,24 @@
       }
     },
     {
-      "milliseconds": 53.007,
+      "milliseconds": 58.18,
+      "frame": {
+        "functionName": "multiplyMatrices",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 0,
+        "columnNumber": 57332
+      },
+      "source": {
+        "generatedLine": 0,
+        "generatedColumn": 57316,
+        "originalSource": "../../node_modules/three/build/three.core.js",
+        "originalLine": 11842,
+        "originalColumn": 1
+      }
+    },
+    {
+      "milliseconds": 41.529,
       "frame": {
         "functionName": "(garbage collector)",
         "scriptId": "0",
@@ -654,38 +658,11 @@
       }
     },
     {
-      "milliseconds": 36.204,
-      "frame": {
-        "functionName": "getProgramInfoLog",
-        "scriptId": "0",
-        "url": "",
-        "lineNumber": -1,
-        "columnNumber": -1
-      }
-    },
-    {
-      "milliseconds": 34.816,
-      "frame": {
-        "functionName": "distanceSqToSegment",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 0,
-        "columnNumber": 51548
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 51529,
-        "originalSource": "../../node_modules/three/build/three.core.js",
-        "originalLine": 10833,
-        "originalColumn": 1
-      }
-    },
-    {
-      "milliseconds": 33.762,
+      "milliseconds": 37.042,
       "frame": {
         "functionName": "",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 3831,
         "columnNumber": 66810
       },
@@ -698,55 +675,11 @@
       }
     },
     {
-      "milliseconds": 31.748,
-      "frame": {
-        "functionName": "strokeText",
-        "scriptId": "0",
-        "url": "",
-        "lineNumber": -1,
-        "columnNumber": -1
-      }
-    },
-    {
-      "milliseconds": 29.469,
-      "frame": {
-        "functionName": "length",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 0,
-        "columnNumber": 18446
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 18440,
-        "originalSource": "../../node_modules/three/build/three.core.js",
-        "originalLine": 5097,
-        "originalColumn": 1
-      }
-    },
-    {
-      "milliseconds": 27.49,
-      "frame": {
-        "functionName": "fromArray",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 0,
-        "columnNumber": 62698
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 62689,
-        "originalSource": "../../node_modules/three/build/three.core.js",
-        "originalLine": 12543,
-        "originalColumn": 1
-      }
-    },
-    {
-      "milliseconds": 25.414,
+      "milliseconds": 32.845,
       "frame": {
         "functionName": "j",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 3831,
         "columnNumber": 71165
       },
@@ -760,11 +693,82 @@
       }
     },
     {
-      "milliseconds": 24.314,
+      "milliseconds": 32.071,
+      "frame": {
+        "functionName": "distanceSqToSegment",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 0,
+        "columnNumber": 51548
+      },
+      "source": {
+        "generatedLine": 0,
+        "generatedColumn": 51529,
+        "originalSource": "../../node_modules/three/build/three.core.js",
+        "originalLine": 10833,
+        "originalColumn": 1
+      }
+    },
+    {
+      "milliseconds": 29.632,
+      "frame": {
+        "functionName": "length",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 0,
+        "columnNumber": 18446
+      },
+      "source": {
+        "generatedLine": 0,
+        "generatedColumn": 18440,
+        "originalSource": "../../node_modules/three/build/three.core.js",
+        "originalLine": 5097,
+        "originalColumn": 1
+      }
+    },
+    {
+      "milliseconds": 29.629,
+      "frame": {
+        "functionName": "applyMatrix4",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 0,
+        "columnNumber": 16519
+      },
+      "source": {
+        "generatedLine": 0,
+        "generatedColumn": 16507,
+        "originalSource": "../../node_modules/three/build/three.core.js",
+        "originalLine": 4776,
+        "originalColumn": 1
+      }
+    },
+    {
+      "milliseconds": 27.527,
+      "frame": {
+        "functionName": "strokeText",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    },
+    {
+      "milliseconds": 25.491,
+      "frame": {
+        "functionName": "getProgramInfoLog",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    },
+    {
+      "milliseconds": 23.265,
       "frame": {
         "functionName": "dot",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 0,
         "columnNumber": 18336
       },
@@ -777,11 +781,28 @@
       }
     },
     {
-      "milliseconds": 22.271,
+      "milliseconds": 19.04,
+      "frame": {
+        "functionName": "fromArray",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 0,
+        "columnNumber": 62698
+      },
+      "source": {
+        "generatedLine": 0,
+        "generatedColumn": 62689,
+        "originalSource": "../../node_modules/three/build/three.core.js",
+        "originalLine": 12543,
+        "originalColumn": 1
+      }
+    },
+    {
+      "milliseconds": 19.02,
       "frame": {
         "functionName": "C",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 3831,
         "columnNumber": 69572
       },
@@ -795,56 +816,11 @@
       }
     },
     {
-      "milliseconds": 20.347,
-      "frame": {
-        "functionName": "se",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 3831,
-        "columnNumber": 84906
-      },
-      "source": {
-        "generatedLine": 3831,
-        "generatedColumn": 84904,
-        "originalSource": "../../src/space/renderer.ts",
-        "originalLine": 477,
-        "originalColumn": 11,
-        "name": "animate"
-      }
-    },
-    {
-      "milliseconds": 20.084,
-      "frame": {
-        "functionName": "applyMatrix4",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 0,
-        "columnNumber": 16519
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 16507,
-        "originalSource": "../../node_modules/three/build/three.core.js",
-        "originalLine": 4776,
-        "originalColumn": 1
-      }
-    },
-    {
-      "milliseconds": 17.963,
-      "frame": {
-        "functionName": "shaderSource",
-        "scriptId": "0",
-        "url": "",
-        "lineNumber": -1,
-        "columnNumber": -1
-      }
-    },
-    {
-      "milliseconds": 17.195,
+      "milliseconds": 16.917,
       "frame": {
         "functionName": "raycast",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 0,
         "columnNumber": 118725
       },
@@ -857,7 +833,24 @@
       }
     },
     {
-      "milliseconds": 15.872,
+      "milliseconds": 15.914,
+      "frame": {
+        "functionName": "",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 3831,
+        "columnNumber": 82323
+      },
+      "source": {
+        "generatedLine": 3831,
+        "generatedColumn": 82323,
+        "originalSource": "../../src/space/renderer.ts",
+        "originalLine": 332,
+        "originalColumn": 11
+      }
+    },
+    {
+      "milliseconds": 14.822,
       "frame": {
         "functionName": "fillText",
         "scriptId": "0",
@@ -867,89 +860,11 @@
       }
     },
     {
-      "milliseconds": 13.755,
-      "frame": {
-        "functionName": "multiplyScalar",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 0,
-        "columnNumber": 16030
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 16016,
-        "originalSource": "../../node_modules/three/build/three.core.js",
-        "originalLine": 4685,
-        "originalColumn": 1
-      }
-    },
-    {
-      "milliseconds": 12.717,
-      "frame": {
-        "functionName": "",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 3831,
-        "columnNumber": 82243
-      },
-      "source": {
-        "generatedLine": 3831,
-        "generatedColumn": 82243,
-        "originalSource": "../../src/space/renderer.ts",
-        "originalLine": 325,
-        "originalColumn": 11
-      }
-    },
-    {
-      "milliseconds": 11.692,
-      "frame": {
-        "functionName": "getProgramInfoLog",
-        "scriptId": "0",
-        "url": "",
-        "lineNumber": -1,
-        "columnNumber": -1
-      }
-    },
-    {
-      "milliseconds": 11.658,
-      "frame": {
-        "functionName": "raycast",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 39,
-        "columnNumber": 46356
-      },
-      "source": {
-        "generatedLine": 39,
-        "generatedColumn": 46349,
-        "originalSource": "../../node_modules/three/build/three.core.js",
-        "originalLine": 28780,
-        "originalColumn": 1
-      }
-    },
-    {
-      "milliseconds": 11.639,
-      "frame": {
-        "functionName": "distanceToSquared",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
-        "lineNumber": 0,
-        "columnNumber": 19517
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 19500,
-        "originalSource": "../../node_modules/three/build/three.core.js",
-        "originalLine": 5295,
-        "originalColumn": 1
-      }
-    },
-    {
-      "milliseconds": 10.75,
+      "milliseconds": 13.621,
       "frame": {
         "functionName": "Ro",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 39,
         "columnNumber": 47548
       },
@@ -963,11 +878,66 @@
       }
     },
     {
-      "milliseconds": 10.604,
+      "milliseconds": 12.77,
+      "frame": {
+        "functionName": "getProgramInfoLog",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    },
+    {
+      "milliseconds": 12.729,
+      "frame": {
+        "functionName": "renderBufferDirect",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 3831,
+        "columnNumber": 24760
+      },
+      "source": {
+        "generatedLine": 3831,
+        "generatedColumn": 24752,
+        "originalSource": "../../node_modules/three/build/three.module.js",
+        "originalLine": 15934,
+        "originalColumn": 28
+      }
+    },
+    {
+      "milliseconds": 12.722,
+      "frame": {
+        "functionName": "st",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 3831,
+        "columnNumber": 35561
+      },
+      "source": {
+        "generatedLine": 3831,
+        "generatedColumn": 35559,
+        "originalSource": "../../node_modules/three/build/three.module.js",
+        "originalLine": 17020,
+        "originalColumn": 11,
+        "name": "setProgram"
+      }
+    },
+    {
+      "milliseconds": 12.693,
+      "frame": {
+        "functionName": "shaderSource",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    },
+    {
+      "milliseconds": 11.642,
       "frame": {
         "functionName": "copy",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 0,
         "columnNumber": 15466
       },
@@ -980,20 +950,54 @@
       }
     },
     {
-      "milliseconds": 9.54,
+      "milliseconds": 10.582,
       "frame": {
-        "functionName": "g",
+        "functionName": "",
         "scriptId": "7",
-        "url": "http://127.0.0.1:40381/assets/space-CHVzDYEW.js",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
         "lineNumber": 3831,
-        "columnNumber": 111154
+        "columnNumber": 64479
       },
       "source": {
         "generatedLine": 3831,
-        "generatedColumn": 111154,
-        "originalSource": "../../src/space/selection.ts",
-        "originalLine": 173,
-        "originalColumn": 23
+        "generatedColumn": 64479,
+        "originalSource": "../../src/space/data.ts",
+        "originalLine": 486,
+        "originalColumn": 46
+      }
+    },
+    {
+      "milliseconds": 10.581,
+      "frame": {
+        "functionName": "addScaledVector",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 0,
+        "columnNumber": 15713
+      },
+      "source": {
+        "generatedLine": 0,
+        "generatedColumn": 15698,
+        "originalSource": "../../node_modules/three/build/three.core.js",
+        "originalLine": 4604,
+        "originalColumn": 1
+      }
+    },
+    {
+      "milliseconds": 10.535,
+      "frame": {
+        "functionName": "divideScalar",
+        "scriptId": "7",
+        "url": "http://127.0.0.1:44381/assets/space-M3w9yQB0.js",
+        "lineNumber": 0,
+        "columnNumber": 17348
+      },
+      "source": {
+        "generatedLine": 0,
+        "generatedColumn": 17336,
+        "originalSource": "../../node_modules/three/build/three.core.js",
+        "originalLine": 4889,
+        "originalColumn": 1
       }
     }
   ],

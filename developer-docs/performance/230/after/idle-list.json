@@ -1,11 +1,11 @@
 {
   "scenario": "idle-list",
   "fixture": true,
-  "url": "http://127.0.0.1:44603/list",
+  "url": "http://127.0.0.1:44535/list",
   "releaseBackend": "http://127.0.0.1:9110",
-  "collectedAt": "2026-10-17T11:57:48.824Z",
-  "commit": "e9038e641a38b558a17dfc4ad8a8a4980850f68f",
-  "dirty": "M developer-docs/DEVELOPMENT.md\n M web/scripts/frontend-profile.ts\n?? developer-docs/FRONTEND_PROFILING.md\n?? developer-docs/performance/",
+  "collectedAt": "2026-10-17T12:11:30.654Z",
+  "commit": "271a33aa941328dbd9ab2f95c076b8f5fbcda717",
+  "dirty": "",
   "hardware": {
     "cpu": "AMD Ryzen 9 5950X 16-Core Processor",
     "logicalCpus": 32,
@@ -17,7 +17,7 @@
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
     "V8-Version": "14.1.146.11",
     "WebKit-Version": "537.36 (@b2ec783d2b51a396804a4e3e33f6586be09a4e2d)",
-    "webSocketDebuggerUrl": "ws://127.0.0.1:44863/devtools/browser/b1796e05-704f-4195-84a8-0d48488bc102"
+    "webSocketDebuggerUrl": "ws://127.0.0.1:38535/devtools/browser/9d282a22-970e-42ed-89da-1e19cd68da18"
   },
   "gpu": {
     "devices": [
@@ -46,7 +46,7 @@
       "glWsVersion": "1.5 (ANGLE 2.1.26018 git hash: bb55ea10fcef)",
       "hardwareSupportsVulkan": false,
       "inProcessGpu": false,
-      "initializationTime": 0.236135,
+      "initializationTime": 0.235036,
       "isAsan": false,
       "isClangCoverage": false,
       "jpegDecodeAcceleratorSupported": false,
@@ -103,7 +103,7 @@
     "--use-gl=angle",
     "--use-angle=gl-egl",
     "--remote-debugging-port=0",
-    "--user-data-dir=/tmp/procinsh-profile-U21MMg",
+    "--user-data-dir=/tmp/procinsh-profile-njrsck",
     "about:blank"
   ],
   "counts": {
@@ -111,35 +111,35 @@
     "maps": 4096,
     "relations": 255
   },
-  "elapsedSeconds": 14.99998875,
+  "elapsedSeconds": 15.000722615000003,
   "beforeState": {
     "hidden": false,
     "width": 1440,
     "height": 1100,
     "dpr": 1,
     "heap": 826009,
-    "buildRevision": "https://github.com/akawashiro/procinsh/commit/e9038e641a38b558a17dfc4ad8a8a4980850f68f",
-    "buildLabel": "e9038e6-dirty"
+    "buildRevision": "https://github.com/akawashiro/procinsh/commit/271a33aa941328dbd9ab2f95c076b8f5fbcda717",
+    "buildLabel": "271a33a"
   },
   "afterState": {
     "hidden": false,
     "width": 1440,
     "height": 1100,
     "dpr": 1,
-    "heap": 842069,
-    "buildRevision": "https://github.com/akawashiro/procinsh/commit/e9038e641a38b558a17dfc4ad8a8a4980850f68f",
-    "buildLabel": "e9038e6-dirty"
+    "heap": 841429,
+    "buildRevision": "https://github.com/akawashiro/procinsh/commit/271a33aa941328dbd9ab2f95c076b8f5fbcda717",
+    "buildLabel": "271a33a"
   },
   "processCpuPercentOfOneCore": {
-    "browser": 0.26666686666681694,
-    "renderer": 7.20000540000405,
-    "GPU": 1.0666674666672677,
-    "network.mojom.NetworkService": 0.13333343333340808,
+    "browser": 0.333317275995774,
+    "renderer": 7.266316616707867,
+    "GPU": 0.8666249175890138,
+    "network.mojom.NetworkService": 0.19999036559746405,
     "storage.mojom.StorageService": 0
   },
-  "taskBusyPercent": 3.819982864987149,
-  "scriptSeconds": 0.0038339999999999997,
-  "layoutSeconds": 0.21550899999999998,
+  "taskBusyPercent": 3.769991716495718,
+  "scriptSeconds": 0.003502,
+  "layoutSeconds": 0.21397300000000002,
   "animationFrames": {
     "count": 0,
     "totalMs": 0,
@@ -156,30 +156,30 @@
   },
   "gc": {
     "count": 15,
-    "totalMs": 13.342000000000002,
-    "p50Ms": 0.893,
-    "p95Ms": 1.202,
-    "maxMs": 1.202
+    "totalMs": 13.651,
+    "p50Ms": 0.884,
+    "p95Ms": 1.02,
+    "maxMs": 1.02
   },
   "layout": {
     "count": 15,
-    "totalMs": 215.392,
-    "p50Ms": 14.375,
-    "p95Ms": 15.729,
-    "maxMs": 15.729
+    "totalMs": 213.852,
+    "p50Ms": 13.973,
+    "p95Ms": 16.155,
+    "maxMs": 16.155
   },
   "paint": {
     "count": 30,
-    "totalMs": 36.329,
-    "p50Ms": 1.207,
-    "p95Ms": 1.431,
-    "maxMs": 1.433
+    "totalMs": 35.534,
+    "p50Ms": 1.199,
+    "p95Ms": 1.336,
+    "maxMs": 1.385
   },
   "beforeMetrics": {
     "metrics": [
       {
         "name": "Timestamp",
-        "value": 967641.704678
+        "value": 968463.514616
       },
       {
         "name": "AudioHandlers",
@@ -267,19 +267,19 @@
       },
       {
         "name": "LayoutDuration",
-        "value": 0.109152
+        "value": 0.109373
       },
       {
         "name": "RecalcStyleDuration",
-        "value": 0.038777
+        "value": 0.038665
       },
       {
         "name": "DevToolsCommandDuration",
-        "value": 0.000522
+        "value": 0.000508
       },
       {
         "name": "ScriptDuration",
-        "value": 0.002249
+        "value": 0.002299
       },
       {
         "name": "V8CompileDuration",
@@ -287,15 +287,15 @@
       },
       {
         "name": "TaskDuration",
-        "value": 0.271975
+        "value": 0.273852
       },
       {
         "name": "TaskOtherDuration",
-        "value": 0.121275
+        "value": 0.123007
       },
       {
         "name": "ThreadTime",
-        "value": 0.255062
+        "value": 0.257266
       },
       {
         "name": "ProcessTime",
@@ -307,19 +307,19 @@
       },
       {
         "name": "JSHeapTotalSize",
-        "value": 1835008
+        "value": 1572864
       },
       {
         "name": "FirstMeaningfulPaint",
-        "value": 967636.711605
+        "value": 968458.519955
       },
       {
         "name": "DomContentLoaded",
-        "value": 967636.64115
+        "value": 968458.449191
       },
       {
         "name": "NavigationStart",
-        "value": 967611.754668
+        "value": 968433.562032
       }
     ]
   },
@@ -327,7 +327,7 @@
     "metrics": [
       {
         "name": "Timestamp",
-        "value": 967656.724417
+        "value": 968478.535055
       },
       {
         "name": "AudioHandlers",
@@ -363,7 +363,7 @@
       },
       {
         "name": "Nodes",
-        "value": 9393
+        "value": 9321
       },
       {
         "name": "Resources",
@@ -415,19 +415,19 @@
       },
       {
         "name": "LayoutDuration",
-        "value": 0.324661
+        "value": 0.323346
       },
       {
         "name": "RecalcStyleDuration",
-        "value": 0.125646
+        "value": 0.125154
       },
       {
         "name": "DevToolsCommandDuration",
-        "value": 0.00473
+        "value": 0.004879
       },
       {
         "name": "ScriptDuration",
-        "value": 0.006083
+        "value": 0.005801
       },
       {
         "name": "V8CompileDuration",
@@ -435,15 +435,15 @@
       },
       {
         "name": "TaskDuration",
-        "value": 0.844972
+        "value": 0.839378
       },
       {
         "name": "TaskOtherDuration",
-        "value": 0.383852
+        "value": 0.380198
       },
       {
         "name": "ThreadTime",
-        "value": 0.939279
+        "value": 0.934911
       },
       {
         "name": "ProcessTime",
@@ -451,23 +451,23 @@
       },
       {
         "name": "JSHeapUsedSize",
-        "value": 829460
+        "value": 828820
       },
       {
         "name": "JSHeapTotalSize",
-        "value": 1572864
+        "value": 1310720
       },
       {
         "name": "FirstMeaningfulPaint",
-        "value": 967636.711605
+        "value": 968458.519955
       },
       {
         "name": "DomContentLoaded",
-        "value": 967636.64115
+        "value": 968458.449191
       },
       {
         "name": "NavigationStart",
-        "value": 967611.754668
+        "value": 968433.562032
       }
     ]
   },
@@ -475,32 +475,32 @@
     "processInfo": [
       {
         "type": "browser",
-        "id": 3453592,
-        "cpuTime": 1.3
+        "id": 3655619,
+        "cpuTime": 1.25
       },
       {
         "type": "renderer",
-        "id": 3453669,
+        "id": 3655695,
         "cpuTime": 0.01
       },
       {
         "type": "renderer",
-        "id": 3453654,
+        "id": 3655681,
         "cpuTime": 0.39
       },
       {
         "type": "GPU",
-        "id": 3453628,
+        "id": 3655656,
         "cpuTime": 2.3
       },
       {
         "type": "network.mojom.NetworkService",
-        "id": 3453630,
+        "id": 3655658,
         "cpuTime": 0.34
       },
       {
         "type": "storage.mojom.StorageService",
-        "id": 3453632,
+        "id": 3655660,
         "cpuTime": 0
       }
     ]
@@ -509,44 +509,44 @@
     "processInfo": [
       {
         "type": "browser",
-        "id": 3453592,
-        "cpuTime": 1.34
+        "id": 3655619,
+        "cpuTime": 1.3
       },
       {
         "type": "renderer",
-        "id": 3453669,
-        "cpuTime": 0.01
+        "id": 3655695,
+        "cpuTime": 0.02
       },
       {
         "type": "renderer",
-        "id": 3453654,
+        "id": 3655681,
         "cpuTime": 1.47
       },
       {
         "type": "GPU",
-        "id": 3453628,
-        "cpuTime": 2.46
+        "id": 3655656,
+        "cpuTime": 2.43
       },
       {
         "type": "network.mojom.NetworkService",
-        "id": 3453630,
-        "cpuTime": 0.36
+        "id": 3655658,
+        "cpuTime": 0.37
       },
       {
         "type": "storage.mojom.StorageService",
-        "id": 3453632,
+        "id": 3655660,
         "cpuTime": 0
       },
       {
         "type": "tracing.mojom.TracingService",
-        "id": 3454020,
+        "id": 3661120,
         "cpuTime": 0
       }
     ]
   },
   "topSelf": [
     {
-      "milliseconds": 14442.126,
+      "milliseconds": 14444.503,
       "frame": {
         "functionName": "(idle)",
         "scriptId": "0",
@@ -556,7 +556,7 @@
       }
     },
     {
-      "milliseconds": 432.769,
+      "milliseconds": 434.884,
       "frame": {
         "functionName": "(program)",
         "scriptId": "0",
@@ -566,11 +566,11 @@
       }
     },
     {
-      "milliseconds": 50.269,
+      "milliseconds": 53.523,
       "frame": {
         "functionName": "r",
         "scriptId": "7",
-        "url": "http://127.0.0.1:44603/assets/navigation-TkGpWGpb.js",
+        "url": "http://127.0.0.1:44535/assets/navigation-TkGpWGpb.js",
         "lineNumber": 0,
         "columnNumber": 2718
       },
@@ -584,7 +584,7 @@
       }
     },
     {
-      "milliseconds": 32.828,
+      "milliseconds": 34.912,
       "frame": {
         "functionName": "replaceChildren",
         "scriptId": "0",
@@ -594,7 +594,7 @@
       }
     },
     {
-      "milliseconds": 14.822,
+      "milliseconds": 14.847,
       "frame": {
         "functionName": "(garbage collector)",
         "scriptId": "0",
@@ -604,21 +604,11 @@
       }
     },
     {
-      "milliseconds": 6.35,
-      "frame": {
-        "functionName": "createElement",
-        "scriptId": "0",
-        "url": "",
-        "lineNumber": -1,
-        "columnNumber": -1
-      }
-    },
-    {
-      "milliseconds": 5.215,
+      "milliseconds": 4.239,
       "frame": {
         "functionName": "n",
         "scriptId": "8",
-        "url": "http://127.0.0.1:44603/assets/dom-Du7YSRZg.js",
+        "url": "http://127.0.0.1:44535/assets/dom-Du7YSRZg.js",
         "lineNumber": 0,
         "columnNumber": 351
       },
@@ -632,11 +622,11 @@
       }
     },
     {
-      "milliseconds": 4.23,
+      "milliseconds": 4.231,
       "frame": {
         "functionName": "f",
         "scriptId": "6",
-        "url": "http://127.0.0.1:44603/assets/list-DseZHvNy.js",
+        "url": "http://127.0.0.1:44535/assets/list-DseZHvNy.js",
         "lineNumber": 0,
         "columnNumber": 1721
       },
@@ -650,27 +640,7 @@
       }
     },
     {
-      "milliseconds": 4.216,
-      "frame": {
-        "functionName": "URLSearchParams",
-        "scriptId": "0",
-        "url": "",
-        "lineNumber": -1,
-        "columnNumber": -1
-      }
-    },
-    {
-      "milliseconds": 3.23,
-      "frame": {
-        "functionName": "fetch",
-        "scriptId": "0",
-        "url": "",
-        "lineNumber": -1,
-        "columnNumber": -1
-      }
-    },
-    {
-      "milliseconds": 3.212,
+      "milliseconds": 4.229,
       "frame": {
         "functionName": "append",
         "scriptId": "0",
@@ -680,11 +650,41 @@
       }
     },
     {
-      "milliseconds": 2.115,
+      "milliseconds": 3.193,
+      "frame": {
+        "functionName": "append",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    },
+    {
+      "milliseconds": 3.178,
+      "frame": {
+        "functionName": "createElement",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    },
+    {
+      "milliseconds": 2.139,
+      "frame": {
+        "functionName": "toString",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
+      }
+    },
+    {
+      "milliseconds": 2.134,
       "frame": {
         "functionName": "o",
         "scriptId": "7",
-        "url": "http://127.0.0.1:44603/assets/navigation-TkGpWGpb.js",
+        "url": "http://127.0.0.1:44535/assets/navigation-TkGpWGpb.js",
         "lineNumber": 0,
         "columnNumber": 2925
       },
@@ -698,29 +698,39 @@
       }
     },
     {
-      "milliseconds": 2.094,
+      "milliseconds": 2.117,
       "frame": {
-        "functionName": "r",
-        "scriptId": "8",
-        "url": "http://127.0.0.1:44603/assets/dom-Du7YSRZg.js",
-        "lineNumber": 0,
-        "columnNumber": 459
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 457,
-        "originalSource": "../../src/shared/dom.ts",
-        "originalLine": 13,
-        "originalColumn": 13,
-        "name": "cell"
+        "functionName": "URLSearchParams",
+        "scriptId": "0",
+        "url": "",
+        "lineNumber": -1,
+        "columnNumber": -1
       }
     },
     {
-      "milliseconds": 2.093,
+      "milliseconds": 1.077,
+      "frame": {
+        "functionName": "l",
+        "scriptId": "6",
+        "url": "http://127.0.0.1:44535/assets/list-DseZHvNy.js",
+        "lineNumber": 0,
+        "columnNumber": 1132
+      },
+      "source": {
+        "generatedLine": 0,
+        "generatedColumn": 1131,
+        "originalSource": "../../src/list/search.ts",
+        "originalLine": 2,
+        "originalColumn": 9,
+        "name": "matchingProcesses"
+      }
+    },
+    {
+      "milliseconds": 1.075,
       "frame": {
         "functionName": "n",
         "scriptId": "8",
-        "url": "http://127.0.0.1:44603/assets/dom-Du7YSRZg.js",
+        "url": "http://127.0.0.1:44535/assets/dom-Du7YSRZg.js",
         "lineNumber": 0,
         "columnNumber": 351
       },
@@ -734,54 +744,27 @@
       }
     },
     {
-      "milliseconds": 2.087,
-      "frame": {
-        "functionName": "",
-        "scriptId": "6",
-        "url": "http://127.0.0.1:44603/assets/list-DseZHvNy.js",
-        "lineNumber": 0,
-        "columnNumber": 1180
-      },
-      "source": {
-        "generatedLine": 0,
-        "generatedColumn": 1180,
-        "originalSource": "../../src/list/search.ts",
-        "originalLine": 8,
-        "originalColumn": 33
-      }
-    },
-    {
-      "milliseconds": 1.062,
+      "milliseconds": 1.058,
       "frame": {
         "functionName": "t",
-        "scriptId": "7",
-        "url": "http://127.0.0.1:44603/assets/navigation-TkGpWGpb.js",
+        "scriptId": "8",
+        "url": "http://127.0.0.1:44535/assets/dom-Du7YSRZg.js",
         "lineNumber": 0,
-        "columnNumber": 2603
+        "columnNumber": 76
       },
       "source": {
         "generatedLine": 0,
-        "generatedColumn": 2601,
-        "originalSource": "../../src/shared/display.ts",
-        "originalLine": 122,
-        "originalColumn": 13,
-        "name": "num"
+        "generatedColumn": 75,
+        "originalSource": "../../src/shared/api.ts",
+        "originalLine": 4,
+        "originalColumn": 22,
+        "name": "api"
       }
     },
     {
-      "milliseconds": 1.06,
+      "milliseconds": 1.058,
       "frame": {
-        "functionName": "append",
-        "scriptId": "0",
-        "url": "",
-        "lineNumber": -1,
-        "columnNumber": -1
-      }
-    },
-    {
-      "milliseconds": 1.059,
-      "frame": {
-        "functionName": "toString",
+        "functionName": "fetch",
         "scriptId": "0",
         "url": "",
         "lineNumber": -1,
