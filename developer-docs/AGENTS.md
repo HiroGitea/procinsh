@@ -17,9 +17,9 @@
   - `./scripts/preview_bind.sh run ./scripts/dev_run.sh <PORT>` を利用できる
   - サーバーはユーザーが確認できるよう起動したままにし、使用したポートとアクセス URL を報告すること
   - 変更に対応する PR がマージされたら、その変更の確認用に起動したサーバーを停止すること
-- ptrace・perf・BPF など権限が必要な Rust 単体テストは `./scripts/dev_test.sh` で実行すること
-  - perf の検証では `PROCINSH_REQUIRE_PERF=1 ./scripts/dev_test.sh` を使い、権限不足によるスキップを禁止すること
-  - `dev_test.sh` の後ろにはテスト名フィルターや `--nocapture` などのテスト実行引数を渡せる
-  - サーバーを起動する結合テストも dev_run 経由にすること（対応するテストでは `PROCINSH_BINARY=./scripts/dev_run.sh`）。
+- ptrace・perf・BPF・network namespace を含む実機テストは `bash scripts/docker_test.sh` で Docker 内で実行すること（ホスト側の sudo 不要）
+  - 特定の Rust 単体テストを実行する場合は `./scripts/dev_test.sh <テスト名>` を利用できる
+  - 権限不足・未対応を理由にテストをスキップしないこと。失敗した場合は Docker の capabilities とホストカーネルを検査する
+  - Docker 内では `cargo test` と eBPF 実機センサーテストを実行する。
 - コメントやドキュメントでは変更履歴ではなく現在の振る舞いのみを説明すること
 - PR や issue は英語で記載すること
