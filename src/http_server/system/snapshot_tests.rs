@@ -19,7 +19,12 @@ fn netns_snapshot_resolves_multiple_namespaces_and_cross_namespace_holders() {
         // in-namespace baseline rather than silently dropping the test.
         let fixture = process::TestNetworkNamespaceTarget::new(false).unwrap();
         let snapshot = snapshot::collect(&mut Default::default());
-        assert!(snapshot.processes.iter().any(|p| p.identity == fixture.target.id));
+        assert!(
+            snapshot
+                .processes
+                .iter()
+                .any(|p| p.identity == fixture.target.id)
+        );
         return;
     }
     let first = first.unwrap();
@@ -232,7 +237,10 @@ fn socket_connection_status_is_retained_for_shared_listening_and_unconnected_fds
         if metadata_available {
             assert_eq!(relation.endpoint.connection_status, Some(expected));
         } else {
-            assert_eq!(relation.endpoint.connection_status, Some(SocketConnectionStatus::Unknown));
+            assert_eq!(
+                relation.endpoint.connection_status,
+                Some(SocketConnectionStatus::Unknown)
+            );
         }
         assert_eq!(relation.endpoint.fd_count, 2);
     }
@@ -250,7 +258,11 @@ fn socket_connection_status_is_retained_for_shared_listening_and_unconnected_fds
             .unwrap();
         assert_eq!(
             entry["connection_status"],
-            if metadata_available { expected } else { "unknown" }
+            if metadata_available {
+                expected
+            } else {
+                "unknown"
+            }
         );
     }
 }
