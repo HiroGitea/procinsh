@@ -77,7 +77,35 @@ export async function checkSpaceLabels(evaluate: Evaluate, cdp: Cdp) {
       deltaY: -100,
     });
     await until(
-      async () => (await draws()) > beforeZoom + 2,
+      async () => (await draws()) > beforeZoom,
+      "zoom redraws labels",
+    );
+    const beforeOrbit = await draws();
+    await cdp("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: 720,
+      y: 600,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    await cdp("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: 800,
+      y: 650,
+      button: "left",
+      buttons: 1,
+    });
+    await cdp("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: 800,
+      y: 650,
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+    });
+    await until(
+      async () => (await draws()) > beforeOrbit + 2,
       "camera motion and damping redraw labels",
     );
     await settle();
