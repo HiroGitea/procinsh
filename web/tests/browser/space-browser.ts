@@ -401,6 +401,9 @@ try {
     return {
       socketsAtMiddle:['unix-exact','tcp-candidate','external'].every(id=>m.connectionVisual(id).points.every(p=>p[2]>3.3&&p[2]<4.7)),
       pipeStaysLow:m.connectionVisual('pipe-shared').points.every(p=>p[2]<2.3),
+      portsAtRest:m.socketPortVisuals().length===3 && m.socketPortVisuals().every(port=>port.hasStem &&
+        ['unix-exact','external'].some(id=>{const points=m.connectionVisual(id).points;
+          return [points[0],points.at(-1)].some(point=>Math.hypot(...point.map((v,i)=>v-port.position[i]))<1e-6);})),
     };
   })()`);
   for (const [check, passed] of Object.entries(socketHeights))
@@ -423,6 +426,11 @@ try {
   assert.ok(hoverText, "process hover retains name and PID");
   assert.match(hoverText, /424242/);
   await delay(300);
+  const socketPortsPng = await cdp("Page.captureScreenshot", { format: "png" });
+  await writeFile(
+    repositoryPath("target/browser-space-socket-ports.png"),
+    Buffer.from(socketPortsPng.data, "base64"),
+  );
   assert.deepEqual(
     await evaluate(
       "window.spaceTestFetches.filter(path=>path==='/api/processes/memory'||path.startsWith('/slug-core/')||path.startsWith('/fonts/')||path.startsWith('/wasm/'))",
@@ -801,7 +809,7 @@ try {
     const {renderSystemSnapshot,renderActivity,fitScene}=await import(window.spaceTestModule);
     const nodes=Array.from({length:1000},(_,i)=>({identity:{pid:100000+i,start_time_ticks:1},name:'load-'+i,uid:99999,username:'fixture',maps_epoch:1,maps:Array.from({length:16},(_,j)=>({start:'0x'+(4096+j*8192).toString(16),end:'0x'+(8192+j*8192).toString(16),readable:true,private:true,writable:true,executable:false,pathname:j===0?'[heap]':null}))}));
     for(let i=1;i<nodes.length;i++)nodes[i].parent_id=nodes[Math.floor((i-1)/4)].identity;
-    const edges=Array.from({length:5000},(_,i)=>({id:'load-'+i,endpoint:{process_id:nodes[i%1000].identity,fd:i,resource:{kind:'pipe',device:{major:0,minor:0},inode:String(i)}},peer:{process_id:nodes[(i*7+1)%1000].identity,fd:i,resource:{kind:'pipe',device:{major:0,minor:0},inode:String(i)}},label:'PIPE',shared:false,candidate:false}));
+    const edges=Array.from({length:5000},(_,i)=>({id:'load-'+i,endpoint:{process_id:nodes[i%1000].identity,fd:i,resource:{kind:i%5===0?'socket':'pipe',device:{major:0,minor:0},inode:String(i)}},peer:{process_id:nodes[(i*7+1)%1000].identity,fd:i,resource:{kind:i%5===0?'socket':'pipe',device:{major:0,minor:0},inode:String(i)}},label:'PIPE',shared:false,candidate:false}));
     for(let i=0;i<1000;i++)edges.push({id:'network-load-'+i,endpoint:{process_id:nodes[i%100].identity,fd:6000+i,resource:{kind:'socket',device:{major:0,minor:0},inode:String(i)}},peer:null,label:'TCP network',shared:false,candidate:false,socket:{protocol:{kind:'tcp',family:'ipv4'},state:{kind:'established'},local:{ip:'127.0.0.1',port:5000},remote:{ip:'203.0.113.1',port:4000+i},network_peer:true}});
     renderSystemSnapshot({processes:nodes,fd_relations:edges,captured_at:Date.now(),inspected_processes:1000,inspected_fds:10000,warnings:[]});
     renderActivity({files:Array.from({length:512},(_,i)=>({process_id:nodes[i%100].identity,file:{device:{major:0,minor:0},inode:String(i),generation:0},path:'/tmp/load-'+i,write:i%2===0,bytes:4096,count:1}))});fitScene();

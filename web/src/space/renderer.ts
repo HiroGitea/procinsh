@@ -4,6 +4,7 @@ import { key, signalName } from "./model.js";
 import { emptyActivityRetention } from "./types.js";
 import type {
   ActivityUpdate,
+  ConnectionCurve,
   CpuGlow,
   SelectionState,
   HoverState,
@@ -108,7 +109,7 @@ type Particle = {
   fileId?: string;
   netlinkId?: string;
 } & (
-  | { curve: T.QuadraticBezierCurve3; direction: number | null; pos?: never }
+  | { curve: ConnectionCurve; direction: number | null; pos?: never }
   | { pos: T.Vector3; curve?: never; direction?: never }
 );
 function context2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {

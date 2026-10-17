@@ -124,15 +124,17 @@ export interface RenderNode extends Process {
   pos: T.Vector3;
   regions: Region[];
 }
+export type ConnectionCurve =
+  T.QuadraticBezierCurve3 | T.CubicBezierCurve3 | T.CurvePath<T.Vector3>;
 export interface EdgeView {
   e: FdRelation;
-  curve: T.QuadraticBezierCurve3;
+  curve: ConnectionCurve;
   networkId?: string;
 }
 export interface NetworkView {
   group: NetworkGroup;
   pos: T.Vector3;
-  curve: T.QuadraticBezierCurve3;
+  curve: T.CubicBezierCurve3;
 }
 export interface FileView {
   file: RecentFile;

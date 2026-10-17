@@ -28,6 +28,17 @@ function processPosition(id: string) {
   const pos = data.nodes.get(id)?.pos;
   return pos && { x: pos.x, y: pos.y, z: pos.z };
 }
+function socketPortVisuals() {
+  const rings = scene.root.getObjectByName("socket-port-rings");
+  const stems = scene.root.getObjectByName("socket-port-stems");
+  const matrix = new T.Matrix4();
+  return Array.from({length:rings.count}, (_, i) => {
+    rings.getMatrixAt(i, matrix);
+    return {position:new T.Vector3().setFromMatrixPosition(matrix).toArray(),
+      normal:new T.Vector3(0,0,1).transformDirection(matrix).toArray(),
+      hasStem:i < stems.count};
+  });
+}
 function connectionVisual(id: string) {
   const view = scene.renderView().edgeViews.find(view => view.e.id === id);
   return view && {
@@ -37,6 +48,7 @@ function connectionVisual(id: string) {
 }
 export {
   socketVisibilityState,
+  socketPortVisuals,
   selectNetlink,
   netlinkVisuals,
   netlinkParticles,
