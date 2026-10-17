@@ -103,7 +103,11 @@ mod tests {
             let id = super::super::identity(std::process::id() as i32).unwrap();
             let reader = NetworkNamespaceReader::open(id).unwrap();
             assert_eq!(reader.key(), current_namespace());
-            assert!(reader.diagnostic_socket(Instant::now() + Duration::from_secs(1)).is_ok());
+            assert!(
+                reader
+                    .diagnostic_socket(Instant::now() + Duration::from_secs(1))
+                    .is_ok()
+            );
             return;
         };
         let reader = NetworkNamespaceReader::open(fixture.target.id).unwrap();
@@ -145,7 +149,11 @@ mod tests {
             let id = super::super::identity(std::process::id() as i32).unwrap();
             let reader = NetworkNamespaceReader::open(id).unwrap();
             assert_eq!(reader.key(), current_namespace());
-            assert!(reader.diagnostic_socket(Instant::now() + Duration::from_secs(1)).is_ok());
+            assert!(
+                reader
+                    .diagnostic_socket(Instant::now() + Duration::from_secs(1))
+                    .is_ok()
+            );
             return;
         };
         let id = fixture.target.id;
