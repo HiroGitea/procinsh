@@ -13,8 +13,8 @@
       "sha256": "c2d49f7f02fdf221e0ae3c126940a7746555b3bebda8dbdc63f89863da8256ed"
     },
     "experiment.patch": {
-      "bytes": 2394,
-      "sha256": "dc42621b58611b8725a815c1728f34483590dbc692803b74e521eb4005d47a72"
+      "bytes": 2393,
+      "sha256": "71153b2ba3993df0060bd47496a3dc6cfb358603402ae54455911799ea24cfac"
     },
     "source/src/http_server/system/service.rs": {
       "bytes": 9074,

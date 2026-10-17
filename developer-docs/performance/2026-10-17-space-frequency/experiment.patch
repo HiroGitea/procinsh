@@ -4,7 +4,7 @@ index 35bedb0..8270ced 100644
 +++ b/src/http_server/system/service.rs
 @@ -106,6 +106,13 @@ impl SystemMonitor {
      }
- 
+
      fn run_activity(&self) {
 +        // Experiment-only control; production scheduling defaults are preserved.
 +        let poll_interval = Duration::from_millis(
