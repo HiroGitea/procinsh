@@ -119,10 +119,6 @@ export function mountReplayControls(
   const status = document.createElement("span");
   status.id = "replay-status";
   status.setAttribute("role", "status");
-  const hint = document.createElement("p");
-  hint.className = "recording-notice";
-  hint.textContent =
-    "Choose or drop a SPACE recording JSON here. Files stay in your browser. Orbit, pan and zoom also work while paused.";
   host.append(
     badge,
     file,
@@ -133,11 +129,10 @@ export function mountReplayControls(
     speed,
     loopLabel,
     status,
-    hint,
   );
   let replay: SpaceReplay | null = null;
   let loading = 0;
-  let label = "Choose a recording";
+  let label = "";
   function refresh() {
     for (const element of [previous, play, next, timeline, speed, loop])
       element.disabled = !replay;
@@ -145,7 +140,7 @@ export function mountReplayControls(
     timeline.max = String(replay?.recording.duration_ms ?? 0);
     timeline.value = String(replay?.time ?? 0);
     status.textContent = replay
-      ? `${label} · ${(replay.time / 1000).toFixed(1)} / ${(replay.recording.duration_ms / 1000).toFixed(1)}s · ${replay.recording.end_reason}`
+      ? `${label} · ${(replay.time / 1000).toFixed(1)} / ${(replay.recording.duration_ms / 1000).toFixed(1)}s`
       : label;
   }
   async function load(read: () => Promise<string>, name: string) {
