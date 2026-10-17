@@ -8,6 +8,7 @@ export async function checkSpaceLabels(evaluate: Evaluate, cdp: Cdp) {
     window.spaceTestSources.forEach(source=>source.close());
     const m=await import(window.spaceTestModule);
     m.renderSystemSnapshot({processes:[],fd_relations:[]});
+    window.spaceTestSources.at(-1).dispatchEvent(new MessageEvent('gap',{data:'{}'}));
     window.labelSnapshot={processes:[
       {identity:{pid:920001,start_time_ticks:1},name:'label-first',maps:[]},
       {identity:{pid:920002,start_time_ticks:1},parent_id:{pid:920001,start_time_ticks:1},name:'label-second',maps:[]}

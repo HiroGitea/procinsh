@@ -6,7 +6,6 @@ import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { SourceMap } from "node:module";
 import { gzipSync } from "node:zlib";
-import type { Protocol } from "devtools-protocol";
 import { connectPage, pages } from "../tests/browser/harness.js";
 import { launch, delay, until } from "../tests/support/runtime.js";
 import { profileFixture } from "./frontend-profile-fixture.js";
@@ -122,7 +121,7 @@ try {
   await delay(5000);
   const state = () =>
     evaluate(
-      "({hidden:document.hidden,width:innerWidth,height:innerHeight,dpr:devicePixelRatio,fps:document.getElementById('fps')?.textContent,heap:performance.memory?.usedJSHeapSize})",
+      "({hidden:document.hidden,width:innerWidth,height:innerHeight,dpr:devicePixelRatio,fps:document.getElementById('fps')?.textContent,heap:performance.memory?.usedJSHeapSize,buildRevision:document.getElementById('build-commit')?.href,buildLabel:document.getElementById('build-commit')?.textContent})",
     );
   const beforeState = await state();
   const beforeMetrics = await cdp("Performance.getMetrics");
@@ -196,15 +195,19 @@ try {
   const afterMetrics = await cdp("Performance.getMetrics");
   const afterProcesses = await browser.cdp("SystemInfo.getProcessInfo");
   const afterState = await state();
-  const complete = new Promise<string>((resolve) => {
+  const complete = new Promise<string>((resolve, reject) => {
+    const closed = () =>
+      reject(new Error("Chrome closed before the trace completed"));
     const listener = (event: MessageEvent<string>) => {
       const message = JSON.parse(event.data);
       if (message.method === "Tracing.tracingComplete") {
         socket.removeEventListener("message", listener);
+        socket.removeEventListener("close", closed);
         resolve(message.params.stream);
       }
     };
     socket.addEventListener("message", listener);
+    socket.addEventListener("close", closed, { once: true });
   });
   await cdp("Tracing.end");
   const handle = await complete;
