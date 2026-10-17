@@ -297,6 +297,143 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
   }
 });
 
+test("socket paths clear distinct endpoint hulls and cross self-connections between opposite faces", async () => {
+  const { createSpaceScene } = await import("../src/space/scene.js");
+  const { PROCESS_SIDE, key } = await import("../src/space/model.js");
+  const owner: PlacedProcess = {
+    ...processInfo({ identity: { pid: 10, start_time_ticks: 1 } }),
+    pos: { x: 3, y: -7, z: 0 },
+    regions: [],
+  };
+  const peer: PlacedProcess = {
+    ...processInfo({ identity: { pid: 2, start_time_ticks: 1 } }),
+    pos: { x: 0, y: 0, z: 0 },
+    regions: [],
+  };
+  const endpoint = (node: PlacedProcess, fd: number) =>
+    fdEndpoint({
+      process_id: node.identity,
+      fd,
+      kind: "socket",
+      resource: { kind: "socket", device: { major: 0, minor: 1 }, inode: "5" },
+    });
+  const nodes = new Map([owner, peer].map((n) => [key(n.identity), n]));
+  const input: SceneInput = {
+    nodes,
+    snapshot: { processes: [...nodes.values()], fd_relations: [] },
+    network: new Map(),
+    networkPositions: new Map(),
+    netlink: new Map(),
+    files: new Map(),
+    netlinkPositions: new Map(),
+    filePositions: new Map(),
+    visible: new Set(nodes.keys()),
+  };
+  const scene = createSpaceScene();
+  // Reuse the scene to exercise attachment updates after layout changes.
+  const placements = [
+    [10, 0, 1, 0],
+    [-10, 0, -1, 0],
+    [0, 10, 0, 1],
+    [0, -10, 0, -1],
+    [10, 5, 1, 0],
+    [-10, -5, -1, 0],
+    [5, 10, 0, 1],
+    [-5, -10, 0, -1],
+    [10, 10, 1, 0],
+    [-10, 10, -1, 0],
+    [10, -10, 1, 0],
+    [-10, -10, -1, 0],
+    [0, 0, 1, 0],
+  ];
+  for (const [dx, dy, nx, ny] of placements) {
+    peer.pos = { x: owner.pos.x + dx, y: owner.pos.y + dy, z: 0 };
+    const self = dx === 0 && dy === 0,
+      destination = self ? owner : peer;
+    for (const peerFd of [4, 15]) {
+      const relation = fdRelation({
+        endpoint: endpoint(owner, 3),
+        peer: endpoint(destination, peerFd),
+        socket: socketEndpoint(),
+      });
+      const expectedStart = new T.Vector3(owner.pos.x, owner.pos.y, 3.725).add(
+        new T.Vector3(nx, ny, 0).multiplyScalar(PROCESS_SIDE / 2 + 0.02),
+      );
+      const expectedEnd = new T.Vector3(
+        destination.pos.x,
+        destination.pos.y,
+        4 + ((peerFd % 12) - 5.5) * 0.11,
+      ).add(
+        new T.Vector3(nx, ny, 0).multiplyScalar(-(PROCESS_SIDE / 2 + 0.02)),
+      );
+      for (const style of [{}, { candidate: true }, { shared: true }]) {
+        let forward: T.QuadraticBezierCurve3 | undefined;
+        for (const reversed of [false, true]) {
+          const edge = {
+            ...relation,
+            ...style,
+            ...(reversed
+              ? { endpoint: relation.peer!, peer: relation.endpoint }
+              : {}),
+          };
+          scene.rebuild(
+            { ...input, snapshot: { ...input.snapshot, fd_relations: [edge] } },
+            null,
+          );
+          const curve = scene.renderView().edgeViews[0].curve;
+          assert.ok(
+            curve.v0.distanceTo(reversed ? expectedEnd : expectedStart) < 1e-9,
+          );
+          assert.ok(
+            curve.v2.distanceTo(reversed ? expectedStart : expectedEnd) < 1e-9,
+          );
+          if (!reversed) forward = curve;
+          else
+            for (const t of [0, 0.25, 0.5, 0.75, 1])
+              assert.ok(
+                curve.getPoint(t).distanceTo(forward!.getPoint(1 - t)) < 1e-9,
+              );
+          if (self) {
+            const middle = curve.getPoint(0.5);
+            assert.ok(Math.abs(middle.x - owner.pos.x) < 1e-9);
+            assert.equal(middle.y, owner.pos.y);
+            assert.ok(curve.v0.distanceTo(curve.v2) > PROCESS_SIDE);
+            continue;
+          }
+          const line = scene
+            .pickingView()
+            .objects.find(
+              (object) =>
+                object instanceof T.LineSegments &&
+                object.userData.fd_relations?.includes(edge),
+            ) as T.LineSegments;
+          const positions = line.geometry.getAttribute("position");
+          for (let i = 0; i < line.userData.fd_relations.length; i++) {
+            if (line.userData.fd_relations[i] !== edge) continue;
+            const start = new T.Vector3().fromBufferAttribute(positions, 2 * i),
+              end = new T.Vector3().fromBufferAttribute(positions, 2 * i + 1),
+              ray = new T.Ray(start, end.clone().sub(start).normalize());
+            for (const node of [owner, destination]) {
+              const half = PROCESS_SIDE / 2,
+                box = new T.Box3(
+                  new T.Vector3(node.pos.x - half, node.pos.y - half, 0),
+                  new T.Vector3(node.pos.x + half, node.pos.y + half, 8),
+                ),
+                hit = ray.intersectBox(box, new T.Vector3());
+              assert.ok(
+                !box.containsPoint(start) &&
+                  (!hit || hit.distanceTo(start) > start.distanceTo(end)),
+                `socket segment enters endpoint hull at layout (${dx}, ${dy})`,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+  scene.dispose();
+});
+
 test("pipe and external socket attachments keep their existing offsets", async () => {
   const { createSpaceScene } = await import("../src/space/scene.js");
   const node: PlacedProcess = {
