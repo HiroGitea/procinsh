@@ -234,7 +234,7 @@ system snapshot の関係の両端にある FD と、プロセス FD API の ent
 
 SPACE は、関係のどちらかのソケット FD が `listening` / `unconnected` の場合、共有 FD の線も含めて可視化から除外します。除外ソケットの IPC イベントは、粒子や操作元ポートの発光にも使いません。接続処理中でも peer 照会が `ENOTCONN` の間は除外し、未接続 UDP の `sendto` / `sendmsg` による通信も SPACE には表示しません。`unknown`、旧サーバーのフィールド欠落は表示対象として扱います。API と受信した生のスナップショットには全 FD を保持し、状態が変わったら選択・粒子・保持中の Netlink 表示も更新します。
 
-権限が必要なテストは `bash scripts/docker_test.sh` で Docker 内から実行します。pidfd による種類取得と別 network namespace の実機テストについて、権限不足・非対応はスキップせずテスト失敗にします。FD 複製が拒否された場合の procfs フォールバックは、専用の疑似エラーのテストで検証します。
+権限が必要なテストは `bash scripts/docker_test.sh` で Docker 内から実行します。pidfd による種類取得と別 network namespace の実機テストについて、権限不足・非対応なら実データを要求せず、取得できない場合の表示・エラー・procfs フォールバックを検証します。環境変数で検証条件を切り替えません。
 
 UNIX の診断は、対象の PID と開始時刻を確認して開いた network namespace の FD を使います。別 namespace では短命の専用スレッドが `setns(CLONE_NEWNET)` を実行して診断用 Netlink ソケットを作成し、その FD を呼び元へ返して終了します。要求と応答の処理は作成先の namespace に属するソケットを通じて行い、HTTP・収集スレッドの namespace は変更しません。SPACE は走査で発見した namespace を device/inode でまとめ、一回の走査で各 namespace を一度診断します。全 namespace の診断予算は合計500ms、プロセス FD 一覧は750msと全体3秒の締切の短い方を使います。診断ができない場合は既存の procfs 情報を保持し、対象 PID と失敗理由を警告に含めます。
 
@@ -566,7 +566,7 @@ TypeScript の依存関係グラフは [module-dependencies.ts](../web/scripts/m
 npm --prefix web run docs:architecture
 ```
 
-`cargo build --locked --all-targets` は Ubuntu 24.04・Ubuntu 26.04・Fedora 44 のコンテナで実行します。Rust テストと eBPF 実機センサーテストは、追加の権限を付けた専用 Docker ジョブで実行します。matrix は `fail-fast: false` とし、各ディストリビューションのビルド結果を個別に表示します。各コンテナで Node.js 22 と npm をインストールし、`npm --prefix web ci`、`npm --prefix web run build`（TypeScript 型チェックを含む）から実行します。フォーマット、Clippy、listen policy、SPACE モデルと明示的な bpftool・カーネル BTF 検査は単一環境に残します。各コンテナは Ubuntu 24.04 runner のカーネルと BTF を使うため、この matrix はディストリビューションのユーザー空間の差を検証します。各ディストリビューション固有のカーネルでの BPF センサー動作は検証しません。
+`cargo build --locked --all-targets` は Ubuntu 24.04・Ubuntu 26.04・Fedora 44 のコンテナで実行します。Rust テストは各コンテナでも実行し、追加の権限を付けた専用 Docker ジョブでは実際の eBPF センサーも検証します。matrix は `fail-fast: false` とし、各ディストリビューションのビルド結果を個別に表示します。各コンテナで Node.js 22 と npm をインストールし、`npm --prefix web ci`、`npm --prefix web run build`（TypeScript 型チェックを含む）から実行します。フォーマット、Clippy、listen policy、SPACE モデルと明示的な bpftool・カーネル BTF 検査は単一環境に残します。各コンテナは Ubuntu 24.04 runner のカーネルと BTF を使うため、この matrix はディストリビューションのユーザー空間の差を検証します。各ディストリビューション固有のカーネルでの BPF センサー動作は検証しません。
 
 matrix の native dependency は Ubuntu では `build-essential clang llvm pkg-config libelf-dev zlib1g-dev python3` に加えて Ubuntu 24.04 は `linux-tools-generic`、Ubuntu 26.04 は `bpftool`、Fedora では `gcc gcc-c++ make clang llvm pkgconf-pkg-config elfutils-libelf-devel zlib-devel python3 bpftool` をインストールします。両方で Rust 導入・checkout に必要な `ca-certificates curl git tar gzip` もインストールします。Ubuntu 26.04 では独立した `bpftool` パッケージの実行ファイルを使います。Ubuntu 24.04 の bpftool は実行カーネルのバージョンに依存する wrapper を避け、`/usr/lib/linux-tools/*/bpftool` の実体を `BPFTOOL` に指定します。
 
@@ -574,7 +574,7 @@ Rust テストは明示的な識別子の必須性、SSEの独立した履歴・
 
 `bash scripts/docker_test.sh` は Docker イメージをビルドし、読み取り専用の checkout から一時的なコピーを作って実行します。ホストの sudo や setcap、ホスト側ビルド成果物への root 権限書き込みは不要です。`./scripts/dev_test.sh [テスト名フィルター] [--nocapture]` はこの Docker 環境で Rust 単体テストだけを実行する互換ラッパーです。
 
-perf の実機 fixture は権限不足でもスキップせず失敗します。Docker 起動時には `--pid=host` と `CAP_BPF`・`CAP_PERFMON`・`CAP_SYS_PTRACE`・`CAP_DAC_READ_SEARCH`・`CAP_SYS_ADMIN` を渡します。rootless Docker や BTF・フックの不足するホストでは実機テストは失敗します。実機テストは `blocked_stack` fixture の100ms nanosleepで3秒間に30回の更新を確認しました（Linux 7.0.0-15-generic）。R12〜R15をasmで既知値にして照合し、12段再帰はmainまで復元、96段再帰（各 frame に256バイトの領域）は16 KiB dumpの範囲で停止することを検証します。全18レジスタの独立照合や全kernelでの精度・性能を保証する検証ではありません。開始前からsleep中のfixtureで初回・定期 ptrace 取得・detach と後続 perf への切り替えを検証します。frame pointer を省略した PIE／非 PIE と `.debug_frame` fixture は実際の call 命令から組み立てた snapshot でも main までの unwind を検証します。実機 fixture には共有ライブラリの再帰から libc の nanosleep を跨いで main まで復元するケースもあります。CAP_PERFMON を持つテストプロセスで busy-loop の更新、再帰 frame、複数 TID、churn の追加・削除、sleep 後の age、対象終了を確認してください。
+perf の実機 fixture は権限がある場合にサンプル値を検証し、ない場合はサンプルが未取得でエラー情報が記録されることを検証します。Docker 起動時には `--pid=host` と `CAP_BPF`・`CAP_PERFMON`・`CAP_SYS_PTRACE`・`CAP_DAC_READ_SEARCH`・`CAP_SYS_ADMIN` を渡します。rootless Docker や BTF・フックの不足するホストではセンサーの実データは取得できない場合があります。実機センサーテストは機能検証なので、互換カーネルと capabilities がある環境で実施します。実機テストは `blocked_stack` fixture の100ms nanosleepで3秒間に30回の更新を確認しました（Linux 7.0.0-15-generic）。R12〜R15をasmで既知値にして照合し、12段再帰はmainまで復元、96段再帰（各 frame に256バイトの領域）は16 KiB dumpの範囲で停止することを検証します。全18レジスタの独立照合や全kernelでの精度・性能を保証する検証ではありません。開始前からsleep中のfixtureで初回・定期 ptrace 取得・detach と後続 perf への切り替えを検証します。frame pointer を省略した PIE／非 PIE と `.debug_frame` fixture は実際の call 命令から組み立てた snapshot でも main までの unwind を検証します。実機 fixture には共有ライブラリの再帰から libc の nanosleep を跨いで main まで復元するケースもあります。CAP_PERFMON を持つテストプロセスで busy-loop の更新、再帰 frame、複数 TID、churn の追加・削除、sleep 後の age、対象終了を確認してください。
 
 ### ブラウザテスト
 
