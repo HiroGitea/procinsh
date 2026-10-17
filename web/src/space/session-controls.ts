@@ -1,0 +1,229 @@
+// Browser acquisition and transport controls; both loaders use the same parser.
+import {
+  parseRecording,
+  SpaceRecorder,
+  SpaceReplay,
+  MAX_RECORDING_BYTES,
+} from "./recording.js";
+import type { RecordingEvent } from "./recording.js";
+import type { SystemSnapshot } from "../shared/api-types.js";
+
+export function mountRecordingControls(
+  recorder: SpaceRecorder,
+  snapshot: () => SystemSnapshot,
+  ready: () => boolean,
+) {
+  const host = document.querySelector(".tools")!;
+  const record = document.createElement("button");
+  record.textContent = "Record";
+  record.id = "record";
+  const download = document.createElement("button");
+  download.id = "download-recording";
+  download.textContent = "Stop & Download";
+  download.hidden = true;
+  const status = document.createElement("span");
+  status.setAttribute("role", "status");
+  status.id = "recording-status";
+  const open = document.createElement("a");
+  open.id = "open-recording";
+  open.href = `${import.meta.env.BASE_URL}replay/space/`;
+  open.textContent = "Open recording";
+  const notice = document.createElement("p");
+  notice.id = "recording-notice";
+  notice.className = "recording-notice";
+  notice.textContent =
+    "Local recordings may contain paths, arguments, user names and IP addresses. Review before publishing. Recording stops on connection loss or a hidden tab. Limit: 128 MiB.";
+  host.append(record, download, status, open, notice);
+  function refresh() {
+    record.disabled = recorder.active || !!recorder.recording || !ready();
+    download.hidden = !recorder.recording;
+    download.textContent = recorder.active
+      ? "Stop & Download"
+      : "Download recording";
+    if (recorder.recording)
+      status.textContent = recorder.active
+        ? `● REC ${(recorder.elapsed() / 1000).toFixed(1)}s`
+        : `${recorder.recording.end_reason} (${(recorder.elapsed() / 1000).toFixed(1)}s saved)`;
+  }
+  record.onclick = () => {
+    try {
+      recorder.start(snapshot());
+    } catch (error) {
+      status.textContent = String(error);
+    }
+    refresh();
+  };
+  download.onclick = () => {
+    recorder.stop();
+    if (!recorder.recording) return;
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(recorder.recording)], {
+        type: "application/json;charset=utf-8",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `procinsh-space-${recorder.recording.started_at.replace(/[:.]/g, "-")}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    recorder.recording = null;
+    status.textContent = "Recording downloaded. Review before publishing.";
+    refresh();
+  };
+  addEventListener("beforeunload", (event) => {
+    if (recorder.recording) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
+  setInterval(refresh, 100);
+  refresh();
+}
+
+export function mountReplayControls(
+  reset: (snapshot: SystemSnapshot) => void,
+  apply: (event: RecordingEvent) => void,
+  clock: (time: number) => void,
+) {
+  const host = document.querySelector(".tools")!;
+  const badge = document.createElement("strong");
+  badge.textContent = "REPLAY";
+  const file = document.createElement("input");
+  file.type = "file";
+  file.accept = ".json,application/json";
+  file.setAttribute("aria-label", "Open recording JSON");
+  const play = document.createElement("button");
+  play.id = "play";
+  const previous = document.createElement("button");
+  previous.textContent = "Step backward";
+  const next = document.createElement("button");
+  next.textContent = "Step forward";
+  const timeline = document.createElement("input");
+  timeline.id = "timeline";
+  timeline.type = "range";
+  timeline.min = "0";
+  timeline.step = "1";
+  timeline.setAttribute("aria-label", "Replay time");
+  const speed = document.createElement("select");
+  speed.setAttribute("aria-label", "Playback speed");
+  for (const rate of [0.1, 0.25, 0.5, 1, 2]) {
+    const option = document.createElement("option");
+    option.value = String(rate);
+    option.textContent = `${rate}×`;
+    option.selected = rate === 1;
+    speed.append(option);
+  }
+  const status = document.createElement("span");
+  status.id = "replay-status";
+  status.setAttribute("role", "status");
+  const hint = document.createElement("p");
+  hint.className = "recording-notice";
+  hint.textContent =
+    "Choose or drop a SPACE recording JSON here. Files stay in your browser. Orbit, pan and zoom also work while paused.";
+  host.append(badge, file, previous, play, next, timeline, speed, status, hint);
+  let replay: SpaceReplay | null = null;
+  let loading = 0;
+  let label = "Choose a recording";
+  function refresh() {
+    for (const element of [previous, play, next, timeline, speed])
+      element.disabled = !replay;
+    play.textContent = replay?.playing ? "Pause" : "Play";
+    timeline.max = String(replay?.recording.duration_ms ?? 0);
+    timeline.value = String(replay?.time ?? 0);
+    status.textContent = replay
+      ? `${label} · ${(replay.time / 1000).toFixed(1)} / ${(replay.recording.duration_ms / 1000).toFixed(1)}s · ${replay.recording.end_reason}`
+      : label;
+  }
+  async function load(read: () => Promise<string>, name: string) {
+    const request = ++loading;
+    if (replay) replay.playing = false;
+    label = "Loading…";
+    refresh();
+    try {
+      const text = await read();
+      if (request !== loading) return;
+      const recording = parseRecording(text);
+      replay = new SpaceReplay(recording, reset, apply, clock);
+      replay.speed = Number(speed.value);
+      label = name;
+    } catch (error) {
+      if (request === loading) {
+        replay = null;
+        label = error instanceof Error ? error.message : String(error);
+      }
+    }
+    refresh();
+  }
+  function local(recording: File | undefined) {
+    if (!recording) return;
+    void load(() => {
+      if (recording.size > MAX_RECORDING_BYTES)
+        throw new Error("Recording exceeds the 128 MiB local replay limit.");
+      return recording.text();
+    }, recording.name);
+  }
+  file.onchange = () => {
+    local(file.files?.[0]);
+    file.value = "";
+  };
+  document.addEventListener("dragover", (event) => {
+    event.preventDefault();
+  });
+  document.addEventListener("drop", (event) => {
+    event.preventDefault();
+    local(event.dataTransfer?.files[0]);
+  });
+  play.onclick = () => {
+    if (!replay) return;
+    if (!replay.playing && replay.time === replay.recording.duration_ms)
+      replay.seek(0);
+    replay.playing = !replay.playing;
+    refresh();
+  };
+  previous.onclick = () => {
+    replay?.step(-1);
+    refresh();
+  };
+  next.onclick = () => {
+    replay?.step(1);
+    refresh();
+  };
+  timeline.oninput = () => {
+    if (replay) {
+      replay.playing = false;
+      replay.seek(Number(timeline.value));
+    }
+    refresh();
+  };
+  speed.onchange = () => {
+    if (replay) replay.speed = Number(speed.value);
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && replay) replay.playing = false;
+    refresh();
+  });
+  const id = new URL(location.href).searchParams.get("recording");
+  if (id) {
+    const recordings: Record<string, string> = { demo: "recordings/demo.json" };
+    if (Object.hasOwn(recordings, id))
+      void load(async () => {
+        const response = await fetch(
+          `${import.meta.env.BASE_URL}${recordings[id]}`,
+        );
+        if (!response.ok)
+          throw new Error(
+            `Unable to load bundled recording (${response.status}).`,
+          );
+        return response.text();
+      }, "Sanitized demo");
+    else label = `Unknown bundled recording: ${id}. Choose a local JSON file.`;
+  }
+  refresh();
+  let previousWallTime = performance.now();
+  return () => {
+    const wallTime = performance.now();
+    replay?.tick(wallTime - previousWallTime);
+    previousWallTime = wallTime;
+    refresh();
+  };
+}
