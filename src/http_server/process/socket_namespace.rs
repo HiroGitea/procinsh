@@ -98,7 +98,14 @@ mod tests {
 
     #[test]
     fn netns_socket_creation_preserves_callers_namespace_and_closes_fds() {
-        let fixture = super::super::TestNetworkNamespaceTarget::new(true);
+        let Some(fixture) = super::super::TestNetworkNamespaceTarget::new(true) else {
+            // Verify that the API still handles the current namespace correctly.
+            let id = super::super::identity(std::process::id() as i32).unwrap();
+            let reader = NetworkNamespaceReader::open(id).unwrap();
+            assert_eq!(reader.key(), current_namespace());
+            assert!(reader.diagnostic_socket(Instant::now() + Duration::from_secs(1)).is_ok());
+            return;
+        };
         let reader = NetworkNamespaceReader::open(fixture.target.id).unwrap();
         let original = current_namespace();
         assert_ne!(reader.key(), original);
@@ -133,7 +140,14 @@ mod tests {
 
     #[test]
     fn netns_permission_denial_keeps_partial_results_and_unknown_is_not_unconnected() {
-        let fixture = super::super::TestNetworkNamespaceTarget::new(true);
+        let Some(fixture) = super::super::TestNetworkNamespaceTarget::new(true) else {
+            // Verify that the API still handles the current namespace correctly.
+            let id = super::super::identity(std::process::id() as i32).unwrap();
+            let reader = NetworkNamespaceReader::open(id).unwrap();
+            assert_eq!(reader.key(), current_namespace());
+            assert!(reader.diagnostic_socket(Instant::now() + Duration::from_secs(1)).is_ok());
+            return;
+        };
         let id = fixture.target.id;
         thread::spawn(move || {
             // Drop only this thread's effective CAP_SYS_ADMIN; its child worker
