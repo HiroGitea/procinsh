@@ -242,14 +242,14 @@ fn parse_table(text: &str, name: &str) -> HashMap<u64, SocketInfo> {
         .collect()
 }
 
-/// Require real pidfd metadata access in the kernel test container.
+/// Require real pidfd metadata access in the Docker test container.
 #[cfg(test)]
 pub(in crate::http_server) fn require_socket_metadata(id: ProcessId, fd: i32) {
     use std::os::unix::fs::MetadataExt;
     let meta = std::fs::metadata(format!("/proc/{}/fd/{fd}", id.pid)).unwrap();
     let metadata = SocketMetadataReader::new(id)
         .read(fd as u32, meta.dev(), meta.ino())
-        .expect("socket metadata requires the kernel test container");
+        .expect("socket metadata access is required in the Docker test container");
     assert!(
         metadata.protocol.is_some(),
         "socket kind observation is required"
@@ -302,7 +302,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn socket_path_descriptors_allow_a_later_usable_descriptor() {
         use std::{ffi::CString, net::UdpSocket};
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -334,7 +333,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn socket_connection_status_reads_live_tcp_udp_and_unix_without_consuming_data() {
         use SocketConnectionStatus::*;
         use std::{
@@ -414,7 +412,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn unbound_socket_kinds_and_queued_data_are_preserved() {
         let tcp =
             unsafe { libc::socket(libc::AF_INET6, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
@@ -468,7 +465,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn another_process_socket_kind_is_read_without_attaching() {
         let target = super::super::test_support::Target::new("ipc");
         require_socket_metadata(target.id, 61);
@@ -488,7 +484,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn changed_process_and_descriptor_identities_are_rejected() {
         let socket = UnixDatagram::unbound().unwrap();
         require_socket_metadata(

@@ -18,7 +18,8 @@
   - サーバーはユーザーが確認できるよう起動したままにし、使用したポートとアクセス URL を報告すること
   - 変更に対応する PR がマージされたら、その変更の確認用に起動したサーバーを停止すること
 - テストは `bash scripts/docker_test.sh` で Docker 内で実行すること
-  - カーネル依存 Rust テストと実機 eBPF は `bash scripts/docker_test.sh kernel` を使い、権限不足によるスキップを禁止すること
+  - Rust テストは常に必要な権限を持つ Docker コンテナで全件実行し、ignore 属性や権限不足によるスキップを使わないこと
+  - Rust テストを含む通常テストは `bash scripts/docker_test.sh ordinary`、実機 eBPF は `bash scripts/docker_test.sh kernel` を使うこと
   - 通常テストは `ordinary`、静的解析は `checks`、ブラウザは `browser` suite を使うこと
   - サーバーを起動するテストもコンテナ内のビルド済みバイナリを直接実行すること
 - コメントやドキュメントでは変更履歴ではなく現在の振る舞いのみを説明すること

@@ -6,7 +6,6 @@ use std::{
 struct Child(std::process::Child);
 
 #[test]
-#[ignore = "requires the capability-enabled Docker kernel suite"]
 fn netns_snapshot_resolves_multiple_namespaces_and_cross_namespace_holders() {
     use crate::http_server::{
         process,
@@ -76,7 +75,6 @@ impl Drop for Child {
 }
 
 #[test]
-#[ignore = "requires the capability-enabled Docker kernel suite"]
 fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
     use crate::http_server::{
         process,
@@ -175,7 +173,6 @@ fn snapshot_and_fd_list_keep_unconnected_socket_kinds() {
 }
 
 #[test]
-#[ignore = "requires the capability-enabled Docker kernel suite"]
 fn socket_connection_status_is_retained_for_shared_listening_and_unconnected_fds() {
     use crate::http_server::{process, socket_types::SocketConnectionStatus};
     use std::{

@@ -234,7 +234,7 @@ system snapshot の関係の両端にある FD と、プロセス FD API の ent
 
 SPACE は、関係のどちらかのソケット FD が `listening` / `unconnected` の場合、共有 FD の線も含めて可視化から除外します。除外ソケットの IPC イベントは、粒子や操作元ポートの発光にも使いません。接続処理中でも peer 照会が `ENOTCONN` の間は除外し、未接続 UDP の `sendto` / `sendmsg` による通信も SPACE には表示しません。`unknown`、旧サーバーのフィールド欠落は表示対象として扱います。API と受信した生のスナップショットには全 FD を保持し、状態が変わったら選択・粒子・保持中の Netlink 表示も更新します。
 
-pidfd による種類取得と別 network namespace の実機テストは `bash scripts/docker_test.sh kernel` で実行します。観測権限やカーネル機能を利用できない場合は失敗します。
+pidfd による種類取得と別 network namespace の Rust テストは `bash scripts/docker_test.sh ordinary` で実行します。観測権限やカーネル機能を利用できない場合は失敗します。
 
 UNIX の診断は、対象の PID と開始時刻を確認して開いた network namespace の FD を使います。別 namespace では短命の専用スレッドが `setns(CLONE_NEWNET)` を実行して診断用 Netlink ソケットを作成し、その FD を呼び元へ返して終了します。要求と応答の処理は作成先の namespace に属するソケットを通じて行い、HTTP・収集スレッドの namespace は変更しません。SPACE は走査で発見した namespace を device/inode でまとめ、一回の走査で各 namespace を一度診断します。全 namespace の診断予算は合計500ms、プロセス FD 一覧は750msと全体3秒の締切の短い方を使います。診断ができない場合は既存の procfs 情報を保持し、対象 PID と失敗理由を警告に含めます。
 
@@ -527,11 +527,11 @@ bash scripts/docker_test.sh web src/space/process-layout.ts
 
 Docker bridge の DNS や外向き通信が制限されているホストでは、`bash scripts/docker_test.sh --network host` でビルドと実行に host network を指定できます。既定は bridge で、テスト用ポートをホストに公開しません。
 
-`ordinary` は追加 capability なしで全ターゲットのビルド、通常の Rust テスト、Vitest、listen policy、Vite 開発サーバーの結合テストを実行します。`checks` は Rust・C・TypeScript のフォーマット、Clippy、rustdoc、TypeDoc、TypeScript の依存関係グラフ、crate packaging を検証します。各 suite は Web の依存関係を導入して型チェックとビルドを行います。
+`ordinary` は必要な capability を持つコンテナで全ターゲットのビルド、すべての Rust テスト、Vitest、listen policy、Vite 開発サーバーの結合テストを実行します。Rust テストには `#[ignore]` を付けず、通常の `cargo test --locked` で perf・pidfd・network namespace のテストも実行します。`checks` は Rust・C・TypeScript のフォーマット、Clippy、rustdoc、TypeDoc、TypeScript の依存関係グラフ、crate packaging を検証します。各 suite は Web の依存関係を導入して型チェックとビルドを行います。
 
-`kernel` は Rust の `#[ignore]` で明示したカーネル依存テストを `--ignored` で必ず実行し、CPU/IPC・ファイル I/O・シグナルの live eBPF テストも実行します。`rust` はフィルターと `--nocapture` などのテスト引数を受け取り、`--include-ignored` で実行します。権限や機能の不足を検出してもスキップしません。通常 suite の ignored 件数はテストの分類を表し、既定の全 suite 実行と CI の kernel job でこれらを検証します。
+`kernel` は CPU/IPC・ファイル I/O・シグナルの live eBPF テストを実行します。`rust` は `cargo test --locked -- <引数>` にフィルターと `--nocapture` などのテスト引数を渡します。Rust テストは常に必要な観測権限を持つ環境で実行する前提とし、権限や機能の不足を検出した場合は失敗します。
 
-カーネルには BTF（`CONFIG_DEBUG_INFO_BTF=y` と `/sys/kernel/btf/vmlinux`）、eBPF、perf、ptrace、network namespace、pidfd_getfd、およびアプリケーションが使う BPF フックが必要です。Docker Desktop の VM カーネルや rootless Docker、user namespace remapping、強い LSM 制約のある daemon は必要なアクセスを提供できない場合があります。`kernel`・`rust`・`browser` には `BPF`・`PERFMON`・`SYS_PTRACE`・`DAC_READ_SEARCH`・`SYS_ADMIN` を明示的に追加します。BPF イベントの PID と procfs の PID を一致させるため、これらの suite だけ `--pid=host` を使います。全 suite でカーネル BTF を読み取り専用でマウントし、Docker 既定の seccomp と AppArmor は維持します。`--privileged` や unrestricted profile は使用しません。
+カーネルには BTF（`CONFIG_DEBUG_INFO_BTF=y` と `/sys/kernel/btf/vmlinux`）、eBPF、perf、ptrace、network namespace、pidfd_getfd、およびアプリケーションが使う BPF フックが必要です。Docker Desktop の VM カーネルや rootless Docker、user namespace remapping、強い LSM 制約のある daemon は必要なアクセスを提供できない場合があります。`ordinary`・`kernel`・`rust`・`browser` には `BPF`・`PERFMON`・`SYS_PTRACE`・`DAC_READ_SEARCH`・`SYS_ADMIN` を明示的に追加します。BPF イベントの PID と procfs の PID を一致させるため、live eBPF を検証する `kernel` と `browser` だけ `--pid=host` を使います。全 suite でカーネル BTF を読み取り専用でマウントし、Docker 既定の seccomp と AppArmor は維持します。`--privileged` や unrestricted profile は使用しません。
 
 checkout は読み取り専用でマウントし、ソースをコンテナ内の `/work` にコピーします。fixture、Web の生成物、HMR の変更もコピー上で扱います。Rust のビルドキャッシュは distro ごとの `procinsh-test-target-*`、依存 crate は `procinsh-test-registry` という Docker volume に保存します。checkout に root 所有の生成物を書き込みません。同じ distro の suite はビルドキャッシュを共有するため順番に実行してください。コンテナを終了してもキャッシュは残り、不要なら `docker volume rm <volume名>` で削除できます。
 

@@ -97,7 +97,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn netns_socket_creation_preserves_callers_namespace_and_closes_fds() {
         let fixture = super::super::TestNetworkNamespaceTarget::new(true);
         let reader = NetworkNamespaceReader::open(fixture.target.id).unwrap();
@@ -133,7 +132,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn netns_permission_denial_keeps_partial_results_and_unknown_is_not_unconnected() {
         let fixture = super::super::TestNetworkNamespaceTarget::new(true);
         let id = fixture.target.id;

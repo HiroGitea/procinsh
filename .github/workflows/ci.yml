@@ -33,11 +33,11 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Run ordinary tests in distro container
+      - name: Run all Rust and frontend tests in capable distro container
         run: bash scripts/docker_test.sh --distro '${{ matrix.distro }}' ordinary
 
   kernel-test:
-    name: Kernel and live eBPF tests
+    name: Live eBPF tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

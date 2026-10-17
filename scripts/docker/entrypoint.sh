@@ -38,7 +38,6 @@ case "$suite" in
     python3 scripts/check_web_package.py
     ;;
   kernel)
-    cargo test --locked -- --ignored
     cargo build --locked
     sh tests/targets/build.sh
     log=$(mktemp)
@@ -114,7 +113,7 @@ PYTHON
     export CHROME=/usr/bin/google-chrome
     npm --prefix web run test:browser
     ;;
-  rust) cargo test --locked -- --include-ignored "$@" ;;
+  rust) cargo test --locked -- "$@" ;;
   web) npm --prefix web test -- "$@" ;;
   *) echo "Unknown container test suite: $suite" >&2; exit 2 ;;
 esac

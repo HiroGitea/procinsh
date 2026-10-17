@@ -348,7 +348,6 @@ mod live_tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn live_sleeping_bootstrap_and_perf_handoff() {
         let target = TestTarget::new("sleeping");
         let maps = process::maps::read_maps(target.id.pid).unwrap();
@@ -367,7 +366,8 @@ mod live_tests {
             first.call_stack
         );
         target.assert_detached();
-        PerfEventReader::open(target.id.pid).expect("perf requires the kernel test container");
+        PerfEventReader::open(target.id.pid)
+            .expect("perf access is required in the Docker test container");
         poll_until(&mut sampler, &maps, |s| {
             s.latest()[0].sampled_at > first.sampled_at
                 && s.latest()[0].sample_source != Some(SampleSource::Ptrace)
@@ -573,10 +573,10 @@ mod live_tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn live_blocked_samples_refresh_known_registers_and_bound_deep_stacks() {
         let target = TestTarget::new("blocked_stack");
-        PerfEventReader::open(target.id.pid).expect("perf requires the kernel test container");
+        PerfEventReader::open(target.id.pid)
+            .expect("perf access is required in the Docker test container");
         PerfEventReader::context_switch(target.id.pid).unwrap();
         let maps = process::maps::read_maps(target.id.pid).unwrap();
         let mut sampler = Sampler::new(target.id);
@@ -629,7 +629,6 @@ mod live_tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn live_busy_and_recursive_samples_advance_without_tracing() {
         for name in [
             "busy_loop",
@@ -638,7 +637,8 @@ mod live_tests {
             "recursive_no_fp_nopie",
         ] {
             let target = TestTarget::new(name);
-            PerfEventReader::open(target.id.pid).expect("perf requires the kernel test container");
+            PerfEventReader::open(target.id.pid)
+                .expect("perf access is required in the Docker test container");
             let maps = process::maps::read_maps(target.id.pid).unwrap();
             let mut sampler = Sampler::new(target.id);
             poll_until(&mut sampler, &maps, |s| {
@@ -680,10 +680,10 @@ mod live_tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn live_no_fp_unwinds_across_shared_library_and_libc() {
         let target = TestTarget::new("shared_no_fp");
-        PerfEventReader::open(target.id.pid).expect("perf requires the kernel test container");
+        PerfEventReader::open(target.id.pid)
+            .expect("perf access is required in the Docker test container");
         PerfEventReader::context_switch(target.id.pid).unwrap();
         let maps = process::maps::read_maps(target.id.pid).unwrap();
         let mut sampler = Sampler::new(target.id);
@@ -715,10 +715,10 @@ mod live_tests {
     }
 
     #[test]
-    #[ignore = "requires the capability-enabled Docker kernel suite"]
     fn live_threads_churn_sleep_and_exit() {
         let mut target = TestTarget::new("threads");
-        PerfEventReader::open(target.id.pid).expect("perf requires the kernel test container");
+        PerfEventReader::open(target.id.pid)
+            .expect("perf access is required in the Docker test container");
         let maps = process::maps::read_maps(target.id.pid).unwrap();
         let mut sampler = Sampler::new(target.id);
         poll_until(&mut sampler, &maps, |s| {

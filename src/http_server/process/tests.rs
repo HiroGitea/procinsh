@@ -2,7 +2,6 @@ use super::{self as process, maps, memory, test_support::Target};
 use std::time::Duration;
 
 #[test]
-#[ignore = "requires the capability-enabled Docker kernel suite"]
 fn netns_fd_list_resolves_peers_separately_from_shared_holders() {
     use crate::http_server::socket_types::{SocketConnectionStatus, SocketState};
     use std::os::fd::AsRawFd;

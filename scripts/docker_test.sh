@@ -49,10 +49,15 @@ run_suite() {
   shift
   local options=()
   case "$selected" in
-    kernel|rust|browser)
-      # BPF events carry host PIDs; procfs must use the same IDs as the sensors.
-      options+=(--pid=host --cap-add=BPF --cap-add=PERFMON --cap-add=SYS_PTRACE
+    ordinary|kernel|rust|browser)
+      options+=(--cap-add=BPF --cap-add=PERFMON --cap-add=SYS_PTRACE
         --cap-add=DAC_READ_SEARCH --cap-add=SYS_ADMIN)
+      ;;
+  esac
+  case "$selected" in
+    kernel|browser)
+      # BPF events carry host PIDs; procfs must use the same IDs as the sensors.
+      options+=(--pid=host)
       ;;
   esac
   # The checkout is read-only. Generated files and root-owned caches live only

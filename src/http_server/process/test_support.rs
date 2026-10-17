@@ -94,7 +94,7 @@ impl NetworkNamespaceTarget {
         }
         let mut child = command
             .spawn()
-            .expect("network namespace fixture requires the kernel test container");
+            .expect("network namespaces are required in the Docker test container");
         let mut line = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)
