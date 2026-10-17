@@ -117,6 +117,13 @@ function context2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   return context;
 }
 
+/** Ignore matrix roundoff; compare against the last drawn frame so motion accumulates. */
+function labelCameraChanged(previous: T.Matrix4, current: T.Matrix4) {
+  return previous.elements.some(
+    (value, index) => Math.abs(value - current.elements[index]) > 1e-10,
+  );
+}
+
 export interface SpaceRendererOptions {
   graphics: typeof T;
   canvas: HTMLCanvasElement;
@@ -562,8 +569,8 @@ export function createSpaceRenderer({
     // Signal labels move until expiry; their final frame clears the overlay.
     if (
       labelsDirty ||
-      !labelCameraWorld.equals(camera.matrixWorld) ||
-      !labelCameraProjection.equals(camera.projectionMatrix) ||
+      labelCameraChanged(labelCameraWorld, camera.matrixWorld) ||
+      labelCameraChanged(labelCameraProjection, camera.projectionMatrix) ||
       signalFlights.length > 0 ||
       hadSignalLabels
     ) {
