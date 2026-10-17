@@ -32,16 +32,11 @@ esac
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 key=${distro//[:.]/-}
 image="procinsh-tests:$key"
-browser=false
-if [[ $suite == browser ]]; then
-  browser=true
-  image+="-browser"
-fi
 build_options=()
 # BuildKit calls its default network "default"; Docker run calls it "bridge".
 if [[ $network != bridge ]]; then build_options+=(--network "$network"); fi
 docker build "${build_options[@]}" --file "$root/scripts/docker/Dockerfile" \
-  --build-arg "BASE_IMAGE=$distro" --build-arg "INSTALL_BROWSER=$browser" \
+  --build-arg "BASE_IMAGE=$distro" \
   --tag "$image" "$root"
 
 run_suite() {

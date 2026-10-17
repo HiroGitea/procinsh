@@ -581,7 +581,7 @@ Rust テストは識別子、SSE、procfs、PID 再利用、メモリ読み取�
 bash scripts/docker_test.sh browser
 ```
 
-Docker image に Google Chrome を追加し、一覧・詳細と SPACE の両方をコンテナ内で検証します。ブラウザは一時プロファイルを作り、テストサーバーとともに終了時に片付けます。SPACE は [vite.browser-test.config.ts](../web/vite.browser-test.config.ts) の検査用 Web fixture をビルドし、Cargo でバイナリへ同梱してから実行します。生成物はコンテナ内だけに置かれます。
+すべての suite が使う Docker image に Google Chrome を含め、`browser` suite で一覧・詳細と SPACE の両方をコンテナ内で検証します。ブラウザは一時プロファイルを作り、テストサーバーとともに終了時に片付けます。SPACE は [vite.browser-test.config.ts](../web/vite.browser-test.config.ts) の検査用 Web fixture をビルドし、Cargo でバイナリへ同梱してから実行します。生成物はコンテナ内だけに置かれます。
 
 [dev-server.ts](../web/tests/integration/dev-server.ts) は `ordinary` suite に含まれ、ビルド済みバイナリと Vite を起動し、画面ルート、CSS 編集による HMR、Origin 検査、JSON と両方の SSE のプロキシを確認します。
 

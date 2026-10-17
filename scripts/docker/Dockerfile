@@ -1,7 +1,6 @@
 ARG BASE_IMAGE=ubuntu:24.04
 FROM node:22-bookworm-slim AS node
 FROM ${BASE_IMAGE}
-ARG INSTALL_BROWSER=false
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup \
     PATH=/opt/cargo/bin:/opt/format/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -19,17 +18,13 @@ RUN set -eu; ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
            apt-get install -y --no-install-recommends linux-tools-generic; \
            ln -sf /usr/lib/linux-tools/*/bpftool /usr/local/bin/bpftool; \
          fi; \
-         if [ "$INSTALL_BROWSER" = true ]; then \
-           curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o /tmp/chrome.deb; \
-           apt-get install -y /tmp/chrome.deb; rm /tmp/chrome.deb; \
-         fi; \
+         curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o /tmp/chrome.deb; \
+         apt-get install -y /tmp/chrome.deb; rm /tmp/chrome.deb; \
          rm -rf /var/lib/apt/lists/*; \
        else \
          dnf install -y ca-certificates curl git tar gzip gcc gcc-c++ make clang llvm \
            pkgconf-pkg-config elfutils-libelf-devel zlib-devel python3 python3-pip bpftool graphviz; \
-         if [ "$INSTALL_BROWSER" = true ]; then \
-           dnf install -y https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm; \
-         fi; \
+         dnf install -y https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm; \
          dnf clean all; \
        fi
 COPY rust-toolchain.toml /opt/toolchain/rust-toolchain.toml
