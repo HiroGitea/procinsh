@@ -340,7 +340,10 @@ mod live_tests {
             Ok(_) => true,
             Err(error) => {
                 let denied = error.downcast_ref::<std::io::Error>().is_some_and(|io| {
-                    matches!(io.raw_os_error(), Some(libc::EPERM | libc::EACCES | libc::ENOSYS))
+                    matches!(
+                        io.raw_os_error(),
+                        Some(libc::EPERM | libc::EACCES | libc::ENOSYS)
+                    )
                 });
                 assert!(denied, "unexpected perf failure: {error:#}");
                 // The fixture still runs: validate that the sampler reports the
