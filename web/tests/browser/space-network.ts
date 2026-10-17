@@ -40,12 +40,22 @@ export async function checkNetworkSpace(
     owner:m.processPosition('900001:1'),
     starts:['net-a','net-b','net-v6'].map(id=>m.connectionVisual(id).points[0]),
   }))`);
-  for (const start of attachments.starts)
-    assert.deepEqual(
-      start,
-      [attachments.owner.x, attachments.owner.y, 8],
-      "external connections start at the center of the process roof",
+  for (const start of attachments.starts) {
+    assert.equal(
+      start[2],
+      8.16,
+      "external connections start at the cylinder tip above the process roof",
     );
+    assert.ok(
+      Math.abs(start[0] - attachments.owner.x) < 1.1 &&
+        Math.abs(start[1] - attachments.owner.y) < 1.1,
+    );
+  }
+  assert.equal(
+    new Set(attachments.starts.map((start) => JSON.stringify(start))).size,
+    3,
+    "each external socket has a distinct roof cylinder, including sockets to the same destination",
+  );
   assert.deepEqual(
     await evaluate(
       "import(window.spaceTestModule).then(m=>m.networkParticles())",

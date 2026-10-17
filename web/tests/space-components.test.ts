@@ -182,9 +182,11 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
     const expected = endpoints.map((endpoint, index) => {
       const pos = nodes.get(key(endpoint.process_id))!.pos;
       return new T.Vector3(
-        pos.x + (index === 0 ? 1.12 : -1.12),
+        pos.x +
+          (index === 0 ? 1.26 : -1.26) *
+            (nodes.size === 1 && String(low.fd) > String(high.fd) ? -1 : 1),
         pos.y,
-        4 + ((endpoint.fd % 12) - 5.5) * 0.11,
+        4,
       );
     });
     const colors = new Set<string>();
@@ -196,7 +198,7 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
         socket: socketEndpoint(),
         ...style,
       });
-      let forward: T.QuadraticBezierCurve3 | undefined;
+      let forward: T.Curve<T.Vector3> | undefined;
       let segments: number[][] | undefined;
       // Start with the reverse orientation too, so a cache cannot mask the bug.
       for (const reversed of [true, false, true]) {
@@ -214,11 +216,11 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
           "rendering preserves the relation's logical orientation",
         );
         assert.deepEqual(
-          view.curve.v0.toArray(),
+          view.curve.getPoint(0).toArray(),
           expected[reversed ? 1 : 0].toArray(),
         );
         assert.deepEqual(
-          view.curve.v2.toArray(),
+          view.curve.getPoint(1).toArray(),
           expected[reversed ? 0 : 1].toArray(),
         );
         if (!reversed) forward = view.curve;
@@ -254,18 +256,17 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
                 object.userData.fd_relations?.[0] === edge,
             ) as T.LineSegments;
           const positions = line.geometry.getAttribute("position");
+          const samples = view.curve.getPoints(16);
           assert.equal(
             positions.count,
-            32,
-            "shared and candidate relations draw all 16 path segments",
+            (samples.length - 1) * 2,
+            "shared and candidate relations draw every part of the path",
           );
           for (let i = 0; i < positions.count; i++)
             assert.ok(
               new T.Vector3()
                 .fromBufferAttribute(positions, i)
-                .distanceTo(
-                  view.curve.getPoint((Math.floor(i / 2) + (i % 2)) / 16),
-                ) < 1e-6,
+                .distanceTo(samples[Math.floor(i / 2) + (i % 2)]) < 1e-6,
               "colored relations cover the full curve without dash gaps",
             );
           const current: number[][] = [];
@@ -277,12 +278,23 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
             ends.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
             current.push(ends.flat());
           }
-          current.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+          current.sort(
+            (a, b) =>
+              a[0] - b[0] ||
+              a[1] - b[1] ||
+              a[2] - b[2] ||
+              a[3] - b[3] ||
+              a[4] - b[4] ||
+              a[5] - b[5],
+          );
           if (segments)
-            assert.deepEqual(
-              current,
-              segments,
-              "the colored relation segments stay in place",
+            assert.ok(
+              current.every((segment, i) =>
+                segment.every(
+                  (value, j) => Math.abs(value - segments![i][j]) < 1e-6,
+                ),
+              ),
+              "the colored relation segments stay in place within GPU coordinate precision",
             );
           segments = current;
         }
@@ -297,7 +309,7 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
   }
 });
 
-test("socket paths clear distinct endpoint hulls and cross self-connections between opposite faces", async () => {
+test("socket paths clear endpoint hulls and loop outside self-connections between opposite faces", async () => {
   const { createSpaceScene } = await import("../src/space/scene.js");
   const { PROCESS_SIDE, key } = await import("../src/space/model.js");
   const owner: PlacedProcess = {
@@ -315,7 +327,11 @@ test("socket paths clear distinct endpoint hulls and cross self-connections betw
       process_id: node.identity,
       fd,
       kind: "socket",
-      resource: { kind: "socket", device: { major: 0, minor: 1 }, inode: "5" },
+      resource: {
+        kind: "socket",
+        device: { major: 0, minor: 1 },
+        inode: String(fd),
+      },
     });
   const nodes = new Map([owner, peer].map((n) => [key(n.identity), n]));
   const input: SceneInput = {
@@ -356,18 +372,20 @@ test("socket paths clear distinct endpoint hulls and cross self-connections betw
         peer: endpoint(destination, peerFd),
         socket: socketEndpoint(),
       });
-      const expectedStart = new T.Vector3(owner.pos.x, owner.pos.y, 3.725).add(
-        new T.Vector3(nx, ny, 0).multiplyScalar(PROCESS_SIDE / 2 + 0.02),
-      );
+      const faceSign = self && "3" > String(peerFd) ? -1 : 1;
+      const normal = new T.Vector3(nx * faceSign, ny * faceSign, 0);
+      const expectedStart = new T.Vector3(
+        owner.pos.x,
+        owner.pos.y,
+        4,
+      ).addScaledVector(normal, PROCESS_SIDE / 2 + 0.16);
       const expectedEnd = new T.Vector3(
         destination.pos.x,
         destination.pos.y,
-        4 + ((peerFd % 12) - 5.5) * 0.11,
-      ).add(
-        new T.Vector3(nx, ny, 0).multiplyScalar(-(PROCESS_SIDE / 2 + 0.02)),
-      );
+        4,
+      ).addScaledVector(normal, -(PROCESS_SIDE / 2 + 0.16));
       for (const style of [{}, { candidate: true }, { shared: true }]) {
-        let forward: T.QuadraticBezierCurve3 | undefined;
+        let forward: T.Curve<T.Vector3> | undefined;
         for (const reversed of [false, true]) {
           const edge = {
             ...relation,
@@ -382,10 +400,14 @@ test("socket paths clear distinct endpoint hulls and cross self-connections betw
           );
           const curve = scene.renderView().edgeViews[0].curve;
           assert.ok(
-            curve.v0.distanceTo(reversed ? expectedEnd : expectedStart) < 1e-9,
+            curve
+              .getPoint(0)
+              .distanceTo(reversed ? expectedEnd : expectedStart) < 1e-9,
           );
           assert.ok(
-            curve.v2.distanceTo(reversed ? expectedStart : expectedEnd) < 1e-9,
+            curve
+              .getPoint(1)
+              .distanceTo(reversed ? expectedStart : expectedEnd) < 1e-9,
           );
           if (!reversed) forward = curve;
           else
@@ -393,12 +415,15 @@ test("socket paths clear distinct endpoint hulls and cross self-connections betw
               assert.ok(
                 curve.getPoint(t).distanceTo(forward!.getPoint(1 - t)) < 1e-9,
               );
+          const outward = normal.clone().multiplyScalar(reversed ? -1 : 1);
+          assert.ok(curve.getTangent(0).dot(outward) > 0.999);
+          assert.ok(curve.getTangent(1).dot(outward) > 0.999);
           if (self) {
             const middle = curve.getPoint(0.5);
-            assert.ok(Math.abs(middle.x - owner.pos.x) < 1e-9);
-            assert.equal(middle.y, owner.pos.y);
-            assert.ok(curve.v0.distanceTo(curve.v2) > PROCESS_SIDE);
-            continue;
+            assert.ok(middle.y > owner.pos.y + PROCESS_SIDE / 2);
+            assert.ok(
+              curve.getPoint(0).distanceTo(curve.getPoint(1)) > PROCESS_SIDE,
+            );
           }
           const line = scene
             .pickingView()
@@ -434,7 +459,7 @@ test("socket paths clear distinct endpoint hulls and cross self-connections betw
   scene.dispose();
 });
 
-test("pipe and external socket attachments keep their existing offsets", async () => {
+test("pipes and dangling sockets terminate at face-aligned cylinders", async () => {
   const { createSpaceScene } = await import("../src/space/scene.js");
   const node: PlacedProcess = {
     ...processInfo({ identity: { pid: 10, start_time_ticks: 1 } }),
@@ -479,14 +504,16 @@ test("pipe and external socket attachments keep their existing offsets", async (
     null,
   );
   const [pipeView, externalView] = scene.renderView().edgeViews;
-  assert.deepEqual(pipeView.curve.v0.toArray(), [1.12, 0, 1 + 3 * 0.11]);
-  assert.deepEqual(pipeView.curve.v2.toArray(), [10 - 1.12, 5, 1 + 4 * 0.11]);
-  assert.equal(pipeView.curve.v1.z, 0.22);
-  assert.deepEqual(externalView.curve.v0.toArray(), [1.12, 0, 4 - 0.5 * 0.11]);
-  assert.deepEqual(externalView.curve.v2.toArray(), [
-    1.12 + 3.5,
+  assert.deepEqual(pipeView.curve.getPoint(0).toArray(), [1.26, 0, 1.4]);
+  assert.deepEqual(pipeView.curve.getPoint(1).toArray(), [10 - 1.26, 5, 1.4]);
+  assert.ok(pipeView.curve instanceof T.CubicBezierCurve3);
+  assert.ok(pipeView.curve.getTangent(0).x > 0.999);
+  assert.ok(pipeView.curve.getTangent(1).x > 0.999);
+  assert.deepEqual(externalView.curve.getPoint(0).toArray(), [1.26, 0, 4]);
+  assert.deepEqual(externalView.curve.getPoint(1).toArray(), [
+    1.26 + 3.5,
     -2.5,
-    4 - 0.5 * 0.11,
+    4,
   ]);
   scene.dispose();
 });
@@ -531,7 +558,8 @@ test("space-components regression", async () => {
             "./netlink.js",
             "./dom-types.js",
           ].includes(path) ||
-            (name === "data.ts" && path === "./process-layout.js"),
+            (name === "data.ts" && path === "./process-layout.js") ||
+            (name === "scene.ts" && path === "./ipc-ports.js"),
           `${name} depends on ${path}`,
         );
     }

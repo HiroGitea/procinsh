@@ -1,11 +1,23 @@
 // Build and update Three.js geometry from data and selection state.
 import * as T from "three";
 import { isKernelNetlink } from "./netlink.js";
-import { key, processColors, PROCESS_SIDE } from "./model.js";
+import {
+  key,
+  processColors,
+  PROCESS_SIDE,
+  socketOwnerKey as ipcOwnerKey,
+} from "./model.js";
+import {
+  IpcPortAllocator,
+  IPC_STEM_LENGTH,
+  IPC_PORT_RADIUS,
+} from "./ipc-ports.js";
+import type { IpcPort } from "./ipc-ports.js";
 import type {
   Region,
   RenderNode,
   EdgeView,
+  ConnectionCurve,
   NetworkView,
   FileView,
   NetlinkView,
@@ -23,18 +35,87 @@ const PARENT_LINE_WIDTH = 0.6;
 const PARENT_LINE_Z = 0.06;
 const PARENT_LINE_BRIGHTNESS = 0.22;
 const PROCESS_HEIGHT = 8;
-const SOCKET_HEIGHT = 4;
+const IPC_PORT_COLOR = 0x43c4d4;
 const SHARED_FD_COLOR = 0x54828b;
 const CANDIDATE_PEER_COLOR = 0xc69a50;
 
-// Attach to the side facing the peer, with a small gap outside the process hull.
-function socketFaceOffset(position: T.Vector3, peer: T.Vector3): T.Vector3 {
-  const dx = peer.x - position.x,
-    dy = peer.y - position.y,
-    offset = PROCESS_SIDE / 2 + 0.02;
-  return Math.abs(dx) >= Math.abs(dy)
-    ? new T.Vector3(Math.sign(dx) * offset, 0, 0)
-    : new T.Vector3(0, Math.sign(dy) * offset, 0);
+function ipcCurve(
+  start: T.Vector3,
+  end: T.Vector3,
+  normal: T.Vector3,
+  endNormal: T.Vector3,
+  self: boolean,
+): ConnectionCurve {
+  const reach = Math.max(0.6, Math.min(3, start.distanceTo(end) * 0.3));
+  if (self && Math.abs(normal.x) === 1 && endNormal.x === -normal.x) {
+    // Opposing ports join around the hull instead of passing through its center.
+    const middle = start.clone().lerp(end, 0.5);
+    middle.y += PROCESS_SIDE / 2 + 1.5;
+    const path = new T.CurvePath<T.Vector3>();
+    path.add(
+      new T.CubicBezierCurve3(
+        start,
+        start.clone().addScaledVector(normal, reach),
+        middle.clone().addScaledVector(normal, reach),
+        middle,
+      ),
+    );
+    path.add(
+      new T.CubicBezierCurve3(
+        middle,
+        middle.clone().addScaledVector(normal, -reach),
+        end.clone().addScaledVector(normal, -reach),
+        end,
+      ),
+    );
+    return path;
+  }
+  const direction = end.clone().sub(start);
+  if (normal.dot(direction) > 0 && endNormal.dot(direction) < 0)
+    return new T.CubicBezierCurve3(
+      start,
+      start.clone().addScaledVector(normal, reach),
+      end.clone().addScaledVector(endNormal, reach),
+      end,
+    );
+  // An IPC resource shared by peers in different directions still has one face port.
+  // Route behind that face above the hulls rather than cutting through a process.
+  const highStart = start
+    .clone()
+    .addScaledVector(normal, reach)
+    .setZ(PROCESS_HEIGHT + 2.5);
+  const highEnd = end
+    .clone()
+    .addScaledVector(endNormal, reach)
+    .setZ(PROCESS_HEIGHT + 2.5);
+  if (highStart.equals(highEnd)) highEnd.y += 1;
+  const up = new T.Vector3(0, 0, reach);
+  const path = new T.CurvePath<T.Vector3>();
+  path.add(
+    new T.CubicBezierCurve3(
+      start,
+      start.clone().addScaledVector(normal, reach),
+      highStart.clone().sub(up),
+      highStart,
+    ),
+  );
+  path.add(
+    new T.CubicBezierCurve3(
+      highStart,
+      highStart.clone().add(up),
+      highEnd.clone().add(up),
+      highEnd,
+    ),
+  );
+  path.add(
+    new T.CubicBezierCurve3(
+      highEnd,
+      highEnd.clone().sub(up),
+      end.clone().addScaledVector(endNormal, reach),
+      end,
+    ),
+  );
+  return path;
 }
 
 type ParentPath = {
@@ -137,6 +218,7 @@ function parentJoints(sections: ParentSegment[]): ParentJoint[] {
 }
 
 function disposeObject(object: T.Object3D) {
+  if (object instanceof T.InstancedMesh) object.dispose();
   if (
     object instanceof T.Mesh ||
     object instanceof T.Line ||
@@ -174,6 +256,12 @@ export function createSpaceScene() {
     baseGlow: T.InstancedMesh | null = null,
     haloGlow: T.InstancedMesh | null = null,
     hullIds: string[] = [];
+  let ipcPorts: IpcPort[] = [],
+    portStems: T.InstancedMesh<T.CylinderGeometry, T.MeshBasicMaterial> | null =
+      null;
+  const portAllocator = new IpcPortAllocator();
+  const portGroup = new T.Group();
+  portGroup.name = "ipc-ports";
   const dummy = new T.Object3D();
   function syncNodes(input: FileSceneInput) {
     nodes = new Map(
@@ -193,7 +281,7 @@ export function createSpaceScene() {
   );
   selection.visible = false;
   scene.add(selection);
-  const edgeSelection = new T.Line(
+  const edgeSelection = new T.LineSegments(
     new T.BufferGeometry(),
     new T.LineBasicMaterial({
       color: 0xc9fff2,
@@ -203,6 +291,7 @@ export function createSpaceScene() {
       blending: T.AdditiveBlending,
     }),
   );
+  edgeSelection.name = "selected-connection";
   edgeSelection.visible = false;
   scene.add(edgeSelection);
   function regionColor(r: Region) {
@@ -424,6 +513,9 @@ export function createSpaceScene() {
     geometryGroup.add(layers);
     edgeViews = [];
     networkViews = [];
+    portGroup.clear();
+    geometryGroup.add(portGroup);
+    const ports = portAllocator.allocate(input);
     const grouped = new Set(
       [...network.values()].flatMap((g) => g.members.map((e) => e.id)),
     );
@@ -459,30 +551,46 @@ export function createSpaceScene() {
     for (let i = 0; i < visibleGroups.length; i++) {
       const group = visibleGroups[i],
         p = networkPositions.get(group.id)!,
-        pos = new T.Vector3(p.x, p.y, p.z),
-        owner = nodes.get(key(group.endpoint.process_id))!;
+        pos = new T.Vector3(p.x, p.y, p.z);
       dummy.position.copy(pos);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       markers.setMatrixAt(i, dummy.matrix);
-      const start = owner.pos.clone().setZ(PROCESS_HEIGHT),
-        mid = start.clone().lerp(pos, 0.5);
-      mid.z += 2;
-      const curve = new T.QuadraticBezierCurve3(start, mid, pos);
-      networkViews.push({ group, pos, curve });
-      for (const e of group.members)
+      let representative: T.CubicBezierCurve3 | undefined;
+      const curves = new Map<string, T.CubicBezierCurve3>();
+      const pick = {
+        ...group,
+        peer: null,
+        shared: false,
+        candidate: false,
+        networkId: group.id,
+      };
+      for (const e of group.members) {
+        const port = ports.get(ipcOwnerKey(e.endpoint))!;
+        let curve = curves.get(port.id);
+        if (!curve) {
+          const start = port.position;
+          curve = new T.CubicBezierCurve3(
+            start,
+            start.clone().addScaledVector(port.normal, 2),
+            start
+              .clone()
+              .lerp(pos, 0.7)
+              .add(new T.Vector3(0, 0, 2)),
+            pos,
+          );
+          curves.set(port.id, curve);
+          const pts = curve.getPoints(24);
+          for (let j = 0; j < 24; j++)
+            addLine(pts[j].toArray(), pts[j + 1].toArray(), 0x68baff, pick);
+        }
+        representative ??= curve;
         edgeViews.push({ e, curve, networkId: group.id });
-      const pts = curve.getPoints(24),
-        pick = {
-          ...group,
-          peer: null,
-          shared: false,
-          candidate: false,
-          networkId: group.id,
-        };
-      for (let j = 0; j < 24; j++)
-        addLine(pts[j].toArray(), pts[j + 1].toArray(), 0x68baff, pick);
+      }
+      if (representative)
+        networkViews.push({ group, pos, curve: representative });
     }
+
     const mutedPos = [],
       mutedColors = [],
       mutedEdges = [];
@@ -496,36 +604,34 @@ export function createSpaceScene() {
         (b && !visible.has(key(b.identity)))
       )
         continue;
-      const socket = e.endpoint.resource.kind === "socket";
-      const faceOffset =
-        socket && b && a !== b
-          ? socketFaceOffset(a.pos, b.pos)
-          : new T.Vector3(1.12, 0, 0);
-      // A self-connection keeps each FD on its own opposing face across reversals.
-      if (socket && a === b && e.endpoint.fd > e.peer!.fd) faceOffset.negate();
-      const height = (fd: number) =>
-        socket
-          ? SOCKET_HEIGHT + ((fd % 12) - 5.5) * 0.11
-          : 1 + (fd % 12) * 0.11;
-      const start = a.pos
-        .clone()
-        .add(faceOffset)
-        .add(new T.Vector3(0, 0, height(e.endpoint.fd)));
-      const end = b
-        ? b.pos
+      const sourcePort = ports.get(ipcOwnerKey(e.endpoint))!;
+      const peerPort = b && e.peer ? ports.get(ipcOwnerKey(e.peer))! : null;
+      const start = sourcePort.position;
+      const end = peerPort
+        ? peerPort.position
+        : start
             .clone()
-            .sub(faceOffset)
-            .add(new T.Vector3(0, 0, height(e.peer!.fd)))
-        : start.clone().add(new T.Vector3(3.5, -2.5, socket ? 0 : -0.6));
-      const mid = start.clone().lerp(end, 0.5);
-      if (!socket) mid.z = 0.22;
-      const curve = new T.QuadraticBezierCurve3(start, mid, end);
+            .addScaledVector(sourcePort.normal, 3.5)
+            .add(
+              new T.Vector3(
+                sourcePort.normal.y * 2.5,
+                -sourcePort.normal.x * 2.5,
+                0,
+              ),
+            );
+      const curve = ipcCurve(
+        start,
+        end,
+        sourcePort.normal,
+        peerPort?.normal ?? sourcePort.normal.clone().negate(),
+        a === b,
+      );
       edgeViews.push({ e, curve });
       const pts = curve.getPoints(16);
       const mutedColor = new T.Color(
         e.shared ? SHARED_FD_COLOR : CANDIDATE_PEER_COLOR,
       );
-      for (let j = 0; j < 16; j++) {
+      for (let j = 0; j < pts.length - 1; j++) {
         if (e.candidate || e.shared) {
           mutedPos.push(...pts[j], ...pts[j + 1]);
           mutedColors.push(
@@ -546,6 +652,33 @@ export function createSpaceScene() {
           );
       }
     }
+    ipcPorts = [...ports.values()];
+    portStems = new T.InstancedMesh(
+      new T.CylinderGeometry(
+        IPC_PORT_RADIUS,
+        IPC_PORT_RADIUS,
+        IPC_STEM_LENGTH,
+        8,
+      ).rotateX(Math.PI / 2),
+      new T.MeshBasicMaterial({ color: 0xffffff }),
+      Math.max(1, ipcPorts.length),
+    );
+    portStems.name = "ipc-port-stems";
+    portStems.count = ipcPorts.length;
+    const transform = new T.Object3D(),
+      axis = new T.Vector3(0, 0, 1);
+    for (let i = 0; i < ipcPorts.length; i++) {
+      const port = ipcPorts[i];
+      transform.quaternion.setFromUnitVectors(axis, port.normal);
+      transform.scale.set(port.radiusScale, port.radiusScale, 1);
+      transform.position
+        .copy(port.position)
+        .addScaledVector(port.normal, -IPC_STEM_LENGTH / 2);
+      transform.updateMatrix();
+      portStems.setMatrixAt(i, transform.matrix);
+      portStems.setColorAt(i, new T.Color(IPC_PORT_COLOR));
+    }
+    portGroup.add(portStems);
     const lines = new T.BufferGeometry();
     lines.setAttribute("position", new T.Float32BufferAttribute(linePos, 3));
     lines.setAttribute("color", new T.Float32BufferAttribute(lineColors, 3));
@@ -773,7 +906,37 @@ export function createSpaceScene() {
           ? networkViews.find((v) => v.group.id === selectionState.network)
           : edgeViews.find((v) => v.e.id === selectionState.connection);
     edgeSelection.visible = !!view;
-    if (view) edgeSelection.geometry.setFromPoints(view.curve.getPoints(32));
+    if (view) {
+      const curves = selectionState.network
+        ? [
+            ...new Set(
+              edgeViews
+                .filter((edge) => edge.networkId === selectionState.network)
+                .map((edge) => edge.curve),
+            ),
+          ]
+        : [view.curve];
+      const points: T.Vector3[] = [];
+      for (const curve of curves) {
+        const samples = curve.getPoints(32);
+        for (let i = 1; i < samples.length; i++)
+          points.push(samples[i - 1], samples[i]);
+      }
+      edgeSelection.geometry.dispose();
+      edgeSelection.geometry = new T.BufferGeometry().setFromPoints(points);
+    }
+    if (portStems?.instanceColor) {
+      const color = new T.Color();
+      ipcPorts.forEach((port, i) => {
+        const active =
+          (selectionState.connection !== null &&
+            port.connections.has(selectionState.connection)) ||
+          (selectionState.network !== null &&
+            port.networks.has(selectionState.network));
+        portStems!.setColorAt(i, color.set(active ? 0xc9fff2 : IPC_PORT_COLOR));
+      });
+      portStems.instanceColor.needsUpdate = true;
+    }
     updateParentSelection(selectionState);
   }
   function cpuGlowVisual(id: string) {
@@ -827,7 +990,10 @@ export function createSpaceScene() {
         hull,
         objects: [
           ...geometryGroup.children.filter(
-            (object) => object !== parentLines && object !== parentLineJoints,
+            (object) =>
+              object !== parentLines &&
+              object !== parentLineJoints &&
+              object !== portGroup,
           ),
           ...fileGroup.children,
         ],

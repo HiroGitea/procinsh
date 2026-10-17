@@ -303,13 +303,15 @@ test("process sockets attach at mid-height, network connections at the roof and 
     const pipeCurve = scene
       .renderView()
       .edgeViews.find((view) => view.e.id === "pipe")!.curve;
-    assert.equal(pipeCurve.v0.z, 1.33);
-    assert.equal(pipeCurve.v1.z, 0.22);
+    assert.ok(pipeCurve instanceof T.CubicBezierCurve3);
+    assert.equal(pipeCurve.getPoint(0).z, 1.4);
+    assert.ok(pipeCurve.getPoints(24).every((point) => point.z < 2.3));
+    assert.ok(pipeCurve.getTangent(0).y > 0.999);
+    assert.ok(pipeCurve.getTangent(1).y > 0.999);
     scene.updateSelection({ ...selection(null), connection: "socket" });
-    const selectedLine = scene.root.children.find(
-      (object) =>
-        object instanceof T.Line && !(object instanceof T.LineSegments),
-    ) as T.Line;
+    const selectedLine = scene.root.getObjectByName(
+      "selected-connection",
+    ) as T.LineSegments;
     const positions = selectedLine.geometry.attributes.position;
     assert.ok(selectedLine.visible);
     for (let i = 0; i < positions.count; i++)
@@ -337,14 +339,124 @@ test("process sockets attach at mid-height, network connections at the roof and 
     scene.rebuild(data, null);
     const network = scene.renderView().networkViews[0];
     const owner = data.nodes.get("1:1")!;
-    assert.deepEqual(network.curve.v0.toArray(), [owner.pos.x, owner.pos.y, 8]);
+    assert.deepEqual(network.curve.v0.toArray(), [
+      owner.pos.x,
+      owner.pos.y,
+      8.16,
+    ]);
     assert.deepEqual(network.pos.toArray(), [3, -3, 12]);
-    assert.equal(network.curve.v2.z, 12);
+    assert.equal(network.curve.getPoint(1).z, 12);
     assert.ok(network.curve.getPoints(24).every((point) => point.z >= 8));
     assert.equal(
       scene.renderView().edgeViews.find((view) => view.e.id === "external")!
         .curve,
       network.curve,
+    );
+  } finally {
+    scene.dispose();
+  }
+});
+
+test("socket ports are small plain cylinders attached to hulls and cables", () => {
+  const scene = createSpaceScene();
+  try {
+    const data = input([process(1, 0, 0), process(2, 10, 5)]);
+    data.snapshot.fd_relations = Array.from({ length: 12 }, (_, fd) => {
+      const endpoint = (pid: number) =>
+        fdEndpoint({
+          process_id: { pid, start_time_ticks: 1 },
+          fd,
+          kind: "socket",
+          resource: {
+            kind: "socket",
+            device: { major: 0, minor: 1 },
+            inode: String(fd),
+          },
+        });
+      return fdRelation({
+        id: `socket-${fd}`,
+        endpoint: endpoint(1),
+        peer: endpoint(2),
+      });
+    });
+    // Shared ownership and candidate evidence reuse the same physical ports.
+    data.snapshot.fd_relations.push({
+      ...data.snapshot.fd_relations[0],
+      id: "shared",
+      shared: true,
+    });
+    scene.rebuild(data, null);
+    const stems = scene.root.getObjectByName("ipc-port-stems");
+    const group = scene.root.getObjectByName("ipc-ports")!;
+    assert.ok(stems instanceof T.InstancedMesh);
+    assert.ok(stems.geometry instanceof T.CylinderGeometry);
+    assert.equal(stems.count, 24);
+    assert.equal(
+      group.children.length,
+      1,
+      "all ports share one draw call without separate rings or discs",
+    );
+    assert.equal(
+      stems.geometry.parameters.openEnded,
+      false,
+      "ports are solid cylinders",
+    );
+    assert.ok(stems.geometry.parameters.radiusTop <= 0.06);
+    assert.ok(stems.geometry.parameters.height <= 0.16);
+    assert.ok(
+      !scene.pickingView().objects.includes(group),
+      "decorations do not add picking work or steal cable hits",
+    );
+    const matrix = new T.Matrix4();
+    const positions: T.Vector3[] = [];
+    for (let i = 0; i < stems.count; i++) {
+      stems.getMatrixAt(i, matrix);
+      const stem = new T.Vector3().setFromMatrixPosition(matrix);
+      const normal = new T.Vector3(0, 0, 1).transformDirection(matrix);
+      const position = stem.clone().addScaledVector(normal, 0.08);
+      assert.ok(Math.abs(normal.x) > 0.999);
+      assert.ok(
+        Math.abs(
+          stem.clone().addScaledVector(normal, -0.08).x -
+            (normal.x > 0 ? 1.1 : 8.9),
+        ) < 1e-6,
+        "cylinder base meets hull face",
+      );
+      assert.ok(
+        scene
+          .renderView()
+          .edgeViews.some(
+            (view) =>
+              view.curve.getPoint(0).distanceTo(position) < 1e-6 ||
+              view.curve.getPoint(1).distanceTo(position) < 1e-6,
+          ),
+      );
+      assert.ok(
+        positions.every((other) => other.distanceTo(position) > 0.109),
+        "neighboring FDs have distinct ports",
+      );
+      positions.push(position);
+    }
+    scene.updateSelection({ ...selection(null), connection: "socket-0" });
+    const highlighted = new T.Color();
+    stems.getColorAt(0, highlighted);
+    assert.ok(highlighted.r > 0.5, "selected cables highlight their ports");
+    stems.getColorAt(2, highlighted);
+    assert.ok(highlighted.r < 0.2, "other ports retain cyan styling");
+    let stemsDisposed = false,
+      instancesDisposed = 0;
+    stems.addEventListener("dispose", () => {
+      instancesDisposed++;
+    });
+    stems.geometry.addEventListener("dispose", () => {
+      stemsDisposed = true;
+    });
+    scene.rebuild({ ...data, visible: new Set(["1:1"]) }, null);
+    assert.ok(stemsDisposed, "rebuild releases port geometry");
+    assert.equal(instancesDisposed, 1, "rebuild releases instance buffers too");
+    assert.equal(
+      (scene.root.getObjectByName("ipc-port-stems") as T.InstancedMesh).count,
+      0,
     );
   } finally {
     scene.dispose();

@@ -28,6 +28,17 @@ function processPosition(id: string) {
   const pos = data.nodes.get(id)?.pos;
   return pos && { x: pos.x, y: pos.y, z: pos.z };
 }
+function ipcPortVisuals() {
+  const stems = scene.root.getObjectByName("ipc-port-stems");
+  const matrix = new T.Matrix4();
+  return Array.from({length:stems.count}, (_, i) => {
+    stems.getMatrixAt(i, matrix);
+    const normal = new T.Vector3(0,0,1).transformDirection(matrix);
+    return {position:new T.Vector3().setFromMatrixPosition(matrix)
+      .addScaledVector(normal, stems.geometry.parameters.height / 2).toArray(),
+      normal:normal.toArray()};
+  });
+}
 function connectionVisual(id: string) {
   const view = scene.renderView().edgeViews.find(view => view.e.id === id);
   return view && {
@@ -37,6 +48,7 @@ function connectionVisual(id: string) {
 }
 export {
   socketVisibilityState,
+  ipcPortVisuals,
   selectNetlink,
   netlinkVisuals,
   netlinkParticles,
