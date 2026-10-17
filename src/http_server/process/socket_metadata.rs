@@ -250,12 +250,18 @@ pub(in crate::http_server) fn metadata_available(id: ProcessId, fd: i32) -> bool
     let mut reader = SocketMetadataReader::new(id);
     match reader.read(fd as u32, meta.dev(), meta.ino()) {
         Ok(metadata) => {
-            assert!(metadata.protocol.is_some(), "socket kind observation is required");
+            assert!(
+                metadata.protocol.is_some(),
+                "socket kind observation is required"
+            );
             true
         }
         Err(error) => {
             let denied = error.downcast_ref::<std::io::Error>().is_some_and(|io| {
-                matches!(io.raw_os_error(), Some(libc::EPERM | libc::EACCES | libc::ENOSYS))
+                matches!(
+                    io.raw_os_error(),
+                    Some(libc::EPERM | libc::EACCES | libc::ENOSYS)
+                )
             });
             assert!(denied, "unexpected socket metadata failure: {error:#}");
             // A failed pidfd_getfd must remain a normal data-unavailable state.
