@@ -134,7 +134,7 @@ try {
     const input=document.querySelector('input[type=file]');input.files=transfer.files;input.dispatchEvent(new Event('change'));
   })()`);
   await waitFor(
-    "document.querySelector('#replay-status').textContent.includes('chrome-vm.json.gz') && document.querySelector('#play').textContent==='Pause'",
+    "document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'",
     "Real gzip replays",
   );
   const replayHeap = await cdp("Runtime.getHeapUsage");

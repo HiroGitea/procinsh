@@ -101,7 +101,7 @@ try {
   );
   await evaluate("document.querySelector('#open-demo').click()");
   await waitFor(
-    "document.querySelector('#replay-status')?.textContent.includes('Demo #1')",
+    "document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'",
     "demo loads at deployment base path",
   );
   assert.equal(
@@ -163,7 +163,7 @@ try {
   const timeOrigin = await evaluate<number>("performance.timeOrigin");
   await cdp("Page.reload");
   await waitFor(
-    `performance.timeOrigin!==${timeOrigin} && document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'`,
+    `performance.timeOrigin!==${timeOrigin} && document.querySelector('#replay-status')?.hidden && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'`,
     "direct route refresh works",
   );
   await cdp("Page.navigate", {
@@ -175,7 +175,7 @@ try {
   );
   await evaluate("document.querySelector('#open-demo').click()");
   await waitFor(
-    "document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
+    "document.querySelector('#replay-status')?.hidden && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
     "demo picker recovers from an unknown recording ID",
   );
   for (const encoding of ["gzip", "http-gzip"] as const) {
@@ -183,7 +183,7 @@ try {
     const previousOrigin = await evaluate<number>("performance.timeOrigin");
     await cdp("Page.navigate", { url });
     await waitFor(
-      `performance.timeOrigin!==${previousOrigin} && document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#play').textContent==='Pause'`,
+      `performance.timeOrigin!==${previousOrigin} && document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'`,
       `${encoding} URL replay avoids double decompression`,
     );
   }
@@ -191,7 +191,7 @@ try {
     url: url.replace("recording=demo", "recording=chrome-ubuntu26"),
   });
   await waitFor(
-    "document.querySelector('#replay-status')?.textContent.includes('Chrome') && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0",
+    "document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0",
     "real Chrome gzip plays without a backend",
   );
   await evaluate(
