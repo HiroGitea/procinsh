@@ -24,7 +24,9 @@ with socket.socket(socket.AF_UNIX) as monitor:
 PY
   exit
 fi
-for tool in qemu-img qemu-system-x86_64 cloud-localds curl sha256sum python3 flock; do
+required_tools=(qemu-system-x86_64 python3 flock)
+if [[ $1 == prepare ]]; then required_tools+=(qemu-img cloud-localds curl); fi
+for tool in "${required_tools[@]}"; do
   command -v "$tool" >/dev/null || { echo "Missing tool: $tool" >&2; exit 1; }
 done
 # Keep another invocation from modifying a running guest or preparing its disk.

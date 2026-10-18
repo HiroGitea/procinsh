@@ -120,6 +120,14 @@ directory or host credentials. The default image is the dated Ubuntu 26.04 build
 `release-20260927`; its SHA256 is checked against the official HTTPS checksum
 list. `IMAGE_BASE` selects another dated official image directory.
 
+The invoking user must have read/write access to `/dev/kvm`. On hosts where the
+device belongs to the `kvm` group, add the user with
+`sudo usermod -aG kvm "$USER"`, then log out and back in before starting QEMU.
+Check access with `test -r /dev/kvm && test -w /dev/kvm`. QEMU runs directly as
+that user; no container or root QEMU process is required. Disk preparation needs
+`qemu-img`, `cloud-localds` and curl; starting a prepared guest only needs
+`qemu-system-x86_64`, Python 3 and flock (from util-linux).
+
 ```sh
 # The commit must be published so the guest can clone it.
 VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh prepare
@@ -194,11 +202,3 @@ network addresses, and retain process/IPC identities if sanitization is needed.
 Only then copy the gzip to `web/replay-public/recordings/` and add its catalog entry
 in `web/src/space/session-controls.ts`. The standalone build checks every source
 asset and every generated file against the Pages Free 25 MiB maximum.
-
-If host QEMU tools or KVM group membership are unavailable, use
-`scripts/recording-vm/docker.sh` in place of `run.sh` for the same commands. It
-builds a QEMU tool container, passes only `/dev/kvm`, mounts the checkout read-only
-and the VM state directory writable, and runs with the caller's UID plus the
-device's group. Host networking preserves the loopback-only forwarding address.
-The guest still runs directly under QEMU/KVM, with SLIRP networking. Docker needs
-permission to access the KVM device; the host's device permissions are unchanged.
