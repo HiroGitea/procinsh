@@ -23,7 +23,7 @@ Join our [Discord server](https://discord.gg/aQuNSczpw) for questions and discus
 
 Use **Record** and **Stop & Download** in the SPACE toolbar to save a single JSON
 recording. **Open recording** opens `/replay/space/`, where files stay in your
-browser. Playback supports pause, seek, event stepping and slow motion with the
+browser. Playback supports pause, seek, slow motion with the
 same 3D camera controls. Review recordings for sensitive data before sharing.
 
 A backend-free static viewer and synthetic sanitized demo build with

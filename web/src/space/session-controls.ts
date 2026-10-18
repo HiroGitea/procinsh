@@ -96,14 +96,6 @@ export function mountReplayControls(
   open.onclick = () => file.click();
   const play = document.createElement("button");
   play.id = "play";
-  const previous = document.createElement("button");
-  previous.textContent = "Previous";
-  previous.setAttribute("aria-label", "Step backward");
-  previous.title = "Step backward";
-  const next = document.createElement("button");
-  next.textContent = "Next";
-  next.setAttribute("aria-label", "Step forward");
-  next.title = "Step forward";
   const timeline = document.createElement("input");
   timeline.id = "timeline";
   timeline.type = "range";
@@ -128,18 +120,15 @@ export function mountReplayControls(
   const status = document.createElement("span");
   status.id = "replay-status";
   status.setAttribute("role", "status");
-  const steps = document.createElement("div");
-  steps.className = "replay-controls-row";
-  steps.append(previous, next);
   const options = document.createElement("div");
   options.className = "replay-controls-row";
   options.append(speed, loopLabel);
-  host.append(open, file, play, steps, timeline, options, status);
+  host.append(open, file, play, timeline, options, status);
   let replay: SpaceReplay | null = null;
   let loading = 0;
   let label = "";
   function refresh() {
-    for (const element of [previous, play, next, timeline, speed, loop])
+    for (const element of [play, timeline, speed, loop])
       element.disabled = !replay;
     play.textContent = replay?.playing ? "Pause" : "Play";
     timeline.disabled = !replay || replay.duration === 0;
@@ -200,14 +189,6 @@ export function mountReplayControls(
     if (!replay) return;
     if (!replay.playing && replay.time === replay.duration) replay.seek(0);
     replay.playing = !replay.playing;
-    refresh();
-  };
-  previous.onclick = () => {
-    replay?.step(-1);
-    refresh();
-  };
-  next.onclick = () => {
-    replay?.step(1);
     refresh();
   };
   timeline.oninput = () => {
