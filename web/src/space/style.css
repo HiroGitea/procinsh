@@ -19,7 +19,7 @@ header #build-commit{text-decoration:underline;text-underline-offset:3px;font-si
 .tools { flex-wrap: wrap; max-width: calc(100vw - 40px); }
 .tools a, .tools strong, .tools span { color: #bcebe8; align-self: center; }
 .tools select, .tools input[type="file"] { max-width: 220px; background: #102327; color: #d7eeed; }
-.tools input[type="range"] { width: 100%; min-width: 0; margin: 0; }
+.tools input[type="range"] { width: 100%; min-width: 0; margin: 0; padding: 9px 0 !important; }
 #recording-status { color: #ffb3a5; }
 #recording-status:empty, #replay-status:empty { display: none; }
 .left-hud { max-height: calc(100vh - 130px); overflow-y: auto; }

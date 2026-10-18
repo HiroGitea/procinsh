@@ -5,6 +5,7 @@ import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, extname } from "node:path";
 import { tmpdir } from "node:os";
 import { connectPage, pages } from "./harness.js";
+import { checkReplaySliderTravel } from "./replay-slider.js";
 import { launch, until, delay } from "../support/runtime.js";
 
 const root = resolve(import.meta.dirname, "../../dist-replay");
@@ -72,6 +73,12 @@ try {
   const { cdp, evaluate, waitFor } = connection;
   await cdp("Runtime.enable");
   await cdp("Page.enable");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   await cdp("Log.enable");
   await cdp("Page.addScriptToEvaluateOnNewDocument", {
     source: `window.EventSource=class { constructor(){throw Error('Static replay attempted SSE')} };`,
@@ -86,6 +93,7 @@ try {
     await evaluate("document.querySelector('#failure').hidden"),
     true,
   );
+  await checkReplaySliderTravel(cdp, evaluate);
   await evaluate("document.querySelector('#play').click()");
   await waitFor(
     "Number(document.querySelector('#timeline').value)>200/30000",
