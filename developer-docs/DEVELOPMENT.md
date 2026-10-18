@@ -64,6 +64,16 @@ cargo publish --dry-run
 
 `scripts/check_web_package.py` は dist 全ファイルが crate に入ること、`tests/` が含まれないこと、node/npm/npx を失敗させた状態で Git メタデータのない展開済み crate をビルドできることを検証します。`cargo publish --dry-run` は実際には公開しません。`cargo install procinsh --locked` では同梱済みの JavaScript を使うため、インストール先に Node.js・npm は不要です。Rust とネイティブ・BPF のビルド依存は必要です。
 
+### リリース
+
+From a checkout of this repository, run one of:
+
+```sh
+./scripts/release.sh patch  # 0.1.13 -> 0.1.14
+./scripts/release.sh minor  # 0.1.13 -> 0.2.0
+./scripts/release.sh major  # 0.1.13 -> 1.0.0
+```
+
 ## 実装構成
 
 | 場所 | 役割 |
