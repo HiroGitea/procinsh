@@ -4,12 +4,14 @@ import { createServer } from "node:http";
 import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, extname } from "node:path";
 import { tmpdir } from "node:os";
+import { gzipSync } from "node:zlib";
 import { connectPage, pages } from "./harness.js";
 import { checkReplaySliderTravel } from "./replay-slider.js";
 import { launch, until, delay } from "../support/runtime.js";
 
 const root = resolve(import.meta.dirname, "../../dist-replay");
 const requests: string[] = [];
+let demoEncoding: "plain" | "gzip" | "http-gzip" = "plain";
 const server = createServer(async (request, response) => {
   const url = new URL(request.url!, "http://localhost");
   requests.push(url.pathname);
@@ -35,7 +37,11 @@ const server = createServer(async (request, response) => {
         } as Record<string, string>
       )[extname(path)] || "application/octet-stream",
     );
-    response.end(body);
+    if (path.endsWith("/recordings/demo.json") && demoEncoding !== "plain") {
+      if (demoEncoding === "http-gzip")
+        response.setHeader("Content-Encoding", "gzip");
+      response.end(gzipSync(body));
+    } else response.end(body);
   } catch {
     response.writeHead(404).end();
   }
@@ -172,6 +178,14 @@ try {
     "document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
     "demo picker recovers from an unknown recording ID",
   );
+  for (const encoding of ["gzip", "http-gzip"] as const) {
+    demoEncoding = encoding;
+    await cdp("Page.navigate", { url });
+    await waitFor(
+      "document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#play').textContent==='Pause'",
+      `${encoding} URL replay avoids double decompression`,
+    );
+  }
   assert.ok(requests.includes("/demo/recordings/demo.json"));
   assert.ok(
     requests.every((path) => !path.includes("/api/")),

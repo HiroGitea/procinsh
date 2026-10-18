@@ -129,6 +129,21 @@ export async function checkSpaceRecording(
     true,
     "opening another recording re-enables loop autoplay",
   );
+  for (const method of ["picker", "drop"]) {
+    await evaluate(`(async()=>{
+      const gzip = await new Response(new Blob([${JSON.stringify(text)}]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([gzip], 'compressed-${method}.json.gz', {type:'application/gzip'}));
+      if (${JSON.stringify(method)} === 'picker') {
+        const input=document.querySelector('input[type=file]'); input.files=transfer.files;
+        input.dispatchEvent(new Event('change'));
+      } else document.dispatchEvent(new DragEvent('drop',{dataTransfer:transfer}));
+    })()`);
+    await waitFor(
+      `document.querySelector('#replay-status').textContent.includes('compressed-${method}.json.gz') && document.querySelector('#play').textContent==='Pause'`,
+      `gzip ${method} replays`,
+    );
+  }
   assert.equal(
     await evaluate(
       'document.querySelectorAll(\'a[href^="/process/"],a[href="/list"],a[href="/space"]\').length',

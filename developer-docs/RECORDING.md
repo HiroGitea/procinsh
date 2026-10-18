@@ -18,7 +18,11 @@ storage. At 128 MiB the recorder stops and retains the completed prefix; local
 replay uses the same size limit. The live view continues independently.
 
 **Open recording** opens `/replay/space/`. Select or drop the original downloaded
-JSON. Files are read with the browser File API and never uploaded. Choose another
+JSON or a standard gzip-compressed `.json.gz`. Files are streamed with the browser
+File API and never uploaded. Both the input and decompressed data are limited to
+128 MiB; malformed gzip and invalid recordings are rejected. The loader inspects
+the gzip magic bytes, so HTTP `Content-Encoding: gzip` decoding does not cause
+double decompression. Choose another
 file on the same page. Each recording starts playing automatically with **Loop**
 enabled after it loads, including bundled demos opened by URL. Play/pause,
 timeline seeking and 0.1×/0.25×/0.5×/1×/2× speeds use a virtual clock shared with
@@ -104,3 +108,83 @@ maps, relative timestamps, event ordering, playback/seek/step and asset size
 boundaries. Browser tests cover recording download, unchanged local JSON picker
 and drop loading, and a replay-only static server under `/demo/`, including
 refresh, slow playback, unknown recording IDs and zero live API requests.
+
+## Dedicated Ubuntu 26.04 Chrome recording VM
+
+Use a Linux x86-64 host with readable/writable `/dev/kvm`, QEMU (`qemu-system-x86`
+and `qemu-utils`), `cloud-image-utils`, curl and Python 3. The scripts use KVM,
+virtio disks and networking, a QCOW2 Ubuntu Cloud Image and a NoCloud seed. They
+use QEMU directly, with no libvirt, Vagrant, TAP, bridge, SSH tunnel, shared host
+directory or host credentials. The default image is the dated Ubuntu 26.04 build
+`release-20260927`; its SHA256 is checked against the official HTTPS checksum
+list. `IMAGE_BASE` selects another dated official image directory.
+
+```sh
+# The commit must be published so the guest can clone it.
+VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh prepare
+VM_DIR=/tmp/space-demo HOST_PORT=10090 VM_CPUS=4 VM_MEMORY_MIB=8192 \
+  scripts/recording-vm/run.sh run
+```
+
+`prepare` refuses to overwrite an existing guest. `PROCINSH_REF` defaults to the
+checkout's full commit SHA; `VM_DISK_GIB` defaults to 40. `run` checks the requested
+port before starting QEMU and reports an explicit error if it is busy. QEMU also
+checks the bind, covering a race after the preliminary check. Its forwarding is
+`hostfwd=tcp:127.0.0.1:${HOST_PORT}-:9090`; the host's LAN is not exposed. CPU and
+memory settings are saved to `resources.txt` and QEMU's version to
+`qemu-version.txt`. The state directory must not contain commas or whitespace.
+
+Cloud-init installs build dependencies, the repository's pinned Rust toolchain,
+Node.js and Google Chrome, builds procinsh, and starts two systemd services:
+
+- `space-demo`: the privileged collector on guest `0.0.0.0:9090` using
+  `scripts/dev_run.sh --allow-non-loopback`.
+- `chrome-demo`: an unprivileged Chrome controller, eight tabs, ten-second
+  reloads. Each tab has a distinct local origin, a Web Worker, periodic 64 KiB
+  loopback fetches and IndexedDB writes. No external website is required.
+
+The unauthenticated collector is intended only for this disposable VM. Do not
+copy personal data, secrets or credentials into it. Initial installation needs
+Internet access. Chrome background networking is disabled for the local workload.
+The image, repository SHA, installed packages, kernel, Rust, Node.js, Chrome and
+bpftool versions and kernel BPF feature probe are saved in the guest's
+`/opt/recording-metadata/`. Apt/Rust/Chrome downloads are not immutable mirrors;
+retain that manifest when regenerating recordings to identify version drift.
+
+Wait for `SPACE recording ready on guest port 9090` on the QEMU console. Setup
+can take several minutes. Open `http://127.0.0.1:10090/space` on the host, select
+**Record**, and then **Stop & Download**. Compress the download with standard
+`gzip -n -9 recording.json`. Keep the JSON below 128 MiB and gzip below 25 MiB
+(target 20 MiB). Open the `.json.gz` in `/replay/space/` to verify it.
+
+For an automated host-browser capture through the same Record/Download controls:
+
+```sh
+(cd web && HOST_PORT=10090 RECORD_SECONDS=15 RECORD_OUTPUT=/tmp/chrome-vm.json.gz \
+  node --import tsx scripts/capture-vm-recording.ts)
+```
+
+The host needs Google Chrome (`CHROME` can override its path). The script also
+loads the resulting gzip in the VM's replay page, checks that it plays, and writes
+compressed/uncompressed sizes and browser JavaScript heap samples to
+`/tmp/chrome-vm.json.gz.metrics.json`. Heap measurements are JavaScript allocations,
+not total Chrome/OS memory; retain VM resource settings alongside them. Adjust
+duration or tab count if recording approaches the 128 MiB limit. Change tab count
+and reload cadence with a `sudo systemctl edit chrome-demo` Environment override via
+the guest console; use `journalctl -u chrome-demo` to inspect workload failures.
+
+The serial console automatically logs in as the locked-password `demo` user;
+there is no password or SSH login. To shut down cleanly, in another host terminal:
+
+```sh
+VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh stop
+```
+
+Wait for QEMU to exit before restarting or removing the state directory.
+`Ctrl-a x` terminates QEMU immediately and can leave an unclean guest filesystem.
+Inspect `/var/log/recording-setup.log` and `journalctl -u space-demo` on failures.
+Before publishing a recording, review process arguments, usernames, paths and
+network addresses, and retain process/IPC identities if sanitization is needed.
+Only then copy the gzip to `web/replay-public/recordings/` and add its catalog entry
+in `web/src/space/session-controls.ts`. The standalone build checks every source
+asset and every generated file against the Pages Free 25 MiB maximum.

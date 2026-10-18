@@ -560,7 +560,11 @@ test("space-components regression", async () => {
             "./dom-types.js",
           ].includes(path) ||
             (name === "data.ts" && path === "./process-layout.js") ||
-            (name === "session-controls.ts" && path === "./recording.js") ||
+            ((name === "session-controls.ts" ||
+              name === "recording-input.ts") &&
+              path === "./recording.js") ||
+            (name === "session-controls.ts" &&
+              path === "./recording-input.js") ||
             (name === "scene.ts" && path === "./ipc-ports.js"),
           `${name} depends on ${path}`,
         );

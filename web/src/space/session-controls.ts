@@ -1,10 +1,6 @@
 // Browser acquisition and transport controls; both loaders use the same parser.
-import {
-  parseRecording,
-  SpaceRecorder,
-  SpaceReplay,
-  MAX_RECORDING_BYTES,
-} from "./recording.js";
+import { parseRecording, SpaceRecorder, SpaceReplay } from "./recording.js";
+import { readRecording } from "./recording-input.js";
 import type { RecordingEvent } from "./recording.js";
 import type { SystemSnapshot } from "../shared/api-types.js";
 
@@ -124,7 +120,7 @@ export function mountReplayControls(
   const file = document.createElement("input");
   file.type = "file";
   file.hidden = true;
-  file.accept = ".json,application/json";
+  file.accept = ".json,.json.gz,application/json,application/gzip";
   file.setAttribute("aria-label", "Open recording JSON");
   const open = document.createElement("button");
   open.id = "open-recording";
@@ -211,9 +207,7 @@ export function mountReplayControls(
   function local(recording: File | undefined) {
     if (!recording) return;
     void load(() => {
-      if (recording.size > MAX_RECORDING_BYTES)
-        throw new Error("Recording exceeds the 128 MiB local replay limit.");
-      return recording.text();
+      return readRecording(recording.stream());
     }, recording.name);
   }
   file.onchange = () => {
@@ -267,7 +261,8 @@ export function mountReplayControls(
         throw new Error(
           `Unable to load bundled recording (${response.status}).`,
         );
-      return response.text();
+      if (!response.body) throw new Error("Recording response has no body.");
+      return readRecording(response.body);
     }, recording.label);
   }
   const demo = demoControls((id) => {

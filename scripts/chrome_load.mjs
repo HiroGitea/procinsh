@@ -37,6 +37,7 @@ async function stopChild(child) {
 const chrome = spawn(process.env.CHROME || '/usr/bin/google-chrome', [
   ...(process.env.DISPLAY || process.env.WAYLAND_DISPLAY ? [] : ['--headless=new']),
   '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check', '--remote-debugging-address=127.0.0.1',
+  ...(process.env.LOCAL_WORKLOAD === '1' ? ['--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-domain-reliability'] : []),
   '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
 ], {stdio: ['ignore', 'ignore', 'pipe']});
 let output = '';
