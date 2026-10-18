@@ -31,8 +31,6 @@ jobs:
       - name: Build web assets
         run: npm --prefix web run build
       - name: Build static replay demo
-        env:
-          PROCINSH_REPLAY_BASE: /procinsh/demo/
         run: npm --prefix web run build:replay
       - name: Install native dependencies
         run: |

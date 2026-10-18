@@ -1,4 +1,4 @@
-// Standalone static replay build with a configurable deployment prefix.
+// Standalone static replay build that can be served at any deployment prefix.
 import { readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
@@ -16,7 +16,7 @@ export function assertPagesAssets(directory: string) {
   }
 }
 export default defineConfig({
-  base: process.env.PROCINSH_REPLAY_BASE || "/",
+  base: "./",
   appType: "mpa",
   define: { "import.meta.vitest": "undefined" },
   publicDir: "replay-public",
