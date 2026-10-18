@@ -9,11 +9,23 @@ import { launch, until, delay } from "../tests/support/runtime.js";
 import { parseRecording, MAX_RECORDING_BYTES } from "../src/space/recording.js";
 import { PAGES_MAX_ASSET_BYTES } from "../vite.replay.config.js";
 
+const browser = process.env.BROWSER ?? "chrome";
+assert.ok(browser === "chrome" || browser === "firefox");
+const browserName = browser === "firefox" ? "Firefox" : "Chrome";
+function isBrowserProcess(process: {
+  name: string;
+  command_line?: string[] | null;
+}) {
+  return (
+    process.name.toLowerCase().includes(browser) ||
+    !!process.command_line?.[0]?.toLowerCase().includes(browser)
+  );
+}
 const port = Number(process.env.HOST_PORT ?? 10090);
 const seconds = Number(process.env.RECORD_SECONDS ?? 15);
 assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
 assert.ok(Number.isFinite(seconds) && seconds >= 1 && seconds <= 300);
-const output = process.env.RECORD_OUTPUT ?? "/tmp/chrome-vm.json.gz";
+const output = process.env.RECORD_OUTPUT ?? `/tmp/${browser}-vm.json.gz`;
 const base = `http://127.0.0.1:${port}`;
 const profile = await mkdtemp(join(tmpdir(), "space-vm-capture-"));
 const errors: string[] = [];
@@ -52,12 +64,17 @@ try {
         response.ok,
         `VM process discovery failed (${response.status})`,
       );
-      const processes = (await response.json()) as { name: string }[];
+      const processes = (await response.json()) as {
+        name: string;
+        command_line?: string[] | null;
+      }[];
       return (
-        processes.filter((process) => process.name === "chrome").length >= 4
+        processes.filter((process) =>
+          process.name.toLowerCase().includes(browser),
+        ).length >= 4
       );
     },
-    "Chrome workload processes",
+    `${browserName} workload processes`,
     45000,
   );
   console.log(`Opening ${base}/space`);
@@ -95,42 +112,42 @@ try {
   );
   const zipped = gzipSync(text, { level: 9 });
   assert.ok(zipped.length <= PAGES_MAX_ASSET_BYTES);
-  const chromePids = new Set(
+  const browserPids = new Set(
     recording.initial_snapshot.processes
-      .filter((p) => /chrome/.test(p.name))
+      .filter(isBrowserProcess)
       .map((p) => p.identity.pid),
   );
-  assert.ok(chromePids.size >= 4, "Real Chrome process tree required");
+  assert.ok(browserPids.size >= 4, `Real ${browserName} process tree required`);
   const activities = recording.events.filter(
     (event) => event.type === "activity",
   );
   assert.ok(activities.length > 0, "Activity events required");
-  const chromeObservations = {
+  const browserObservations = {
     cpu: activities
       .flatMap((event) => event.data.cpu ?? [])
       .filter(
         (sample) =>
-          chromePids.has(sample.process_id.pid) && sample.runtime_ns > 0,
+          browserPids.has(sample.process_id.pid) && sample.runtime_ns > 0,
       ).length,
     ipc: activities
       .flatMap((event) => event.data.ipc ?? [])
       .filter(
-        (sample) => chromePids.has(sample.process_id.pid) && sample.bytes > 0,
+        (sample) => browserPids.has(sample.process_id.pid) && sample.bytes > 0,
       ).length,
     files: activities
       .flatMap((event) => event.data.files ?? [])
       .filter(
-        (sample) => chromePids.has(sample.process_id.pid) && sample.bytes > 0,
+        (sample) => browserPids.has(sample.process_id.pid) && sample.bytes > 0,
       ).length,
   };
-  for (const [sensor, count] of Object.entries(chromeObservations))
-    assert.ok(count > 0, `Chrome ${sensor} activity required`);
+  for (const [sensor, count] of Object.entries(browserObservations))
+    assert.ok(count > 0, `${browserName} ${sensor} activity required`);
   await writeFile(output, zipped, { flag: "wx" });
   await cdp("Page.navigate", { url: `${base}/replay/space/` });
   await waitFor("document.querySelector('#replay-status')", "VM replay page");
   await evaluate(`(() => {
     const bytes=Uint8Array.from(atob(${JSON.stringify(zipped.toString("base64"))}), c=>c.charCodeAt(0));
-    const transfer=new DataTransfer();transfer.items.add(new File([bytes],'chrome-vm.json.gz'));
+    const transfer=new DataTransfer();transfer.items.add(new File([bytes],'browser-vm.json.gz'));
     const input=document.querySelector('input[type=file]');input.files=transfer.files;input.dispatchEvent(new Event('change'));
   })()`);
   await waitFor(
@@ -146,9 +163,10 @@ try {
         duration_ms: recording.duration_ms,
         json_bytes: Buffer.byteLength(text),
         gzip_bytes: zipped.length,
-        chrome_processes: chromePids.size,
+        browser,
+        browser_processes: browserPids.size,
         activity_events: activities.length,
-        chrome_observations: chromeObservations,
+        browser_observations: browserObservations,
         baseline_heap: baseline,
         recording_heap_samples: recordingHeap,
         replay_heap: replayHeap,
@@ -159,7 +177,7 @@ try {
     ) + "\n",
   );
   console.log(
-    `Saved ${output}: ${Buffer.byteLength(text)} JSON bytes, ${zipped.length} gzip bytes, ${chromePids.size} Chrome processes`,
+    `Saved ${output}: ${Buffer.byteLength(text)} JSON bytes, ${zipped.length} gzip bytes, ${browserPids.size} ${browserName} processes`,
   );
 } finally {
   socket?.close();

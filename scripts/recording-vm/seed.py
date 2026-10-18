@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate a NoCloud seed without copying host credentials into the guest."""
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -11,6 +12,9 @@ if not 1 <= port <= 65535:
     raise SystemExit("HOST_PORT must be between 1 and 65535")
 if not re.fullmatch(r"[0-9a-f]{40}", revision):
     raise SystemExit("PROCINSH_REF must be a full, published commit SHA")
+browser = os.environ.get("BROWSER", "chrome")
+if browser not in ("chrome", "firefox"):
+    raise SystemExit("BROWSER must be chrome or firefox")
 setup = Path(__file__).with_name("setup.sh").read_text()
 config = {
     "hostname": "space-demo",
@@ -24,12 +28,12 @@ config = {
     "write_files": [
         {"path": "/opt/setup-recording.sh", "permissions": "0755", "content": setup},
         {"path": "/opt/recording-source.json", "content": json.dumps({
-            "revision": revision, "image_url": image_url, "http_port": port,
+            "revision": revision, "image_url": image_url, "http_port": port, "browser": browser,
             "image_sha256": next(line.split()[0] for line in (state/"SHA256SUMS").read_text().splitlines()
                                  if line.split()[-1].lstrip('*') == image_url.rsplit('/', 1)[1]),
         }, indent=2)},
     ],
-    "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port)]],
+    "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port), browser]],
 }
 (state/"user-data").write_text("#cloud-config\n" + json.dumps(config, indent=2) + "\n")
 (state/"meta-data").write_text("instance-id: space-demo-" + revision + "\nlocal-hostname: space-demo\n")
