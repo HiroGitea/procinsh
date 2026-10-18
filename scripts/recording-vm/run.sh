@@ -24,6 +24,18 @@ with socket.socket(socket.AF_UNIX) as monitor:
 PY
   exit
 fi
+if [[ $1 == run ]]; then
+  [[ -f $state/http-port ]] || { echo 'Run prepare first' >&2; exit 1; }
+  prepared_port=$(cat "$state/http-port")
+  [[ ${HOST_PORT:-$prepared_port} == "$prepared_port" ]] || {
+    echo "HOST_PORT must match the prepared guest port ($prepared_port); prepare a new VM_DIR to change it" >&2; exit 2;
+  }
+  port=$prepared_port
+fi
+[[ $port =~ ^[0-9]+$ ]] && (( 10#$port >= 1 && 10#$port <= 65535 )) || {
+  echo 'HOST_PORT must be an integer between 1 and 65535' >&2; exit 2;
+}
+port=$((10#$port))
 required_tools=(qemu-system-x86_64 python3 flock)
 if [[ $1 == prepare ]]; then required_tools+=(qemu-img cloud-localds curl); fi
 for tool in "${required_tools[@]}"; do
@@ -48,7 +60,7 @@ if expected != [actual]:
 (root/(name+'.partial')).rename(root/name)
 PY
   qemu-img create -f qcow2 -F qcow2 -b "$state/$image_name" "$state/guest.qcow2" "${VM_DISK_GIB:-40}G"
-  python3 "$root/scripts/recording-vm/seed.py" "$state" "${PROCINSH_REF:-$(git -C "$root" rev-parse HEAD)}" "$image_base/$image_name"
+  python3 "$root/scripts/recording-vm/seed.py" "$state" "${PROCINSH_REF:-$(git -C "$root" rev-parse HEAD)}" "$image_base/$image_name" "$port"
   cloud-localds "$state/seed.img" "$state/user-data" "$state/meta-data"
   qemu-system-x86_64 --version >"$state/qemu-version.txt"
   echo "Prepared $state. Run: VM_DIR=$state $0 run"
@@ -71,10 +83,9 @@ printf 'Open http://127.0.0.1:%s/space after cloud-init finishes. Console log: %
 printf 'HOST_PORT=%s\nVM_CPUS=%s\nVM_MEMORY_MIB=%s\n' "$port" "$cpus" "$memory" >"$state/resources.txt"
 qemu-system-x86_64 --version >"$state/qemu-version.txt"
 exec qemu-system-x86_64 -enable-kvm -cpu host -smp "$cpus" -m "$memory" \
-  -fw_cfg "name=opt/procinsh/host-port,string=$port" \
   -drive "file=$state/guest.qcow2,format=qcow2,if=virtio" \
   -drive "file=$state/seed.img,format=raw,if=virtio,readonly=on" \
-  -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$port-:9090" \
+  -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$port-:$port" \
   -monitor "unix:$state/monitor.sock,server=on,wait=off" \
   -chardev "socket,id=console,path=$state/console.sock,server=on,wait=off,logfile=$state/console.log,logappend=on" \
   -serial chardev:console -display none

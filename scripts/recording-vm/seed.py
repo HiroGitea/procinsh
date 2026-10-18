@@ -6,6 +6,9 @@ import re
 import sys
 
 state, revision, image_url = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+port = int(sys.argv[4])
+if not 1 <= port <= 65535:
+    raise SystemExit("HOST_PORT must be between 1 and 65535")
 if not re.fullmatch(r"[0-9a-f]{40}", revision):
     raise SystemExit("PROCINSH_REF must be a full, published commit SHA")
 setup = Path(__file__).with_name("setup.sh").read_text()
@@ -21,12 +24,13 @@ config = {
     "write_files": [
         {"path": "/opt/setup-recording.sh", "permissions": "0755", "content": setup},
         {"path": "/opt/recording-source.json", "content": json.dumps({
-            "revision": revision, "image_url": image_url,
+            "revision": revision, "image_url": image_url, "http_port": port,
             "image_sha256": next(line.split()[0] for line in (state/"SHA256SUMS").read_text().splitlines()
                                  if line.split()[-1].lstrip('*') == image_url.rsplit('/', 1)[1]),
         }, indent=2)},
     ],
-    "runcmd": [["bash", "/opt/setup-recording.sh", revision]],
+    "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port)]],
 }
 (state/"user-data").write_text("#cloud-config\n" + json.dumps(config, indent=2) + "\n")
 (state/"meta-data").write_text("instance-id: space-demo-" + revision + "\nlocal-hostname: space-demo\n")
+(state/"http-port").write_text(str(port) + "\n")

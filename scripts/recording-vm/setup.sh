@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 exec > >(tee /var/log/recording-setup.log) 2>&1
+port=$2
 test -r /sys/kernel/btf/vmlinux
 git clone https://github.com/akawashiro/procinsh.git /opt/procinsh
 cd /opt/procinsh
@@ -20,13 +21,13 @@ dpkg-query -W >/opt/recording-metadata/packages.txt
 { rustc --version; cargo --version; node --version; npm --version; google-chrome --version; bpftool version; git rev-parse HEAD; } >/opt/recording-metadata/versions.txt
 bpftool feature probe kernel >/opt/recording-metadata/bpf-features.txt
 chown -R demo:demo /opt/recording-metadata
-cat >/etc/systemd/system/space-demo.service <<'UNIT'
+cat >/etc/systemd/system/space-demo.service <<UNIT
 [Unit]
 Description=Dedicated SPACE recording collector
 After=network.target
 [Service]
 WorkingDirectory=/opt/procinsh
-ExecStart=/bin/bash /opt/procinsh/scripts/recording-vm/start-collector.sh
+ExecStart=/opt/procinsh/scripts/dev_run.sh --listen 0.0.0.0:$port --allow-non-loopback
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target
@@ -49,4 +50,4 @@ mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d
 printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin demo --noclear %%I $TERM\n' >/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
 systemctl daemon-reload
 systemctl enable --now space-demo chrome-demo
-echo 'SPACE recording ready on guest port 9090'
+echo "SPACE recording ready on guest port $port"

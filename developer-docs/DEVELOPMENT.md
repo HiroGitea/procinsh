@@ -47,7 +47,6 @@ Vite が表示する URL（通常 http://127.0.0.1:5173）を開きます。既�
 |---|---|
 | `--listen ADDRESS` | 待受アドレス。複数回指定すると各アドレスで待受。既定は `127.0.0.1:8080` |
 | `--allow-non-loopback` | 非 loopback での待受を明示的に許可。認証・TLS なしでプロセスメモリや環境変数を公開するため注意 |
-| `--http-host-port PORT` | ポート転送経由でアクセスするときに期待する HTTP Host のポート。省略時は各リスナーの待受ポート。ホスト名・Origin・Fetch Metadata の検証は維持する |
 | `--help` / `--version` | ヘルプ / バージョン表示 |
 
 SIGINT（Ctrl+C）または SIGTERM で収集停止と HTTP サーバーの終了処理を行います。起動・サーバーの致命的な失敗は非ゼロ終了です。

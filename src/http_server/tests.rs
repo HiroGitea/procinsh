@@ -9,7 +9,6 @@ fn app() -> Router {
     router(
         Arc::new(AppState::new(Duration::from_secs(1))),
         "127.0.0.1:8080".parse().unwrap(),
-        None,
     )
 }
 
@@ -264,7 +263,7 @@ async fn gzip_sse_flushes_before_stream_ends() {
 }
 
 #[tokio::test]
-async fn forwarded_host_port_keeps_numeric_host_and_same_origin_checks() {
+async fn same_port_forwarding_keeps_numeric_host_and_same_origin_checks() {
     for (host, origin, fetch_site, expected) in [
         ("127.0.0.1:10090", None, None, 200),
         (
@@ -281,8 +280,7 @@ async fn forwarded_host_port_keeps_numeric_host_and_same_origin_checks() {
     ] {
         let app = router(
             Arc::new(AppState::new(Duration::from_secs(1))),
-            "0.0.0.0:9090".parse().unwrap(),
-            Some(10090),
+            "0.0.0.0:10090".parse().unwrap(),
         );
         let mut request = Request::builder().uri("/").header("host", host);
         if let Some(origin) = origin {

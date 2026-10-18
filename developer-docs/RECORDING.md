@@ -136,20 +136,24 @@ VM_DIR=/tmp/space-demo HOST_PORT=10090 VM_CPUS=4 VM_MEMORY_MIB=8192 \
 ```
 
 `prepare` refuses to overwrite an existing guest. `PROCINSH_REF` defaults to the
-checkout's full commit SHA; `VM_DISK_GIB` defaults to 40. `run` checks the requested
+checkout's full commit SHA; `VM_DISK_GIB` defaults to 40. `HOST_PORT` defaults to
+10090 and sets the same HTTP port on both the host and guest during `prepare`.
+The selected port is retained in `http-port`; `run` uses it automatically. To use
+a different port, prepare a new VM directory with `HOST_PORT=...`. `run` rejects a
+conflicting `HOST_PORT` override. `run` checks the requested
 port before starting QEMU and reports an explicit error if it is busy. QEMU also
 checks the bind, covering a race after the preliminary check. Its forwarding is
-`hostfwd=tcp:127.0.0.1:${HOST_PORT}-:9090`; the host's LAN is not exposed. CPU and
+`hostfwd=tcp:127.0.0.1:${HOST_PORT}-:${HOST_PORT}`; the host's LAN is not exposed. CPU and
 memory settings are saved to `resources.txt` and QEMU's version to
 `qemu-version.txt`. The state directory must not contain commas or whitespace.
 
 Cloud-init installs build dependencies, the repository's pinned Rust toolchain,
 Node.js and Google Chrome, builds procinsh, and starts two systemd services:
 
-- `space-demo`: the privileged collector on guest `0.0.0.0:9090` using
-  `scripts/dev_run.sh --allow-non-loopback --http-host-port HOST_PORT`. The
-  forwarding port is passed at each VM boot through QEMU fw_cfg; numeric host,
-  Origin and Fetch Metadata checks remain enabled.
+- `space-demo`: the privileged collector on guest `0.0.0.0:HOST_PORT` (default
+  10090), using `scripts/dev_run.sh --allow-non-loopback`. Cloud-init configures
+  its systemd service with the same port as the host forwarding rule. Numeric
+  host, port, Origin and Fetch Metadata checks remain enabled.
 - `chrome-demo`: an unprivileged Chrome controller, eight tabs, ten-second
   reloads. Each tab has a distinct local origin, a Web Worker, periodic 64 KiB
   loopback fetches and IndexedDB writes. No external website is required.
@@ -163,7 +167,7 @@ bpftool versions and kernel BPF feature probe are saved in the guest's
 retain that manifest when regenerating recordings to identify version drift.
 
 Follow `tail -f /tmp/space-demo/console.log` and wait for
-`SPACE recording ready on guest port 9090`. Connect an interactive serial console
+`SPACE recording ready on guest port 10090`. Connect an interactive serial console
 with `VM_DIR=/tmp/space-demo python3 scripts/recording-vm/console.py` (Ctrl-]
 disconnects). Setup
 can take several minutes. Open `http://127.0.0.1:10090/space` on the host, select
