@@ -95,7 +95,7 @@ try {
   );
   await evaluate("document.querySelector('#open-demo').click()");
   await waitFor(
-    "document.querySelector('#replay-status')?.textContent.includes('Sanitized demo')",
+    "document.querySelector('#replay-status')?.textContent.includes('Demo #1')",
     "demo loads at deployment base path",
   );
   assert.equal(
@@ -157,7 +157,7 @@ try {
   const timeOrigin = await evaluate<number>("performance.timeOrigin");
   await cdp("Page.reload");
   await waitFor(
-    `performance.timeOrigin!==${timeOrigin} && document.querySelector('#replay-status')?.textContent.includes('Sanitized demo') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'`,
+    `performance.timeOrigin!==${timeOrigin} && document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'`,
     "direct route refresh works",
   );
   await cdp("Page.navigate", {
@@ -169,7 +169,7 @@ try {
   );
   await evaluate("document.querySelector('#open-demo').click()");
   await waitFor(
-    "document.querySelector('#replay-status')?.textContent.includes('Sanitized demo') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
+    "document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
     "demo picker recovers from an unknown recording ID",
   );
   assert.ok(requests.includes("/demo/recordings/demo.json"));

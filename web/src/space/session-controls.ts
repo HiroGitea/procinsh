@@ -10,7 +10,7 @@ import type { SystemSnapshot } from "../shared/api-types.js";
 
 // IDs are shared by the picker and the URL allowlist.
 const bundledRecordings = [
-  { id: "demo", label: "Sanitized demo", path: "recordings/demo.json" },
+  { id: "demo", label: "Demo #1", path: "recordings/demo.json" },
 ];
 
 function demoControls(open: (id: string) => void) {
