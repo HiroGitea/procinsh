@@ -9,7 +9,7 @@ const bundledRecordings = [
   { id: "demo", label: "Demo #1", path: "recordings/demo.json" },
   {
     id: "chrome-ubuntu26",
-    label: "Chrome · Ubuntu 26.04",
+    label: "Chrome",
     path: "recordings/chrome-ubuntu26.json.gz",
   },
 ];

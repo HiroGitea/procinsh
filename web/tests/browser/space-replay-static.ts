@@ -191,7 +191,7 @@ try {
     url: url.replace("recording=demo", "recording=chrome-ubuntu26"),
   });
   await waitFor(
-    "document.querySelector('#replay-status')?.textContent.includes('Chrome · Ubuntu 26.04') && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0",
+    "document.querySelector('#replay-status')?.textContent.includes('Chrome') && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0",
     "real Chrome gzip plays without a backend",
   );
   await evaluate(

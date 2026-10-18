@@ -6,7 +6,7 @@ file. Recording runs in memory, requires no upload or server storage, and starts
 with the current complete snapshot, including maps retained from earlier deltas.
 
 Recordings can contain process arguments, user names, paths and IP addresses.
-Review them before sharing. Demo #1 uses synthetic observations. **Chrome · Ubuntu 26.04** contains real
+Review them before sharing. Demo #1 uses synthetic observations. **Chrome** contains real
 observations from a dedicated VM; its provenance, sizes, memory samples and
 publication review are in [the recording manifest](recordings/chrome-ubuntu26/README.md).
 
