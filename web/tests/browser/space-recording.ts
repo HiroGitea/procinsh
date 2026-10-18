@@ -73,6 +73,13 @@ export async function checkSpaceRecording(
     "document.querySelector('#replay-status').textContent.includes('local-recording.json')",
     "downloaded JSON opens unchanged",
   );
+  assert.equal(
+    await evaluate(
+      "document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
+    ),
+    true,
+    "local recording autoplays in a loop",
+  );
   const endTime = recording.events.at(-1)?.at_ms ?? 0;
   assert.equal(
     await evaluate("Number(document.querySelector('#timeline').max)"),
@@ -100,6 +107,7 @@ export async function checkSpaceRecording(
     await evaluate("document.querySelector('#play').textContent"),
     "Play",
   );
+  await evaluate("document.querySelector('#loop').click()");
   await evaluate(
     `document.dispatchEvent(new DragEvent('drop',{dataTransfer:(()=>{const t=new DataTransfer();t.items.add(new File(['{}'],'bad.json'));return t})()}))`,
   );
@@ -113,6 +121,13 @@ export async function checkSpaceRecording(
   await waitFor(
     "document.querySelector('#replay-status').textContent.includes('dropped.json')",
     "another recording opens by drop",
+  );
+  assert.equal(
+    await evaluate(
+      "document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
+    ),
+    true,
+    "opening another recording re-enables loop autoplay",
   );
   assert.equal(
     await evaluate(

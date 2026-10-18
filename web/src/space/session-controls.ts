@@ -115,6 +115,7 @@ export function mountReplayControls(
   const loop = document.createElement("input");
   loop.type = "checkbox";
   loop.id = "loop";
+  loop.checked = true;
   const loopLabel = document.createElement("label");
   loopLabel.append(loop, " Loop");
   const status = document.createElement("span");
@@ -127,6 +128,7 @@ export function mountReplayControls(
   let replay: SpaceReplay | null = null;
   let loading = 0;
   let label = "";
+  let previousWallTime = performance.now();
   function refresh() {
     for (const element of [play, timeline, speed, loop])
       element.disabled = !replay;
@@ -156,7 +158,10 @@ export function mountReplayControls(
       const recording = parseRecording(text);
       replay = new SpaceReplay(recording, reset, apply, clock);
       replay.speed = Number(speed.value);
-      replay.loop = loop.checked;
+      loop.checked = true;
+      replay.loop = true;
+      replay.playing = replay.duration > 0 && !document.hidden;
+      previousWallTime = performance.now();
       label = name;
     } catch (error) {
       if (request === loading) {
@@ -189,6 +194,7 @@ export function mountReplayControls(
     if (!replay) return;
     if (!replay.playing && replay.time === replay.duration) replay.seek(0);
     replay.playing = !replay.playing;
+    previousWallTime = performance.now();
     refresh();
   };
   timeline.oninput = () => {
@@ -225,7 +231,6 @@ export function mountReplayControls(
     else label = `Unknown bundled recording: ${id}. Choose a local JSON file.`;
   }
   refresh();
-  let previousWallTime = performance.now();
   return () => {
     const wallTime = performance.now();
     replay?.tick(wallTime - previousWallTime);

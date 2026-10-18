@@ -19,10 +19,12 @@ replay uses the same size limit. The live view continues independently.
 
 **Open recording** opens `/replay/space/`. Select or drop the original downloaded
 JSON. Files are read with the browser File API and never uploaded. Choose another
-file on the same page. Play/pause, timeline seeking and 0.1×/0.25×/0.5×/1×/2× speeds use a virtual clock shared with SPACE
-activity animation. Orbit, pan and zoom remain available while paused. Hiding the
-replay tab pauses playback. Enable **Loop** to repeat from the beginning at the
-selected speed; disabling it stops playback at the end. Process inspection links
+file on the same page. Each recording starts playing automatically with **Loop**
+enabled after it loads, including bundled demos opened by URL. Play/pause,
+timeline seeking and 0.1×/0.25×/0.5×/1×/2× speeds use a virtual clock shared with
+SPACE activity animation. Orbit, pan and zoom remain available while paused.
+Hiding the replay tab pauses playback. Disable **Loop** to stop at the end.
+Opening another recording enables loop playback again. Process inspection links
 are disabled in replay.
 
 ## JSON contract

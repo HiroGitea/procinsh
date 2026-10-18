@@ -93,6 +93,10 @@ try {
     await evaluate("document.querySelector('#failure').hidden"),
     true,
   );
+  await waitFor(
+    "document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0",
+    "bundled recording autoplays with looping enabled",
+  );
   await checkReplaySliderTravel(cdp, evaluate);
   await evaluate("document.querySelector('#play').click()");
   await waitFor(
@@ -127,7 +131,7 @@ try {
     `slow playback advances on virtual clock: ${slow}`,
   );
   await evaluate(
-    "document.querySelector('#play').click();document.querySelector('#loop').click();document.querySelector('select').value='1';document.querySelector('select').dispatchEvent(new Event('change'));document.querySelector('#timeline').value=29900/30000;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
+    "document.querySelector('#play').click();if(!document.querySelector('#loop').checked)document.querySelector('#loop').click();document.querySelector('select').value='1';document.querySelector('select').dispatchEvent(new Event('change'));document.querySelector('#timeline').value=29900/30000;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
   );
   await waitFor(
     "Number(document.querySelector('#timeline').value)<2000/30000 && document.querySelector('#play').textContent==='Pause'",
@@ -143,7 +147,7 @@ try {
   const timeOrigin = await evaluate<number>("performance.timeOrigin");
   await cdp("Page.reload");
   await waitFor(
-    `performance.timeOrigin!==${timeOrigin} && document.querySelector('#replay-status')?.textContent.includes('Sanitized demo')`,
+    `performance.timeOrigin!==${timeOrigin} && document.querySelector('#replay-status')?.textContent.includes('Sanitized demo') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'`,
     "direct route refresh works",
   );
   await cdp("Page.navigate", {
