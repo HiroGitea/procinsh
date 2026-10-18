@@ -8,6 +8,32 @@ import {
 import type { RecordingEvent } from "./recording.js";
 import type { SystemSnapshot } from "../shared/api-types.js";
 
+// IDs are shared by the picker and the URL allowlist.
+const bundledRecordings = [
+  { id: "demo", label: "Sanitized demo", path: "recordings/demo.json" },
+];
+
+function demoControls(open: (id: string) => void) {
+  const controls = document.createElement("div");
+  controls.className = "demo-controls";
+  const select = document.createElement("select");
+  select.id = "demo-recording";
+  select.setAttribute("aria-label", "Demo recording");
+  for (const recording of bundledRecordings) {
+    const option = document.createElement("option");
+    option.value = recording.id;
+    option.textContent = recording.label;
+    select.append(option);
+  }
+  const button = document.createElement("button");
+  button.id = "open-demo";
+  button.type = "button";
+  button.textContent = "Open demo";
+  button.onclick = () => open(select.value);
+  controls.append(select, button);
+  return controls;
+}
+
 export function mountRecordingControls(
   recorder: SpaceRecorder,
   snapshot: () => SystemSnapshot,
@@ -31,7 +57,17 @@ export function mountRecordingControls(
     location.assign(`${import.meta.env.BASE_URL}replay/space/`);
   };
   open.textContent = "Open recording";
-  host.append(record, download, status, open);
+  host.append(
+    record,
+    download,
+    status,
+    open,
+    demoControls((id) => {
+      location.assign(
+        `${import.meta.env.BASE_URL}replay/space/?recording=${encodeURIComponent(id)}`,
+      );
+    }),
+  );
   function refresh() {
     record.disabled = recorder.active || !!recorder.recording || !ready();
     download.hidden = !recorder.recording;
@@ -214,22 +250,34 @@ export function mountReplayControls(
     if (document.hidden && replay) replay.playing = false;
     refresh();
   });
-  const id = new URL(location.href).searchParams.get("recording");
-  if (id) {
-    const recordings: Record<string, string> = { demo: "recordings/demo.json" };
-    if (Object.hasOwn(recordings, id))
-      void load(async () => {
-        const response = await fetch(
-          `${import.meta.env.BASE_URL}${recordings[id]}`,
+  function openDemo(id: string) {
+    const recording = bundledRecordings.find((entry) => entry.id === id);
+    if (!recording) {
+      label = `Unknown bundled recording: ${id}. Choose a local JSON file.`;
+      refresh();
+      return;
+    }
+    demo.querySelector("select")!.value = id;
+    void load(async () => {
+      const response = await fetch(
+        `${import.meta.env.BASE_URL}${recording.path}`,
+      );
+      if (!response.ok)
+        throw new Error(
+          `Unable to load bundled recording (${response.status}).`,
         );
-        if (!response.ok)
-          throw new Error(
-            `Unable to load bundled recording (${response.status}).`,
-          );
-        return response.text();
-      }, "Sanitized demo");
-    else label = `Unknown bundled recording: ${id}. Choose a local JSON file.`;
+      return response.text();
+    }, recording.label);
   }
+  const demo = demoControls((id) => {
+    const url = new URL(location.href);
+    url.searchParams.set("recording", id);
+    history.replaceState(null, "", url);
+    openDemo(id);
+  });
+  host.append(demo);
+  const id = new URL(location.href).searchParams.get("recording");
+  if (id) openDemo(id);
   refresh();
   return () => {
     const wallTime = performance.now();

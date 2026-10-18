@@ -135,4 +135,11 @@ export async function checkSpaceRecording(
     ),
     0,
   );
+  await cdp("Page.navigate", { url: base + "/space" });
+  await waitFor("document.querySelector('#open-demo')", "live demo picker");
+  await evaluate("document.querySelector('#open-demo').click()");
+  await waitFor(
+    "location.search==='?recording=demo' && document.querySelector('#replay-status')?.textContent.includes('Sanitized demo') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
+    "live Open demo navigates to looping demo playback",
+  );
 }

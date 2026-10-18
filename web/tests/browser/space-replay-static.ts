@@ -84,7 +84,16 @@ try {
     source: `window.EventSource=class { constructor(){throw Error('Static replay attempted SSE')} };`,
   });
   const url = `http://127.0.0.1:${address.port}/demo/replay/space/?recording=demo`;
-  await cdp("Page.navigate", { url });
+  await cdp("Page.navigate", { url: url.split("?")[0] });
+  await waitFor(
+    "document.querySelector('#open-demo')",
+    "demo picker available without a recording",
+  );
+  assert.equal(
+    await evaluate("document.querySelector('#demo-recording').value"),
+    "demo",
+  );
+  await evaluate("document.querySelector('#open-demo').click()");
   await waitFor(
     "document.querySelector('#replay-status')?.textContent.includes('Sanitized demo')",
     "demo loads at deployment base path",
@@ -97,6 +106,7 @@ try {
     "document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0",
     "bundled recording autoplays with looping enabled",
   );
+  assert.equal(await evaluate("location.href"), url);
   await checkReplaySliderTravel(cdp, evaluate);
   await evaluate("document.querySelector('#play').click()");
   await waitFor(
@@ -156,6 +166,11 @@ try {
   await waitFor(
     "document.querySelector('#replay-status')?.textContent.includes('Unknown bundled recording')",
     "query ID is allowlisted",
+  );
+  await evaluate("document.querySelector('#open-demo').click()");
+  await waitFor(
+    "document.querySelector('#replay-status')?.textContent.includes('Sanitized demo') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
+    "demo picker recovers from an unknown recording ID",
   );
   assert.ok(requests.includes("/demo/recordings/demo.json"));
   assert.ok(

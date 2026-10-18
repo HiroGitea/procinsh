@@ -76,6 +76,12 @@ or paid service is involved. The documentation publishing workflow is independen
 Creating the Cloudflare account/project and its initial deployment requires the
 owner's Cloudflare account; a local build does not provision those resources.
 
+Select a bundled recording and click **Open demo** in either the live SPACE or
+replay menu. Opening a demo starts looping playback automatically. The picker
+and URL allowlist share the `bundledRecordings` catalog in
+`web/src/space/session-controls.ts`; add an ID, label, and asset path there when
+adding a recording to `web/replay-public/recordings/`.
+
 Open `/replay/space/?recording=demo` on the deployed site. `recording` is an
 allowlisted ID, never a user-supplied fetch URL. A single synthetic sanitized JSON
 is shared by the normal embedded build and the static build. The build rejects
