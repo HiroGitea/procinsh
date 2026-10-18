@@ -68,6 +68,7 @@ PY
 printf 'Open http://127.0.0.1:%s/space after cloud-init finishes. Console log: %s/console.log\n' "$port" "$state"
 printf 'HOST_PORT=%s\nVM_CPUS=%s\nVM_MEMORY_MIB=%s\n' "$port" "$cpus" "$memory" >"$state/resources.txt"
 exec qemu-system-x86_64 -enable-kvm -cpu host -smp "$cpus" -m "$memory" \
+  -fw_cfg "name=opt/procinsh/host-port,string=$port" \
   -drive "file=$state/guest.qcow2,format=qcow2,if=virtio" \
   -drive "file=$state/seed.img,format=raw,if=virtio,readonly=on" \
   -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$port-:9090" \

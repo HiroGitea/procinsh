@@ -10,14 +10,18 @@ use tower_http::compression::{
     predicate::{NotForContentType, Predicate, SizeAbove},
 };
 
-pub(super) fn router(state: Arc<AppState>, address: SocketAddr) -> Router {
+pub(super) fn router(
+    state: Arc<AppState>,
+    address: SocketAddr,
+    http_host_port: Option<u16>,
+) -> Router {
     web::router()
         .merge(api::router())
         // Unknown-length streams (including SSE) are compressed too. Keep the
         // size/content-type exclusions without the default SSE exclusion.
         .layer(compression_layer())
         .layer(middleware::from_fn(move |request, next| {
-            guard_http(request, next, address)
+            guard_http(request, next, address, http_host_port)
         }))
         .layer(middleware::from_fn(log_request))
         .with_state(state)

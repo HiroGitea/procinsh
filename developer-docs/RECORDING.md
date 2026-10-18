@@ -138,7 +138,9 @@ Cloud-init installs build dependencies, the repository's pinned Rust toolchain,
 Node.js and Google Chrome, builds procinsh, and starts two systemd services:
 
 - `space-demo`: the privileged collector on guest `0.0.0.0:9090` using
-  `scripts/dev_run.sh --allow-non-loopback`.
+  `scripts/dev_run.sh --allow-non-loopback --http-host-port HOST_PORT`. The
+  forwarding port is passed at each VM boot through QEMU fw_cfg; numeric host,
+  Origin and Fetch Metadata checks remain enabled.
 - `chrome-demo`: an unprivileged Chrome controller, eight tabs, ten-second
   reloads. Each tab has a distinct local origin, a Web Worker, periodic 64 KiB
   loopback fetches and IndexedDB writes. No external website is required.

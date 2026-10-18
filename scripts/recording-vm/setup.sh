@@ -26,7 +26,7 @@ Description=Dedicated SPACE recording collector
 After=network.target
 [Service]
 WorkingDirectory=/opt/procinsh
-ExecStart=/opt/procinsh/scripts/dev_run.sh --listen 0.0.0.0:9090 --allow-non-loopback
+ExecStart=/bin/bash /opt/procinsh/scripts/recording-vm/start-collector.sh
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target

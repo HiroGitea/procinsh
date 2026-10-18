@@ -4,9 +4,10 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{sync::watch, task::JoinSet};
 
 /// Bind every address before serving, then share collectors across listeners.
-/// Each listener validates requests against its own bound address. A shutdown
+/// Each listener validates requests against its own bound address. The optional
+/// HTTP Host port overrides only the expected port for explicit port forwarding. A shutdown
 /// signal or a listener failure stops all listeners and joins the collectors.
-pub(crate) async fn run(listen: &[SocketAddr]) -> Result<()> {
+pub(crate) async fn run(listen: &[SocketAddr], http_host_port: Option<u16>) -> Result<()> {
     ensure!(!listen.is_empty(), "no HTTP listen addresses specified");
     let mut listeners = Vec::with_capacity(listen.len());
     for address in listen {
@@ -28,7 +29,7 @@ pub(crate) async fn run(listen: &[SocketAddr]) -> Result<()> {
                 "Warning: remote access exposes process memory and environment variables without authentication or TLS. Use only on a trusted network."
             );
         }
-        let app = router(state.clone(), address);
+        let app = router(state.clone(), address, http_host_port);
         let mut stop = shutdown.subscribe();
         servers.spawn(async move {
             axum::serve(listener, app)

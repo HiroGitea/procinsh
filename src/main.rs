@@ -22,6 +22,9 @@ struct Cli {
     /// Allow non-loopback listening: exposes process memory and environment variables without authentication or TLS
     #[arg(long)]
     allow_non_loopback: bool,
+    /// Expected HTTP Host port behind explicit port forwarding (defaults to each listener's port)
+    #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
+    http_host_port: Option<u16>,
 }
 
 #[tokio::main]
@@ -58,5 +61,5 @@ async fn run() -> Result<()> {
             address
         );
     }
-    http_server::run(&cli.listen).await
+    http_server::run(&cli.listen, cli.http_host_port).await
 }

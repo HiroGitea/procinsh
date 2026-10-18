@@ -30,7 +30,12 @@ pub(super) async fn log_request(request: Request, next: Next) -> Response {
     response
 }
 
-pub(super) async fn guard_http(request: Request, next: Next, address: SocketAddr) -> Response {
+pub(super) async fn guard_http(
+    request: Request,
+    next: Next,
+    address: SocketAddr,
+    http_host_port: Option<u16>,
+) -> Response {
     let host = request
         .headers()
         .get(header::HOST)
@@ -40,7 +45,7 @@ pub(super) async fn guard_http(request: Request, next: Next, address: SocketAddr
     let valid_host = authority.as_ref().is_some_and(|a| {
         let port = a.port_u16().unwrap_or(80);
         let name = a.host().trim_matches(['[', ']']);
-        port == address.port()
+        port == http_host_port.unwrap_or(address.port())
             && if address.ip().is_unspecified() {
                 // Explicit remote binding permits numeric host addresses only (no DNS rebinding).
                 name.parse::<std::net::IpAddr>().is_ok() || name == "localhost"
