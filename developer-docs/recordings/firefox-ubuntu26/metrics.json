@@ -1,121 +1,121 @@
 {
-  "started_at": "2026-10-18T07:54:19.523Z",
-  "duration_ms": 15713.200000000186,
-  "json_bytes": 58329620,
-  "gzip_bytes": 2762013,
+  "started_at": "2026-10-18T08:23:17.567Z",
+  "duration_ms": 15605.600000000559,
+  "json_bytes": 68866176,
+  "gzip_bytes": 3235807,
   "browser": "firefox",
-  "browser_processes": 18,
+  "browser_processes": 20,
   "activity_events": 15,
   "browser_observations": {
-    "cpu": 144,
-    "ipc": 1140,
-    "files": 335
+    "cpu": 173,
+    "ipc": 1096,
+    "files": 43
   },
   "baseline_heap": {
-    "usedSize": 27196312,
-    "totalSize": 46735360,
-    "embedderHeapUsedSize": 2709480,
-    "backingStorageSize": 4026344
+    "usedSize": 25739268,
+    "totalSize": 53469184,
+    "embedderHeapUsedSize": 2837840,
+    "backingStorageSize": 4317201
   },
   "recording_heap_samples": [
     {
-      "usedSize": 54450424,
-      "totalSize": 78733312,
-      "embedderHeapUsedSize": 1517032,
-      "backingStorageSize": 3700636
+      "usedSize": 24730144,
+      "totalSize": 91226112,
+      "embedderHeapUsedSize": 1772520,
+      "backingStorageSize": 4063637
     },
     {
-      "usedSize": 52826496,
-      "totalSize": 95715328,
-      "embedderHeapUsedSize": 2638544,
-      "backingStorageSize": 4809598
+      "usedSize": 41116976,
+      "totalSize": 98934784,
+      "embedderHeapUsedSize": 3474328,
+      "backingStorageSize": 4287482
     },
     {
-      "usedSize": 58108364,
-      "totalSize": 100442112,
-      "embedderHeapUsedSize": 4389112,
-      "backingStorageSize": 5842825
+      "usedSize": 50786820,
+      "totalSize": 104775680,
+      "embedderHeapUsedSize": 5172048,
+      "backingStorageSize": 5554629
     },
     {
-      "usedSize": 52257372,
-      "totalSize": 102457344,
-      "embedderHeapUsedSize": 5946832,
-      "backingStorageSize": 5874080
+      "usedSize": 52761548,
+      "totalSize": 110731264,
+      "embedderHeapUsedSize": 1735376,
+      "backingStorageSize": 4149071
     },
     {
-      "usedSize": 46542340,
-      "totalSize": 112394240,
-      "embedderHeapUsedSize": 6732496,
-      "backingStorageSize": 9061859
+      "usedSize": 42500368,
+      "totalSize": 108036096,
+      "embedderHeapUsedSize": 3331400,
+      "backingStorageSize": 4171154
     },
     {
-      "usedSize": 37995476,
-      "totalSize": 117964800,
-      "embedderHeapUsedSize": 1768040,
-      "backingStorageSize": 9463876
+      "usedSize": 50522948,
+      "totalSize": 116121600,
+      "embedderHeapUsedSize": 4781088,
+      "backingStorageSize": 5476767
     },
     {
-      "usedSize": 69977188,
-      "totalSize": 122462208,
-      "embedderHeapUsedSize": 3035600,
-      "backingStorageSize": 4826455
+      "usedSize": 58109604,
+      "totalSize": 124207104,
+      "embedderHeapUsedSize": 6352488,
+      "backingStorageSize": 6768959
     },
     {
-      "usedSize": 55587784,
-      "totalSize": 120619008,
-      "embedderHeapUsedSize": 4619000,
-      "backingStorageSize": 5991215
+      "usedSize": 64717744,
+      "totalSize": 132816896,
+      "embedderHeapUsedSize": 7816208,
+      "backingStorageSize": 8179459
     },
     {
-      "usedSize": 60442036,
-      "totalSize": 123240448,
-      "embedderHeapUsedSize": 6283160,
-      "backingStorageSize": 7133107
+      "usedSize": 96330732,
+      "totalSize": 139788288,
+      "embedderHeapUsedSize": 9802192,
+      "backingStorageSize": 9403074
     },
     {
-      "usedSize": 70318336,
-      "totalSize": 128819200,
-      "embedderHeapUsedSize": 8060192,
-      "backingStorageSize": 8286372
+      "usedSize": 95838816,
+      "totalSize": 139370496,
+      "embedderHeapUsedSize": 11578584,
+      "backingStorageSize": 9500123
     },
     {
-      "usedSize": 70161600,
-      "totalSize": 135372800,
-      "embedderHeapUsedSize": 10002040,
-      "backingStorageSize": 8317441
+      "usedSize": 96876236,
+      "totalSize": 142516224,
+      "embedderHeapUsedSize": 12967360,
+      "backingStorageSize": 10872822
     },
     {
-      "usedSize": 83589400,
-      "totalSize": 143646720,
-      "embedderHeapUsedSize": 11914464,
-      "backingStorageSize": 10464845
+      "usedSize": 105493080,
+      "totalSize": 150904832,
+      "embedderHeapUsedSize": 14739464,
+      "backingStorageSize": 12233433
     },
     {
-      "usedSize": 82139056,
-      "totalSize": 150200320,
-      "embedderHeapUsedSize": 13556976,
-      "backingStorageSize": 10496239
+      "usedSize": 72169148,
+      "totalSize": 152043520,
+      "embedderHeapUsedSize": 2248688,
+      "backingStorageSize": 11983950
     },
     {
-      "usedSize": 105870328,
-      "totalSize": 150724608,
-      "embedderHeapUsedSize": 15107368,
-      "backingStorageSize": 11617474
+      "usedSize": 78744852,
+      "totalSize": 153591808,
+      "embedderHeapUsedSize": 3964632,
+      "backingStorageSize": 4176160
     },
     {
-      "usedSize": 108404756,
-      "totalSize": 156491776,
-      "embedderHeapUsedSize": 16956464,
-      "backingStorageSize": 12715483
+      "usedSize": 109174812,
+      "totalSize": 160301056,
+      "embedderHeapUsedSize": 5678528,
+      "backingStorageSize": 5452295
     }
   ],
   "replay_heap": {
-    "usedSize": 93269068,
-    "totalSize": 130912256,
-    "embedderHeapUsedSize": 2109032,
-    "backingStorageSize": 64738211
+    "usedSize": 91777300,
+    "totalSize": 142848000,
+    "embedderHeapUsedSize": 2038184,
+    "backingStorageSize": 76196261
   },
   "browser_errors": [],
-  "published_json_bytes": 58328042,
-  "published_gzip_bytes": 2776465
+  "published_json_bytes": 68864008,
+  "published_gzip_bytes": 3249066
 }

@@ -3,7 +3,8 @@ cargo 1.98.1 (797e8a9bc 2026-08-05)
 v22.22.1
 9.2.0
 Google Chrome 155.0.8059.84
+Mozilla Firefox 158.0
 bpftool v7.7.0
 using libbpf v1.7
 features:
-57df9a1b82039c6f1c98dc624f60991000602815
+e6a87b06b928487a204143fc1931eda5de2a7671

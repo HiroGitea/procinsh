@@ -2,8 +2,9 @@ rustc 1.98.1 (48a229cea 2026-09-01)
 cargo 1.98.1 (797e8a9bc 2026-08-05)
 v22.22.1
 9.2.0
+Google Chrome 155.0.8059.84
 Mozilla Firefox 158.0
 bpftool v7.7.0
 using libbpf v1.7
 features:
-a021868a381d4b6d3d8c7e683e187b7a9da2a197
+e6a87b06b928487a204143fc1931eda5de2a7671

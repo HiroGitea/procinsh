@@ -1,5 +1,5 @@
 {
-  "revision": "a021868a381d4b6d3d8c7e683e187b7a9da2a197",
+  "revision": "e6a87b06b928487a204143fc1931eda5de2a7671",
   "image_url": "https://cloud-images.ubuntu.com/releases/26.04/release-20260927/ubuntu-26.04-server-cloudimg-amd64.img",
   "http_port": 10090,
   "browser": "firefox",
