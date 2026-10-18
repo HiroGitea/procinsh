@@ -44,6 +44,8 @@ if (firefox) {
     'user_pref("datareporting.policy.dataSubmissionEnabled", false);',
     'user_pref("toolkit.telemetry.enabled", false);',
     'user_pref("app.update.auto", false);',
+    'user_pref("browser.cache.disk.enable", false);',
+    'user_pref("browser.cache.memory.enable", false);',
   ].join('\n'));
 }
 const child = spawn(firefox ? (process.env.FIREFOX || '/opt/firefox/firefox') : (process.env.CHROME || '/usr/bin/google-chrome'), firefox ? [
@@ -80,12 +82,16 @@ async function connect(url) {
   const pending = new Map();
   ws.onmessage = event => {
     const message = JSON.parse(event.data);
-    if (!message.id) return;
+    if (!message.id) {
+      if (message.method === 'browsingContext.load') log(`loaded ${message.params.url}`);
+      if (message.method === 'browsingContext.navigationFailed') log(`navigation failed ${message.params.url}`);
+      return;
+    }
     const task = pending.get(message.id);
     if (!task) return;
     pending.delete(message.id);
     clearTimeout(task.timer);
-    message.error ? task.reject(new Error(JSON.stringify(message.error))) : task.resolve(message.result);
+    message.error ? task.reject(new Error(JSON.stringify(message))) : task.resolve(message.result);
   };
   ws.onclose = () => {
     for (const task of pending.values()) { clearTimeout(task.timer); task.reject(new Error(`${browser} connection closed`)); }
@@ -112,14 +118,17 @@ try {
   }
   log(`controller PID=${process.pid}, ${browser} PID=${child.pid}, interval=${interval / 1000}s`);
   const send = await connect(firefox ? `${endpoint}/session` : endpoint);
-  if (firefox) await send('session.new', {capabilities: {}});
+  if (firefox) {
+    await send('session.new', {capabilities: {}});
+    await send('session.subscribe', {events: ['browsingContext.load', 'browsingContext.navigationFailed']});
+  }
   const tabs = [];
   if (firefox) {
     const initial = (await send('browsingContext.getTree')).contexts;
     for (const url of tabUrls) {
       const {context} = await send('browsingContext.create', {type: 'tab'});
       await send('browsingContext.navigate', {context, url, wait: 'none'});
-      tabs.push({url, reload: () => send('browsingContext.reload', {context, ignoreCache: true, wait: 'none'})});
+      tabs.push({url, reload: () => send('browsingContext.reload', {context, wait: 'none'})});
       log(`opened tab ${tabs.length}/${tabCount} ${url}`);
     }
     for (const {context} of initial) await send('browsingContext.close', {context});
