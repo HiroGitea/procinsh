@@ -180,9 +180,10 @@ try {
   );
   for (const encoding of ["gzip", "http-gzip"] as const) {
     demoEncoding = encoding;
+    const previousOrigin = await evaluate<number>("performance.timeOrigin");
     await cdp("Page.navigate", { url });
     await waitFor(
-      "document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#play').textContent==='Pause'",
+      `performance.timeOrigin!==${previousOrigin} && document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#play').textContent==='Pause'`,
       `${encoding} URL replay avoids double decompression`,
     );
   }

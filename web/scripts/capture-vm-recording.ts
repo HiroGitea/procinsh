@@ -19,6 +19,9 @@ const profile = await mkdtemp(join(tmpdir(), "space-vm-capture-"));
 const errors: string[] = [];
 const chrome = launch(process.env.CHROME || "/usr/bin/google-chrome", [
   "--headless=new",
+  "--use-gl=angle",
+  "--use-angle=swiftshader",
+  "--enable-unsafe-swiftshader",
   "--disable-dev-shm-usage",
   "--remote-debugging-port=0",
   ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []),
@@ -80,6 +83,26 @@ try {
     (event) => event.type === "activity",
   );
   assert.ok(activities.length > 0, "Activity events required");
+  const chromeObservations = {
+    cpu: activities
+      .flatMap((event) => event.data.cpu ?? [])
+      .filter(
+        (sample) =>
+          chromePids.has(sample.process_id.pid) && sample.runtime_ns > 0,
+      ).length,
+    ipc: activities
+      .flatMap((event) => event.data.ipc ?? [])
+      .filter(
+        (sample) => chromePids.has(sample.process_id.pid) && sample.bytes > 0,
+      ).length,
+    files: activities
+      .flatMap((event) => event.data.files ?? [])
+      .filter(
+        (sample) => chromePids.has(sample.process_id.pid) && sample.bytes > 0,
+      ).length,
+  };
+  for (const [sensor, count] of Object.entries(chromeObservations))
+    assert.ok(count > 0, `Chrome ${sensor} activity required`);
   await writeFile(output, zipped, { flag: "wx" });
   await cdp("Page.navigate", { url: `${base}/replay/space/` });
   await waitFor("document.querySelector('#replay-status')", "VM replay page");
@@ -103,6 +126,7 @@ try {
         gzip_bytes: zipped.length,
         chrome_processes: chromePids.size,
         activity_events: activities.length,
+        chrome_observations: chromeObservations,
         baseline_heap: baseline,
         recording_heap_samples: recordingHeap,
         replay_heap: replayHeap,

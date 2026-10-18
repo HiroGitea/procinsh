@@ -151,7 +151,10 @@ bpftool versions and kernel BPF feature probe are saved in the guest's
 `/opt/recording-metadata/`. Apt/Rust/Chrome downloads are not immutable mirrors;
 retain that manifest when regenerating recordings to identify version drift.
 
-Wait for `SPACE recording ready on guest port 9090` on the QEMU console. Setup
+Follow `tail -f /tmp/space-demo/console.log` and wait for
+`SPACE recording ready on guest port 9090`. Connect an interactive serial console
+with `VM_DIR=/tmp/space-demo python3 scripts/recording-vm/console.py` (Ctrl-]
+disconnects). Setup
 can take several minutes. Open `http://127.0.0.1:10090/space` on the host, select
 **Record**, and then **Stop & Download**. Compress the download with standard
 `gzip -n -9 recording.json`. Keep the JSON below 128 MiB and gzip below 25 MiB
@@ -181,10 +184,18 @@ VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh stop
 ```
 
 Wait for QEMU to exit before restarting or removing the state directory.
-`Ctrl-a x` terminates QEMU immediately and can leave an unclean guest filesystem.
+Terminating the QEMU process immediately can leave an unclean guest filesystem.
 Inspect `/var/log/recording-setup.log` and `journalctl -u space-demo` on failures.
 Before publishing a recording, review process arguments, usernames, paths and
 network addresses, and retain process/IPC identities if sanitization is needed.
 Only then copy the gzip to `web/replay-public/recordings/` and add its catalog entry
 in `web/src/space/session-controls.ts`. The standalone build checks every source
 asset and every generated file against the Pages Free 25 MiB maximum.
+
+If host QEMU tools or KVM group membership are unavailable, use
+`scripts/recording-vm/docker.sh` in place of `run.sh` for the same commands. It
+builds a QEMU tool container, passes only `/dev/kvm`, mounts the checkout read-only
+and the VM state directory writable, and runs with the caller's UID plus the
+device's group. Host networking preserves the loopback-only forwarding address.
+The guest still runs directly under QEMU/KVM, with SLIRP networking. Docker needs
+permission to access the KVM device; the host's device permissions are unchanged.

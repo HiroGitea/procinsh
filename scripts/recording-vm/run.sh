@@ -65,10 +65,12 @@ with socket.socket() as probe:
     except OSError as error:
         raise SystemExit(f'HOST_PORT {port} is unavailable: {error}')
 PY
-printf 'Open http://127.0.0.1:%s/space after cloud-init finishes. Ctrl-a x terminates QEMU.\n' "$port"
+printf 'Open http://127.0.0.1:%s/space after cloud-init finishes. Console log: %s/console.log\n' "$port" "$state"
 printf 'HOST_PORT=%s\nVM_CPUS=%s\nVM_MEMORY_MIB=%s\n' "$port" "$cpus" "$memory" >"$state/resources.txt"
 exec qemu-system-x86_64 -enable-kvm -cpu host -smp "$cpus" -m "$memory" \
   -drive "file=$state/guest.qcow2,format=qcow2,if=virtio" \
   -drive "file=$state/seed.img,format=raw,if=virtio,readonly=on" \
   -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$port-:9090" \
-  -monitor "unix:$state/monitor.sock,server=on,wait=off" -nographic
+  -monitor "unix:$state/monitor.sock,server=on,wait=off" \
+  -chardev "socket,id=console,path=$state/console.sock,server=on,wait=off,logfile=$state/console.log,logappend=on" \
+  -serial chardev:console -display none
