@@ -1,4 +1,4 @@
-// Node-only static build: publish dist-replay directly on Cloudflare Pages Free.
+// Standalone static replay build that can be served at any deployment prefix.
 import { readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
@@ -16,7 +16,7 @@ export function assertPagesAssets(directory: string) {
   }
 }
 export default defineConfig({
-  base: process.env.PROCINSH_REPLAY_BASE || "/",
+  base: "./",
   appType: "mpa",
   define: { "import.meta.vitest": "undefined" },
   publicDir: "replay-public",
@@ -35,6 +35,7 @@ export default defineConfig({
     outDir: "dist-replay",
     rolldownOptions: {
       input: {
+        index: resolve(import.meta.dirname, "index.html"),
         "replay/space": resolve(import.meta.dirname, "replay/space/index.html"),
       },
     },

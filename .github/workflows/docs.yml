@@ -1,9 +1,13 @@
-name: Publish API documentation
+name: Publish documentation and replay demo
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -26,6 +30,8 @@ jobs:
         run: npm --prefix web ci
       - name: Build web assets
         run: npm --prefix web run build
+      - name: Build static replay demo
+        run: npm --prefix web run build:replay
       - name: Install native dependencies
         run: |
           sudo apt-get update
@@ -90,8 +96,14 @@ jobs:
           done
 
           echo '</ul><h2>TypeScript API documentation</h2><ul><li><a href="typescript/">TypeScript API documentation</a></li></ul>' >> target/doc/index.html
-          echo '<h2>Architecture</h2><ul><li><a href="rust-architecture/">Rust module dependency graph</a></li><li><a href="typescript-architecture/">TypeScript module dependency graph</a></li></ul></html>' >> target/doc/index.html
+          echo '<h2>Architecture</h2><ul><li><a href="rust-architecture/">Rust module dependency graph</a></li><li><a href="typescript-architecture/">TypeScript module dependency graph</a></li></ul>' >> target/doc/index.html
+          echo '<h2>Demo</h2><p><a href="demo/">SPACE replay demos</a></p></html>' >> target/doc/index.html
           touch target/doc/.nojekyll
+
+      - name: Include static replay demo
+        run: |
+          mkdir -p target/doc/demo
+          cp -R web/dist-replay/. target/doc/demo/
 
       - uses: actions/configure-pages@v5
 

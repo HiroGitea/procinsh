@@ -21,7 +21,7 @@
     "test:browser:space": "npm run build:browser-test && cargo build --locked --manifest-path ../Cargo.toml && tsx tests/browser/space-browser.ts",
     "test:dev": "tsx tests/integration/dev-server.ts",
     "build:replay": "npm run typecheck && vite build --config vite.replay.config.ts",
-    "test:browser:replay": "PROCINSH_REPLAY_BASE=/demo/ npm run build:replay && tsx tests/browser/space-replay-static.ts"
+    "test:browser:replay": "npm run build:replay && tsx tests/browser/space-replay-static.ts"
   },
   "devDependencies": {
     "@types/node": "26.6.4",

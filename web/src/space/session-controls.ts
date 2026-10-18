@@ -260,8 +260,9 @@ export function mountReplayControls(
     }
     demo.querySelector("select")!.value = id;
     void load(async () => {
+      // Replay pages are two directories below the movable bundle root.
       const response = await fetch(
-        `${import.meta.env.BASE_URL}${recording.path}`,
+        new URL(`../../${recording.path}`, document.baseURI),
       );
       if (!response.ok)
         throw new Error(
