@@ -2,7 +2,7 @@
 name = "procinsh"
 version = "0.1.14"
 edition = "2024"
-description = "A local, read-only Linux x86-64 process inspector"
+description = "Explore Linux processes in 3D. A real-time process inspector powered by Rust, eBPF and Three.js."
 license = "MIT"
 repository = "https://github.com/akawashiro/procinsh"
 readme = "README.md"
