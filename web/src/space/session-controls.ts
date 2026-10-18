@@ -15,6 +15,7 @@ const bundledRecordings = [
 
 function demoControls(open: (id: string) => void) {
   const controls = document.createElement("div");
+  controls.id = "demo-controls";
   controls.className = "demo-controls";
   const select = document.createElement("select");
   select.id = "demo-recording";
