@@ -333,7 +333,64 @@ mod tests {
 mod live_tests {
     use super::*;
     use crate::http_server::process::TestTarget;
-    use std::time::{Duration, Instant};
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::{fd::OwnedFd, unix::net::UnixStream},
+        process::{Command, Stdio},
+        time::{Duration, Instant},
+    };
+
+    /// Commands one worker at a time and waits for readiness or completed join.
+    struct ThreadController {
+        target: TestTarget,
+        connection: BufReader<UnixStream>,
+    }
+
+    impl ThreadController {
+        fn new() -> Self {
+            crate::http_server::test_support::build_targets();
+            let (connection, child_connection) = UnixStream::pair().unwrap();
+            connection
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            connection
+                .set_write_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let stdin: OwnedFd = child_connection.try_clone().unwrap().into();
+            let stdout: OwnedFd = child_connection.into();
+            let child = Command::new("tests/targets/bin/thread_lifecycle")
+                .arg("--allow-inspector")
+                .stdin(Stdio::from(stdin))
+                .stdout(Stdio::from(stdout))
+                .spawn()
+                .unwrap();
+            let id = process::identity(child.id() as i32).unwrap();
+            let mut controller = Self {
+                target: TestTarget {
+                    child,
+                    id,
+                    address: 0,
+                },
+                connection: BufReader::new(connection),
+            };
+            assert_eq!(controller.response().trim(), "ready");
+            controller
+        }
+
+        fn response(&mut self) -> String {
+            let mut response = String::new();
+            assert!(
+                self.connection.read_line(&mut response).unwrap() > 0,
+                "lifecycle fixture closed its control connection"
+            );
+            response
+        }
+
+        fn command(&mut self, command: &str) -> i32 {
+            writeln!(self.connection.get_mut(), "{command}").unwrap();
+            self.response().trim().parse().unwrap()
+        }
+    }
 
     fn poll_until(sampler: &mut Sampler, maps: &[MemoryMap], condition: impl Fn(&Sampler) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -715,88 +772,57 @@ mod live_tests {
     }
 
     #[test]
-    fn live_threads_churn_sleep_and_exit() {
-        let mut target = TestTarget::new("threads");
-        PerfEventReader::open(target.id.pid)
-            .expect("perf access is required in the Docker test container");
-        let maps = process::maps::read_maps(target.id.pid).unwrap();
-        let mut sampler = Sampler::new(target.id);
-        poll_until(&mut sampler, &maps, |s| {
-            s.latest().iter().filter(|t| t.sampled_at.is_some()).count() >= 4
-        });
-        let main = sampler
-            .latest()
-            .into_iter()
-            .find(|t| t.tid == target.id.pid)
-            .unwrap();
-        // A main already sleeping can initially have no sample; busy workers continue.
-        let worker = sampler
-            .latest()
-            .into_iter()
-            .find(|t| t.sampled_at.is_some())
-            .unwrap();
-        poll_until(&mut sampler, &maps, |s| {
-            s.latest()
-                .iter()
-                .any(|t| t.tid == worker.tid && t.sampled_at > worker.sampled_at)
-        });
-        let sleeping = sampler
-            .latest()
-            .into_iter()
-            .find(|t| t.tid == main.tid)
-            .unwrap();
-        if sleeping.sampled_at != main.sampled_at {
-            assert!(matches!(
-                sleeping.sample_source,
-                Some(SampleSource::ContextSwitch { .. })
-            ));
+    fn live_thread_lifecycle_discovers_and_removes_acknowledged_threads() {
+        let mut controller = ThreadController::new();
+        let id = controller.target.id;
+        let maps = process::maps::read_maps(id.pid).unwrap();
+        let mut sampler = Sampler::new(id);
+        sampler.poll(&maps).unwrap();
+        for _ in 0..3 {
+            let tid = controller.command("start");
+            assert_ne!(tid, id.pid);
+            sampler.poll(&maps).unwrap();
+            let thread = sampler
+                .threads
+                .get(&tid)
+                .expect("new worker was not discovered");
+            assert!(thread.event.is_some(), "{:?}", thread.setup_error);
+            assert!(thread.switch_event.is_some(), "{:?}", thread.setup_error);
+            assert_eq!(controller.command("stop"), tid);
+            // pthread_join has completed. Wait only for procfs to drop the task,
+            // without racing an uncontrolled stream of replacement threads.
+            poll_until(&mut sampler, &maps, |s| !s.threads.contains_key(&tid));
+            assert!(!sampler.latest().iter().any(|sample| sample.tid == tid));
+            assert!(sampler.threads.contains_key(&id.pid));
         }
-        // Short-lived TIDs are removed, and newly created TIDs get their own event.
-        poll_until(&mut sampler, &maps, |s| s.threads.len() == 7);
-        let old_tids: BTreeSet<_> = sampler.threads.keys().copied().collect();
-        poll_until(&mut sampler, &maps, |s| {
-            old_tids.iter().any(|tid| !s.threads.contains_key(tid))
-                && s.threads.keys().any(|tid| !old_tids.contains(tid))
-        });
-        assert!(sampler.threads.len() <= 7);
-        let sleeper_tid = *sampler
-            .threads
-            .keys()
-            .find(|tid| {
-                std::fs::read_to_string(format!("/proc/{}/task/{tid}/comm", target.id.pid))
-                    .is_ok_and(|name| name.trim() == "procinsh-sleep")
-            })
-            .unwrap();
-        assert_eq!(unsafe { libc::kill(target.id.pid, libc::SIGUSR1) }, 0);
-        std::thread::sleep(Duration::from_millis(300));
-        sampler.poll(&maps).unwrap();
-        let sleeping_at = sampler.threads[&sleeper_tid].latest.sampled_at;
-        assert!(sleeping_at.is_some());
-        let busy_at = sampler.threads[&worker.tid].latest.sampled_at;
-        std::thread::sleep(Duration::from_millis(400));
-        sampler.poll(&maps).unwrap();
-        let sleeper = sampler
-            .latest()
-            .into_iter()
-            .find(|t| t.tid == sleeper_tid)
-            .unwrap();
-        assert_eq!(sleeper.sampled_at, sleeping_at);
-        assert!(sleeper.sample_age_ms.unwrap() >= 400);
-        assert!(
-            sampler
-                .latest()
-                .iter()
-                .any(|t| t.tid != sleeper_tid && t.sampled_at > busy_at)
-        );
-        target.assert_detached();
+        controller.target.assert_detached();
+    }
+
+    #[test]
+    fn live_sampler_rejects_mismatched_process_identity() {
+        let controller = ThreadController::new();
+        let id = controller.target.id;
+        let maps = process::maps::read_maps(id.pid).unwrap();
         let stale = ProcessId {
-            start_time_ticks: target.id.start_time_ticks + 1,
-            ..target.id
+            start_time_ticks: id.start_time_ticks + 1,
+            ..id
         };
-        assert!(Sampler::new(stale).poll(&maps).is_err());
-        target.child.kill().unwrap();
-        target.child.wait().unwrap();
+        let mut sampler = Sampler::new(stale);
         assert!(sampler.poll(&maps).is_err());
-        drop(sampler);
+        assert!(sampler.threads.is_empty());
+        controller.target.assert_detached();
+    }
+
+    #[test]
+    fn live_sampler_rejects_exited_process() {
+        let mut controller = ThreadController::new();
+        let id = controller.target.id;
+        let maps = process::maps::read_maps(id.pid).unwrap();
+        let mut sampler = Sampler::new(id);
+        sampler.poll(&maps).unwrap();
+        controller.target.assert_detached();
+        controller.target.child.kill().unwrap();
+        controller.target.child.wait().unwrap();
+        assert!(sampler.poll(&maps).is_err());
     }
 }
