@@ -84,18 +84,26 @@ export function mountReplayControls(
   clock: (time: number) => void,
 ) {
   const host = document.querySelector(".tools")!;
-  const badge = document.createElement("strong");
-  badge.textContent = "REPLAY";
   const file = document.createElement("input");
   file.type = "file";
+  file.hidden = true;
   file.accept = ".json,application/json";
   file.setAttribute("aria-label", "Open recording JSON");
+  const open = document.createElement("button");
+  open.id = "open-recording";
+  open.type = "button";
+  open.textContent = "Open recording";
+  open.onclick = () => file.click();
   const play = document.createElement("button");
   play.id = "play";
   const previous = document.createElement("button");
-  previous.textContent = "Step backward";
+  previous.textContent = "Previous";
+  previous.setAttribute("aria-label", "Step backward");
+  previous.title = "Step backward";
   const next = document.createElement("button");
-  next.textContent = "Step forward";
+  next.textContent = "Next";
+  next.setAttribute("aria-label", "Step forward");
+  next.title = "Step forward";
   const timeline = document.createElement("input");
   timeline.id = "timeline";
   timeline.type = "range";
@@ -120,17 +128,13 @@ export function mountReplayControls(
   const status = document.createElement("span");
   status.id = "replay-status";
   status.setAttribute("role", "status");
-  host.append(
-    badge,
-    file,
-    previous,
-    play,
-    next,
-    timeline,
-    speed,
-    loopLabel,
-    status,
-  );
+  const steps = document.createElement("div");
+  steps.className = "replay-controls-row";
+  steps.append(previous, next);
+  const options = document.createElement("div");
+  options.className = "replay-controls-row";
+  options.append(speed, loopLabel);
+  host.append(play, open, file, steps, timeline, options, status);
   let replay: SpaceReplay | null = null;
   let loading = 0;
   let label = "";
