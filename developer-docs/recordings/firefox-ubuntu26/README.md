@@ -6,31 +6,32 @@ an Ubuntu 26.04 QEMU/KVM guest. SLIRP forwards host port 10090 to guest port 100
 
 Both browser recordings use the same eight external URLs in `sites.txt`: Mozilla,
 Chromium, Python, Rust, Go, Node.js, TypeScript and kernel.org. Each tab reloads
-every ten seconds with caching disabled. Chrome uses CDP; Firefox uses native
-WebDriver BiDi. The workload serves no local pages and generates no HTML.
+every ten seconds with caching disabled. Both use the same Puppeteer WebDriver BiDi API for launch, tab creation,
+cache disabling, navigation and reload. Navigation waits for DOMContentLoaded.
+Puppeteer supplies the Chrome BiDi adapter; Firefox exposes native BiDi. The workload serves no local pages and generates no HTML.
 `workload.log` records tab creation and reloads around the capture.
 
 | Observation | Value |
 | --- | --- |
-| Recorded UTC | 2026-10-18T08:23:17.567Z |
-| Duration | 15.6056 seconds |
+| Recorded UTC | 2026-10-18T09:01:15.134Z |
+| Duration | 15.3804 seconds |
 | Guest | Ubuntu 26.04, 4 vCPUs, 8192 MiB RAM, 40 GiB QCOW2 |
-| Initial Firefox processes | 20 |
-| Processes across snapshots | 165 |
+| Initial Firefox processes | 18 |
+| Processes across snapshots | 162 |
 | Snapshot / activity events | 13 / 15 |
-| Firefox CPU / IPC / file samples | 173 / 1096 / 43 |
-| Original JSON / gzip bytes | 68,866,176 / 3,235,807 |
-| Published JSON / gzip bytes | 68,864,008 / 3,249,066 |
-| Published gzip SHA256 | `c047071b29db78a2b6c2e98487199c73b5d2d26771a19d571cfa081dc52ddc7c` |
+| Firefox CPU / IPC / file samples | 153 / 1193 / 563 |
+| Original JSON / gzip bytes | 63,130,582 / 2,946,866 |
+| Published JSON / gzip bytes | 63,128,862 / 2,965,213 |
+| Published gzip SHA256 | `69b697764baab040c333fa5fe7c7d702afe50a569df8075a9579c0a4a48212bd` |
 
 The published gzip is below the 20 MiB target and 25 MiB Pages Free asset limit.
 Expanded JSON stays below 128 MiB. It uses the unchanged version 1 recording
 format and standard gzip (level 9, mtime zero).
 
 `metrics.json` contains sampled DevTools JavaScript heap usage for the host
-recording/replay viewer: baseline 25,739,268 bytes,
-largest sampled recording heap 109,174,812 bytes,
-and replay 91,777,300 bytes. These are sampled host Chrome
+recording/replay viewer: baseline 14,311,072 bytes,
+largest sampled recording heap 100,661,880 bytes,
+and replay 89,087,740 bytes. These are sampled host Chrome
 renderer allocations, not total browser RSS or guest browser memory. The replay
 sample also includes the capture script's base64 File API input.
 
@@ -48,9 +49,9 @@ addresses. The dedicated guest contains OS service accounts and a disposable
 `demo` account, with no host home directory, profile, login, credentials or user
 documents. Browser profile identifiers, IPC UUIDs and field-trial handles are
 created inside that guest. Recordings contain paths and I/O counts, not profile
-file contents. 12 recorded IPv4/IPv6 addresses are consistently replaced
+file contents. 10 recorded IPv4/IPv6 addresses are consistently replaced
 with documentation addresses in `192.0.2.0/24` and `2001:db8::/32` across
-464 occurrences. Remaining addresses are unspecified, loopback or QEMU's
+344 occurrences. Remaining addresses are unspecified, loopback or QEMU's
 private network. No other fields are edited; process/resource identities,
 activity counts and event order remain intact.
 

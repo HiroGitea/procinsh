@@ -160,9 +160,10 @@ Node.js, the npm dependencies (including pinned `puppeteer-core`) and the select
 - `browser-demo`: an unprivileged browser workload, eight tabs, ten-second
   reloads. Both browsers run `scripts/browser_workload.mjs` with the same external
   URLs in `scripts/browser_sites.txt`: Mozilla, Chromium, Python, Rust, Go,
-  Node.js, TypeScript and the Linux kernel. Both use Puppeteer with `protocol: webDriverBiDi` and identical calls to
+  Node.js, TypeScript and the Linux kernel. Both use Puppeteer with `protocol: 'webDriverBiDi'` and identical calls to
   `newPage()`, `setCacheEnabled(false)`, `goto()` and `reload()`. Navigation and
   reload wait for DOMContentLoaded. Only the browser name and executable differ.
+  Puppeteer provides Chrome's BiDi adapter; Firefox exposes native BiDi.
   Each run creates a disposable browser profile. No page server or generated
   workload HTML is involved. `SITE_LIST` can select a different URL list for both
   browsers; `scripts/chrome_load.mjs` retains its larger Chrome-only default list.

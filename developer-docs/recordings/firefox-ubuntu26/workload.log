@@ -1,193 +1,135 @@
-2026-10-18T08:22:14.726Z controller PID=12827, firefox PID=12844, interval=10s
-2026-10-18T08:22:15.547Z loaded about:newtab
-2026-10-18T08:22:15.612Z opened tab 1/8 https://www.mozilla.org/
-2026-10-18T08:22:15.747Z opened tab 2/8 https://www.chromium.org/
-2026-10-18T08:22:15.748Z loaded https://www.chromium.org/
-2026-10-18T08:22:15.911Z opened tab 3/8 https://www.python.org/
-2026-10-18T08:22:15.952Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:22:15.992Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:22:16.055Z opened tab 4/8 https://www.rust-lang.org/
-2026-10-18T08:22:16.071Z loaded https://www.python.org/
-2026-10-18T08:22:16.138Z loaded https://rust-lang.org/
-2026-10-18T08:22:16.466Z opened tab 5/8 https://go.dev/
-2026-10-18T08:22:16.678Z opened tab 6/8 https://nodejs.org/
-2026-10-18T08:22:16.786Z opened tab 7/8 https://www.typescriptlang.org/
-2026-10-18T08:22:16.879Z loaded https://nodejs.org/en
-2026-10-18T08:22:16.973Z opened tab 8/8 https://www.kernel.org/
-2026-10-18T08:22:16.984Z ready: 8 page tabs
-2026-10-18T08:22:17.058Z loaded https://www.typescriptlang.org/
-2026-10-18T08:22:17.083Z loaded https://www.kernel.org/
-2026-10-18T08:22:17.431Z loaded https://go.dev/
-2026-10-18T08:22:17.793Z loaded about:blank
-2026-10-18T08:22:17.956Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:22:27.027Z reload 1 https://www.kernel.org/
-2026-10-18T08:22:27.029Z reload 1 https://www.chromium.org/
-2026-10-18T08:22:27.031Z reload 1 https://www.python.org/
-2026-10-18T08:22:27.032Z reload 1 https://www.rust-lang.org/
-2026-10-18T08:22:27.042Z reload 1 https://www.typescriptlang.org/
-2026-10-18T08:22:27.071Z reload 1 https://nodejs.org/
-2026-10-18T08:22:27.100Z reload 1 https://www.mozilla.org/
-2026-10-18T08:22:27.102Z loaded https://www.kernel.org/
-2026-10-18T08:22:27.129Z loaded https://www.typescriptlang.org/
-2026-10-18T08:22:27.191Z loaded https://www.python.org/
-2026-10-18T08:22:27.204Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:22:27.217Z loaded https://rust-lang.org/
-2026-10-18T08:22:27.254Z reload 1 https://go.dev/
-2026-10-18T08:22:27.254Z reload round 1 complete: 8 tabs
-2026-10-18T08:22:27.411Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:22:27.497Z loaded https://nodejs.org/en
-2026-10-18T08:22:28.091Z loaded https://go.dev/
-2026-10-18T08:22:29.328Z loaded about:blank
-2026-10-18T08:22:29.488Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:22:37.013Z reload 2 https://www.kernel.org/
-2026-10-18T08:22:37.023Z reload 2 https://www.rust-lang.org/
-2026-10-18T08:22:37.026Z reload 2 https://www.python.org/
-2026-10-18T08:22:37.026Z reload 2 https://www.chromium.org/
-2026-10-18T08:22:37.036Z reload 2 https://www.typescriptlang.org/
-2026-10-18T08:22:37.037Z reload 2 https://www.mozilla.org/
-2026-10-18T08:22:37.087Z loaded https://www.kernel.org/
-2026-10-18T08:22:37.121Z loaded https://rust-lang.org/
-2026-10-18T08:22:37.149Z loaded https://www.typescriptlang.org/
-2026-10-18T08:22:37.187Z loaded https://www.python.org/
-2026-10-18T08:22:37.210Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:22:37.219Z reload 2 https://nodejs.org/
-2026-10-18T08:22:37.261Z reload 2 https://go.dev/
-2026-10-18T08:22:37.261Z reload round 2 complete: 8 tabs
-2026-10-18T08:22:37.377Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:22:37.382Z loaded https://nodejs.org/en
-2026-10-18T08:22:38.104Z loaded https://go.dev/
-2026-10-18T08:22:39.260Z loaded about:blank
-2026-10-18T08:22:39.387Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:22:47.010Z reload 3 https://www.kernel.org/
-2026-10-18T08:22:47.012Z reload 3 https://www.chromium.org/
-2026-10-18T08:22:47.028Z reload 3 https://www.rust-lang.org/
-2026-10-18T08:22:47.028Z reload 3 https://www.typescriptlang.org/
-2026-10-18T08:22:47.029Z reload 3 https://www.python.org/
-2026-10-18T08:22:47.030Z reload 3 https://www.mozilla.org/
-2026-10-18T08:22:47.055Z reload 3 https://nodejs.org/
-2026-10-18T08:22:47.104Z loaded https://rust-lang.org/
-2026-10-18T08:22:47.150Z loaded https://www.kernel.org/
-2026-10-18T08:22:47.162Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:22:47.244Z loaded https://www.typescriptlang.org/
-2026-10-18T08:22:47.246Z loaded https://www.python.org/
-2026-10-18T08:22:47.275Z reload 3 https://go.dev/
-2026-10-18T08:22:47.275Z reload round 3 complete: 8 tabs
-2026-10-18T08:22:47.399Z loaded https://nodejs.org/en
-2026-10-18T08:22:47.436Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:22:48.068Z loaded https://go.dev/
-2026-10-18T08:22:49.366Z loaded about:blank
-2026-10-18T08:22:49.527Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:22:57.017Z reload 4 https://www.chromium.org/
-2026-10-18T08:22:57.019Z reload 4 https://www.python.org/
-2026-10-18T08:22:57.027Z reload 4 https://www.typescriptlang.org/
-2026-10-18T08:22:57.043Z reload 4 https://www.rust-lang.org/
-2026-10-18T08:22:57.046Z reload 4 https://www.kernel.org/
-2026-10-18T08:22:57.050Z reload 4 https://www.mozilla.org/
-2026-10-18T08:22:57.113Z reload 4 https://nodejs.org/
-2026-10-18T08:22:57.128Z loaded https://www.typescriptlang.org/
-2026-10-18T08:22:57.158Z loaded https://www.python.org/
-2026-10-18T08:22:57.162Z loaded https://www.kernel.org/
-2026-10-18T08:22:57.187Z loaded https://rust-lang.org/
-2026-10-18T08:22:57.191Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:22:57.254Z reload 4 https://go.dev/
-2026-10-18T08:22:57.255Z reload round 4 complete: 8 tabs
-2026-10-18T08:22:57.268Z loaded https://nodejs.org/en
-2026-10-18T08:22:57.608Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:22:57.857Z loaded https://go.dev/
-2026-10-18T08:22:59.288Z loaded about:blank
-2026-10-18T08:22:59.447Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:23:07.018Z reload 5 https://www.kernel.org/
-2026-10-18T08:23:07.029Z reload 5 https://www.chromium.org/
-2026-10-18T08:23:07.030Z reload 5 https://www.python.org/
-2026-10-18T08:23:07.035Z reload 5 https://www.rust-lang.org/
-2026-10-18T08:23:07.038Z reload 5 https://www.typescriptlang.org/
-2026-10-18T08:23:07.047Z reload 5 https://www.mozilla.org/
-2026-10-18T08:23:07.068Z reload 5 https://nodejs.org/
-2026-10-18T08:23:07.122Z loaded https://www.kernel.org/
-2026-10-18T08:23:07.159Z loaded https://rust-lang.org/
-2026-10-18T08:23:07.178Z loaded https://www.python.org/
-2026-10-18T08:23:07.189Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:23:07.241Z loaded https://www.typescriptlang.org/
-2026-10-18T08:23:07.245Z loaded https://nodejs.org/en
-2026-10-18T08:23:07.253Z reload 5 https://go.dev/
-2026-10-18T08:23:07.253Z reload round 5 complete: 8 tabs
-2026-10-18T08:23:07.399Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:23:08.139Z loaded https://go.dev/
-2026-10-18T08:23:09.256Z loaded about:blank
-2026-10-18T08:23:09.417Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:23:17.016Z reload 6 https://www.kernel.org/
-2026-10-18T08:23:17.031Z reload 6 https://www.chromium.org/
-2026-10-18T08:23:17.032Z reload 6 https://www.rust-lang.org/
-2026-10-18T08:23:17.032Z reload 6 https://www.python.org/
-2026-10-18T08:23:17.032Z reload 6 https://www.typescriptlang.org/
-2026-10-18T08:23:17.057Z reload 6 https://www.mozilla.org/
-2026-10-18T08:23:17.091Z reload 6 https://nodejs.org/
-2026-10-18T08:23:17.135Z loaded https://www.kernel.org/
-2026-10-18T08:23:17.150Z loaded https://rust-lang.org/
-2026-10-18T08:23:17.188Z loaded https://www.python.org/
-2026-10-18T08:23:17.200Z loaded https://www.typescriptlang.org/
-2026-10-18T08:23:17.249Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:23:17.261Z reload 6 https://go.dev/
-2026-10-18T08:23:17.262Z reload round 6 complete: 8 tabs
-2026-10-18T08:23:17.441Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:23:17.740Z loaded https://nodejs.org/en
-2026-10-18T08:23:18.186Z loaded https://go.dev/
-2026-10-18T08:23:19.284Z loaded about:blank
-2026-10-18T08:23:19.414Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:23:27.015Z reload 7 https://www.python.org/
-2026-10-18T08:23:27.019Z reload 7 https://www.chromium.org/
-2026-10-18T08:23:27.022Z reload 7 https://www.kernel.org/
-2026-10-18T08:23:27.035Z reload 7 https://www.rust-lang.org/
-2026-10-18T08:23:27.042Z reload 7 https://www.typescriptlang.org/
-2026-10-18T08:23:27.044Z reload 7 https://www.mozilla.org/
-2026-10-18T08:23:27.094Z reload 7 https://nodejs.org/
-2026-10-18T08:23:27.127Z loaded https://www.kernel.org/
-2026-10-18T08:23:27.174Z loaded https://www.typescriptlang.org/
-2026-10-18T08:23:27.180Z loaded https://www.python.org/
-2026-10-18T08:23:27.207Z loaded https://rust-lang.org/
-2026-10-18T08:23:27.221Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:23:27.265Z reload 7 https://go.dev/
-2026-10-18T08:23:27.266Z reload round 7 complete: 8 tabs
-2026-10-18T08:23:27.302Z loaded https://nodejs.org/en
-2026-10-18T08:23:27.457Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:23:28.212Z loaded https://go.dev/
-2026-10-18T08:23:29.332Z loaded about:blank
-2026-10-18T08:23:29.494Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:23:37.018Z reload 8 https://www.python.org/
-2026-10-18T08:23:37.022Z reload 8 https://www.chromium.org/
-2026-10-18T08:23:37.031Z reload 8 https://www.kernel.org/
-2026-10-18T08:23:37.043Z reload 8 https://www.rust-lang.org/
-2026-10-18T08:23:37.046Z reload 8 https://www.typescriptlang.org/
-2026-10-18T08:23:37.077Z reload 8 https://nodejs.org/
-2026-10-18T08:23:37.080Z reload 8 https://www.mozilla.org/
-2026-10-18T08:23:37.153Z loaded https://www.typescriptlang.org/
-2026-10-18T08:23:37.187Z loaded https://www.kernel.org/
-2026-10-18T08:23:37.220Z loaded https://rust-lang.org/
-2026-10-18T08:23:37.252Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:23:37.277Z loaded https://www.python.org/
-2026-10-18T08:23:37.298Z reload 8 https://go.dev/
-2026-10-18T08:23:37.298Z reload round 8 complete: 8 tabs
-2026-10-18T08:23:37.316Z loaded https://nodejs.org/en
-2026-10-18T08:23:37.483Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:23:38.165Z loaded https://go.dev/
-2026-10-18T08:23:39.353Z loaded about:blank
-2026-10-18T08:23:39.516Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
-2026-10-18T08:23:47.015Z reload 9 https://www.kernel.org/
-2026-10-18T08:23:47.019Z reload 9 https://www.chromium.org/
-2026-10-18T08:23:47.027Z reload 9 https://www.typescriptlang.org/
-2026-10-18T08:23:47.027Z reload 9 https://www.python.org/
-2026-10-18T08:23:47.031Z reload 9 https://www.rust-lang.org/
-2026-10-18T08:23:47.040Z reload 9 https://www.mozilla.org/
-2026-10-18T08:23:47.053Z reload 9 https://nodejs.org/
-2026-10-18T08:23:47.147Z loaded https://www.typescriptlang.org/
-2026-10-18T08:23:47.156Z loaded https://www.kernel.org/
-2026-10-18T08:23:47.209Z loaded https://www.python.org/
-2026-10-18T08:23:47.234Z loaded https://rust-lang.org/
-2026-10-18T08:23:47.274Z reload 9 https://go.dev/
-2026-10-18T08:23:47.274Z reload round 9 complete: 8 tabs
-2026-10-18T08:23:47.278Z loaded https://nodejs.org/en
-2026-10-18T08:23:47.320Z loaded https://www.chromium.org/chromium-projects/
-2026-10-18T08:23:47.438Z loaded https://www.mozilla.org/en-US/
-2026-10-18T08:23:47.924Z loaded https://go.dev/
-2026-10-18T08:23:49.324Z loaded about:blank
-2026-10-18T08:23:49.485Z loaded https://gtm.mozilla.org/_/service_worker/6a60/sw_iframe.html?origin=https%3A%2F%2Fwww.mozilla.org&1p=1
+2026-10-18T09:00:34.423Z controller PID=3023, firefox PID=3038, interval=10s, protocol=webDriverBiDi
+2026-10-18T09:00:34.538Z opened tab 1/8 https://www.mozilla.org/
+2026-10-18T09:00:34.667Z opened tab 2/8 https://www.chromium.org/
+2026-10-18T09:00:34.791Z opened tab 3/8 https://www.python.org/
+2026-10-18T09:00:34.920Z opened tab 4/8 https://www.rust-lang.org/
+2026-10-18T09:00:35.077Z opened tab 5/8 https://go.dev/
+2026-10-18T09:00:35.189Z opened tab 6/8 https://nodejs.org/
+2026-10-18T09:00:35.289Z opened tab 7/8 https://www.typescriptlang.org/
+2026-10-18T09:00:35.389Z opened tab 8/8 https://www.kernel.org/
+2026-10-18T09:00:35.531Z loaded https://www.chromium.org/
+2026-10-18T09:00:35.943Z loaded https://www.python.org/
+2026-10-18T09:00:35.946Z loaded https://www.kernel.org/
+2026-10-18T09:00:35.995Z loaded https://www.typescriptlang.org/
+2026-10-18T09:00:36.184Z loaded https://www.chromium.org/chromium-projects/
+2026-10-18T09:00:36.199Z loaded https://rust-lang.org/
+2026-10-18T09:00:36.353Z loaded https://nodejs.org/en
+2026-10-18T09:00:36.474Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:00:36.476Z ready: 8 page tabs
+2026-10-18T09:00:36.747Z loaded https://go.dev/
+2026-10-18T09:00:38.293Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:00:38.458Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:00:46.534Z reload 1 https://www.kernel.org/
+2026-10-18T09:00:46.594Z reload 1 https://www.typescriptlang.org/
+2026-10-18T09:00:46.654Z reload 1 https://www.chromium.org/
+2026-10-18T09:00:46.660Z reload 1 https://www.rust-lang.org/
+2026-10-18T09:00:46.724Z reload 1 https://www.python.org/
+2026-10-18T09:00:46.725Z reload 1 https://www.mozilla.org/
+2026-10-18T09:00:46.807Z loaded https://rust-lang.org/
+2026-10-18T09:00:46.820Z loaded https://www.chromium.org/chromium-projects/
+2026-10-18T09:00:46.823Z loaded https://www.python.org/
+2026-10-18T09:00:46.854Z loaded https://www.kernel.org/
+2026-10-18T09:00:46.913Z loaded https://www.typescriptlang.org/
+2026-10-18T09:00:47.088Z reload 1 https://nodejs.org/
+2026-10-18T09:00:47.097Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:00:47.198Z loaded https://nodejs.org/en
+2026-10-18T09:00:47.241Z reload 1 https://go.dev/
+2026-10-18T09:00:47.242Z reload round 1 complete: 8 tabs
+2026-10-18T09:00:47.729Z loaded https://go.dev/
+2026-10-18T09:00:48.924Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:00:49.087Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:00:56.508Z reload 2 https://www.kernel.org/
+2026-10-18T09:00:56.565Z reload 2 https://www.typescriptlang.org/
+2026-10-18T09:00:56.679Z reload 2 https://www.chromium.org/
+2026-10-18T09:00:56.683Z reload 2 https://www.rust-lang.org/
+2026-10-18T09:00:56.683Z reload 2 https://www.mozilla.org/
+2026-10-18T09:00:56.683Z reload 2 https://www.python.org/
+2026-10-18T09:00:56.723Z loaded https://www.kernel.org/
+2026-10-18T09:00:56.771Z loaded https://www.python.org/
+2026-10-18T09:00:56.923Z loaded https://rust-lang.org/
+2026-10-18T09:00:56.924Z reload 2 https://nodejs.org/
+2026-10-18T09:00:56.926Z loaded https://www.typescriptlang.org/
+2026-10-18T09:00:56.929Z loaded https://nodejs.org/en
+2026-10-18T09:00:56.950Z loaded https://www.chromium.org/chromium-projects/
+2026-10-18T09:00:57.048Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:00:57.165Z reload 2 https://go.dev/
+2026-10-18T09:00:57.165Z reload round 2 complete: 8 tabs
+2026-10-18T09:00:57.550Z loaded https://go.dev/
+2026-10-18T09:00:58.842Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:00:59.006Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:06.524Z reload 3 https://www.kernel.org/
+2026-10-18T09:01:06.622Z reload 3 https://www.typescriptlang.org/
+2026-10-18T09:01:06.664Z reload 3 https://www.chromium.org/
+2026-10-18T09:01:06.683Z reload 3 https://www.python.org/
+2026-10-18T09:01:06.683Z reload 3 https://www.rust-lang.org/
+2026-10-18T09:01:06.695Z reload 3 https://www.mozilla.org/
+2026-10-18T09:01:06.812Z loaded https://rust-lang.org/
+2026-10-18T09:01:06.814Z loaded https://www.python.org/
+2026-10-18T09:01:06.844Z loaded https://www.kernel.org/
+2026-10-18T09:01:06.881Z loaded https://www.chromium.org/chromium-projects/
+2026-10-18T09:01:06.882Z reload 3 https://nodejs.org/
+2026-10-18T09:01:06.936Z loaded https://nodejs.org/en
+2026-10-18T09:01:07.074Z loaded https://www.typescriptlang.org/
+2026-10-18T09:01:07.100Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:07.264Z reload 3 https://go.dev/
+2026-10-18T09:01:07.264Z reload round 3 complete: 8 tabs
+2026-10-18T09:01:07.653Z loaded https://go.dev/
+2026-10-18T09:01:09.024Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:09.190Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:16.543Z reload 4 https://www.kernel.org/
+2026-10-18T09:01:16.641Z reload 4 https://www.typescriptlang.org/
+2026-10-18T09:01:16.731Z reload 4 https://www.mozilla.org/
+2026-10-18T09:01:16.732Z reload 4 https://www.chromium.org/
+2026-10-18T09:01:16.768Z reload 4 https://www.rust-lang.org/
+2026-10-18T09:01:16.771Z reload 4 https://www.python.org/
+2026-10-18T09:01:16.923Z loaded https://www.chromium.org/chromium-projects/
+2026-10-18T09:01:16.942Z loaded https://www.python.org/
+2026-10-18T09:01:16.945Z loaded https://rust-lang.org/
+2026-10-18T09:01:16.985Z reload 4 https://nodejs.org/
+2026-10-18T09:01:16.986Z loaded https://www.kernel.org/
+2026-10-18T09:01:17.048Z loaded https://www.typescriptlang.org/
+2026-10-18T09:01:17.108Z loaded https://nodejs.org/en
+2026-10-18T09:01:17.238Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:17.403Z reload 4 https://go.dev/
+2026-10-18T09:01:17.403Z reload round 4 complete: 8 tabs
+2026-10-18T09:01:17.866Z loaded https://go.dev/
+2026-10-18T09:01:19.075Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:19.207Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:26.541Z reload 5 https://www.kernel.org/
+2026-10-18T09:01:26.634Z reload 5 https://www.typescriptlang.org/
+2026-10-18T09:01:26.723Z reload 5 https://www.chromium.org/
+2026-10-18T09:01:26.747Z reload 5 https://www.rust-lang.org/
+2026-10-18T09:01:26.772Z reload 5 https://www.python.org/
+2026-10-18T09:01:26.773Z reload 5 https://www.mozilla.org/
+2026-10-18T09:01:27.025Z loaded https://rust-lang.org/
+2026-10-18T09:01:27.028Z loaded https://www.chromium.org/chromium-projects/
+2026-10-18T09:01:27.033Z loaded https://www.python.org/
+2026-10-18T09:01:27.072Z reload 5 https://nodejs.org/
+2026-10-18T09:01:27.130Z loaded https://nodejs.org/en
+2026-10-18T09:01:27.176Z loaded https://www.kernel.org/
+2026-10-18T09:01:27.208Z loaded https://www.typescriptlang.org/
+2026-10-18T09:01:27.426Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:27.528Z reload 5 https://go.dev/
+2026-10-18T09:01:27.528Z reload round 5 complete: 8 tabs
+2026-10-18T09:01:27.881Z loaded https://go.dev/
+2026-10-18T09:01:29.282Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:29.448Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:36.518Z reload 6 https://www.kernel.org/
+2026-10-18T09:01:36.577Z reload 6 https://www.typescriptlang.org/
+2026-10-18T09:01:36.680Z reload 6 https://www.chromium.org/
+2026-10-18T09:01:36.690Z reload 6 https://www.mozilla.org/
+2026-10-18T09:01:36.709Z reload 6 https://www.rust-lang.org/
+2026-10-18T09:01:36.712Z reload 6 https://www.python.org/
+2026-10-18T09:01:36.861Z loaded https://www.chromium.org/chromium-projects/
+2026-10-18T09:01:36.870Z loaded https://www.kernel.org/
+2026-10-18T09:01:36.900Z reload 6 https://nodejs.org/
+2026-10-18T09:01:36.915Z loaded https://www.python.org/
+2026-10-18T09:01:36.924Z loaded https://rust-lang.org/
+2026-10-18T09:01:36.929Z loaded https://www.typescriptlang.org/
+2026-10-18T09:01:37.058Z loaded https://nodejs.org/en
+2026-10-18T09:01:37.125Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:37.322Z reload 6 https://go.dev/
+2026-10-18T09:01:37.322Z reload round 6 complete: 8 tabs
+2026-10-18T09:01:37.726Z loaded https://go.dev/
+2026-10-18T09:01:39.074Z loaded https://www.mozilla.org/en-US/
+2026-10-18T09:01:39.238Z loaded https://www.mozilla.org/en-US/
