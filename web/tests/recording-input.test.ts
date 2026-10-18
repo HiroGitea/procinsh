@@ -5,29 +5,35 @@ import { readRecording } from "../src/space/recording-input.js";
 import { parseRecording } from "../src/space/recording.js";
 
 const json = readFileSync(
-  new URL("../replay-public/recordings/demo.json", import.meta.url),
+  new URL("./fixtures/space-recording.json", import.meta.url),
   "utf8",
 );
-test("published real Chrome gzip passes the shared schema and retains activity", async () => {
-  const gzip = readFileSync(
-    new URL(
-      "../replay-public/recordings/chrome-ubuntu26.json.gz",
-      import.meta.url,
-    ),
-  );
-  const recording = parseRecording(await readRecording(chunks(gzip, 65536)));
-  expect(
-    recording.initial_snapshot.processes.filter((p) => p.name === "chrome")
-      .length,
-  ).toBeGreaterThan(4);
-  const activity = recording.events.filter(
-    (event) => event.type === "activity",
-  );
-  for (const sensor of ["cpu", "ipc", "files"] as const)
+test.each(["chrome", "firefox"])(
+  "published real %s gzip passes the shared schema and retains activity",
+  async (browser) => {
+    const gzip = readFileSync(
+      new URL(
+        `../replay-public/recordings/${browser}-ubuntu26.json.gz`,
+        import.meta.url,
+      ),
+    );
+    const recording = parseRecording(await readRecording(chunks(gzip, 65536)));
     expect(
-      activity.some((event) => (event.data[sensor]?.length ?? 0) > 0),
-    ).toBe(true);
-});
+      recording.initial_snapshot.processes.filter(
+        (p) =>
+          p.name.toLowerCase().includes(browser) ||
+          p.command_line?.[0]?.toLowerCase().includes(browser),
+      ).length,
+    ).toBeGreaterThan(4);
+    const activity = recording.events.filter(
+      (event) => event.type === "activity",
+    );
+    for (const sensor of ["cpu", "ipc", "files"] as const)
+      expect(
+        activity.some((event) => (event.data[sensor]?.length ?? 0) > 0),
+      ).toBe(true);
+  },
+);
 function chunks(bytes: Uint8Array, size = 1024) {
   let offset = 0;
   return new ReadableStream<Uint8Array<ArrayBuffer>>({

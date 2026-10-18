@@ -6,9 +6,10 @@ file. Recording runs in memory, requires no upload or server storage, and starts
 with the current complete snapshot, including maps retained from earlier deltas.
 
 Recordings can contain process arguments, user names, paths and IP addresses.
-Review them before sharing. Demo #1 uses synthetic observations. **Chrome** contains real
-observations from a dedicated VM; its provenance, sizes, memory samples and
-publication review are in [the recording manifest](recordings/chrome-ubuntu26/README.md).
+Review them before sharing. **Chrome** and **Firefox** contain real observations from dedicated VMs.
+Their provenance, sizes, memory samples and publication reviews are in the
+[Chrome manifest](recordings/chrome-ubuntu26/README.md) and
+[Firefox manifest](recordings/firefox-ubuntu26/README.md).
 
 A stream gap, reconnect, hidden tab or page exit ends the recording. The retained
 recording stays available as **Download recording** when the page is visible
@@ -87,9 +88,10 @@ and URL allowlist share the `bundledRecordings` catalog in
 `web/src/space/session-controls.ts`; add an ID, label, and asset path there when
 adding a recording to `web/replay-public/recordings/`.
 
-Open `/replay/space/?recording=demo` on the deployed site. `recording` is an
+Open `/replay/space/?recording=chrome-ubuntu26` on the deployed site. `recording` is an
 allowlisted ID, never a user-supplied fetch URL. Both bundled recordings are shared by the normal embedded build and static build.
-Use `?recording=chrome-ubuntu26` for the real Chrome workload. The build rejects
+Use `?recording=firefox-ubuntu26` for the Firefox workload. Synthetic data is
+retained only as a private test fixture, outside the published asset directories. The build rejects
 any static asset larger than 25 MiB, including public demos, according to
 [Cloudflare Pages Free limits](https://developers.cloudflare.com/pages/platform/limits/).
 No chunk conversion or companion files are needed.
@@ -110,7 +112,7 @@ boundaries. Browser tests cover recording download, unchanged local JSON picker
 and drop loading, and a replay-only static server under `/demo/`, including
 refresh, slow playback, unknown recording IDs and zero live API requests.
 
-## Dedicated Ubuntu 26.04 Chrome recording VM
+## Dedicated Ubuntu 26.04 browser recording VM
 
 Use a Linux x86-64 host with readable/writable `/dev/kvm`, QEMU (`qemu-system-x86`
 and `qemu-utils`), `cloud-image-utils`, curl and Python 3. The scripts use KVM,
@@ -130,7 +132,8 @@ that user; no container or root QEMU process is required. Disk preparation needs
 
 ```sh
 # The commit must be published so the guest can clone it.
-VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh prepare
+# BROWSER can be chrome (default) or firefox.
+BROWSER=firefox VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh prepare
 VM_DIR=/tmp/space-demo HOST_PORT=10090 VM_CPUS=4 VM_MEMORY_MIB=8192 \
   scripts/recording-vm/run.sh run
 ```
@@ -148,19 +151,26 @@ memory settings are saved to `resources.txt` and QEMU's version to
 `qemu-version.txt`. The state directory must not contain commas or whitespace.
 
 Cloud-init installs build dependencies, the repository's pinned Rust toolchain,
-Node.js and Google Chrome, builds procinsh, and starts two systemd services:
+Node.js and the selected browser, builds procinsh, and starts two systemd services:
 
 - `space-demo`: the privileged collector on guest `0.0.0.0:HOST_PORT` (default
   10090), using `scripts/dev_run.sh --allow-non-loopback`. Cloud-init configures
   its systemd service with the same port as the host forwarding rule. Numeric
   host, port, Origin and Fetch Metadata checks remain enabled.
-- `chrome-demo`: an unprivileged Chrome controller, eight tabs, ten-second
-  reloads. Each tab has a distinct local origin, a Web Worker, periodic 64 KiB
+- `browser-demo`: an unprivileged browser workload, eight tabs, ten-second
+  reloads. Chrome uses the existing CDP tab controller; Firefox uses local pages
+  that reload themselves. Both use the same `scripts/browser_workload.mjs`
+  server. Each tab has a distinct local origin, a Web Worker, periodic 64 KiB
   loopback fetches and IndexedDB writes. No external website is required.
+
+Firefox uses the fixed Mozilla build 158.0, verified against its official
+SHA512SUMS before extraction into the guest's `/opt/firefox`. It uses a new,
+locked-down disposable profile; no host Firefox installation is required.
 
 The unauthenticated collector is intended only for this disposable VM. Do not
 copy personal data, secrets or credentials into it. Initial installation needs
-Internet access. Chrome background networking is disabled for the local workload.
+Internet access. Browser background networking is reduced for the local workload; publication
+review still checks all recorded addresses.
 The image, repository SHA, installed packages, kernel, Rust, Node.js, Chrome and
 bpftool versions and kernel BPF feature probe are saved in the guest's
 `/opt/recording-metadata/`. Apt/Rust/Chrome downloads are not immutable mirrors;
@@ -178,18 +188,18 @@ can take several minutes. Open `http://127.0.0.1:10090/space` on the host, selec
 For an automated host-browser capture through the same Record/Download controls:
 
 ```sh
-(cd web && HOST_PORT=10090 RECORD_SECONDS=15 RECORD_OUTPUT=/tmp/chrome-vm.json.gz \
-  node --import tsx scripts/capture-vm-recording.ts)
+(cd web && BROWSER=firefox HOST_PORT=10090 RECORD_SECONDS=15 \
+  RECORD_OUTPUT=/tmp/firefox-vm.json.gz node --import tsx scripts/capture-vm-recording.ts)
 ```
 
 The host needs Google Chrome (`CHROME` can override its path). The script also
 loads the resulting gzip in the VM's replay page, checks that it plays, and writes
 compressed/uncompressed sizes and browser JavaScript heap samples to
-`/tmp/chrome-vm.json.gz.metrics.json`. Heap measurements are JavaScript allocations,
+`/tmp/firefox-vm.json.gz.metrics.json`. Heap measurements are JavaScript allocations,
 not total Chrome/OS memory; retain VM resource settings alongside them. Adjust
 duration or tab count if recording approaches the 128 MiB limit. Change tab count
-and reload cadence with a `sudo systemctl edit chrome-demo` Environment override via
-the guest console; use `journalctl -u chrome-demo` to inspect workload failures.
+and reload cadence with a `sudo systemctl edit browser-demo` Environment override via
+the guest console; use `journalctl -u browser-demo` to inspect workload failures.
 
 The serial console automatically logs in as the locked-password `demo` user;
 password authentication is disabled and no SSH port is forwarded. To shut down cleanly, in another host terminal:

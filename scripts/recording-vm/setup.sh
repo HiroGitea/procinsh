@@ -68,5 +68,6 @@ UNIT
 mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d
 printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin demo --noclear %%I $TERM\n' >/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
 systemctl daemon-reload
+systemctl restart serial-getty@ttyS0
 systemctl enable --now space-demo browser-demo
 echo "SPACE recording ready on guest port $port"

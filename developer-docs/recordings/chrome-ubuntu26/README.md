@@ -34,7 +34,7 @@ changing the format or increasing its limit.
 
 `source.json`, `kernel.txt`, `versions.txt`, `packages.txt`, `bpf-features.txt`,
 `resources.txt` and `qemu-version.txt` record the environment. Regeneration uses
-[the VM and capture commands](../../RECORDING.md#dedicated-ubuntu-2604-chrome-recording-vm).
+[the VM and capture commands](../../RECORDING.md#dedicated-ubuntu-2604-browser-recording-vm).
 The full package manifest identifies unpinned package drift; matching it requires
 retaining the guest disk or supplying package archives for the listed versions.
 

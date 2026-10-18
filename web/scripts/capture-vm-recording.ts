@@ -68,11 +68,7 @@ try {
         name: string;
         command_line?: string[] | null;
       }[];
-      return (
-        processes.filter((process) =>
-          process.name.toLowerCase().includes(browser),
-        ).length >= 4
-      );
+      return processes.filter(isBrowserProcess).length >= 4;
     },
     `${browserName} workload processes`,
     45000,
