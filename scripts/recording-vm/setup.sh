@@ -44,7 +44,7 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 UNIT
-# The console is local to QEMU; there is no SSH listener or password login.
+# The console is local to QEMU; there is no SSH forwarding or password login.
 mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d
 printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin demo --noclear %%I $TERM\n' >/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
 systemctl daemon-reload

@@ -1,0 +1,120 @@
+{
+  "started_at": "2026-10-18T05:52:00.471Z",
+  "duration_ms": 15322.400000095367,
+  "json_bytes": 57352240,
+  "gzip_bytes": 2820455,
+  "chrome_processes": 19,
+  "activity_events": 15,
+  "chrome_observations": {
+    "cpu": 169,
+    "ipc": 1719,
+    "files": 758
+  },
+  "baseline_heap": {
+    "usedSize": 16759300,
+    "totalSize": 51724288,
+    "embedderHeapUsedSize": 2019920,
+    "backingStorageSize": 7893109
+  },
+  "recording_heap_samples": [
+    {
+      "usedSize": 19575596,
+      "totalSize": 56360960,
+      "embedderHeapUsedSize": 1291880,
+      "backingStorageSize": 3633085
+    },
+    {
+      "usedSize": 30718644,
+      "totalSize": 83623936,
+      "embedderHeapUsedSize": 3239528,
+      "backingStorageSize": 3832686
+    },
+    {
+      "usedSize": 36726720,
+      "totalSize": 94371840,
+      "embedderHeapUsedSize": 4899336,
+      "backingStorageSize": 4117211
+    },
+    {
+      "usedSize": 46786208,
+      "totalSize": 102047744,
+      "embedderHeapUsedSize": 6566832,
+      "backingStorageSize": 5450192
+    },
+    {
+      "usedSize": 65445336,
+      "totalSize": 108863488,
+      "embedderHeapUsedSize": 8148384,
+      "backingStorageSize": 6789337
+    },
+    {
+      "usedSize": 61043676,
+      "totalSize": 117997568,
+      "embedderHeapUsedSize": 9967104,
+      "backingStorageSize": 8213057
+    },
+    {
+      "usedSize": 42125260,
+      "totalSize": 116916224,
+      "embedderHeapUsedSize": 1466280,
+      "backingStorageSize": 7606535
+    },
+    {
+      "usedSize": 55908032,
+      "totalSize": 125476864,
+      "embedderHeapUsedSize": 3537456,
+      "backingStorageSize": 3897926
+    },
+    {
+      "usedSize": 62076384,
+      "totalSize": 123338752,
+      "embedderHeapUsedSize": 2238624,
+      "backingStorageSize": 3785690
+    },
+    {
+      "usedSize": 70226360,
+      "totalSize": 121856000,
+      "embedderHeapUsedSize": 4198952,
+      "backingStorageSize": 4083670
+    },
+    {
+      "usedSize": 64677372,
+      "totalSize": 129196032,
+      "embedderHeapUsedSize": 5964904,
+      "backingStorageSize": 5435533
+    },
+    {
+      "usedSize": 80236696,
+      "totalSize": 137281536,
+      "embedderHeapUsedSize": 7845248,
+      "backingStorageSize": 6787481
+    },
+    {
+      "usedSize": 86634492,
+      "totalSize": 141123584,
+      "embedderHeapUsedSize": 9624624,
+      "backingStorageSize": 8126050
+    },
+    {
+      "usedSize": 89772260,
+      "totalSize": 148156416,
+      "embedderHeapUsedSize": 11305168,
+      "backingStorageSize": 9204956
+    },
+    {
+      "usedSize": 108280752,
+      "totalSize": 154447872,
+      "embedderHeapUsedSize": 13276112,
+      "backingStorageSize": 9552135
+    }
+  ],
+  "replay_heap": {
+    "usedSize": 85556496,
+    "totalSize": 129777664,
+    "embedderHeapUsedSize": 1643688,
+    "backingStorageSize": 63837045
+  },
+  "browser_errors": [],
+  "published_json_bytes": 57352072,
+  "published_gzip_bytes": 2837300
+}

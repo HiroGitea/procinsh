@@ -45,12 +45,31 @@ try {
   const { cdp, evaluate, waitFor } = connection;
   await cdp("Runtime.enable");
   await cdp("Page.enable");
+  await until(
+    async () => {
+      const response = await fetch(`${base}/api/processes`);
+      assert.ok(
+        response.ok,
+        `VM process discovery failed (${response.status})`,
+      );
+      const processes = (await response.json()) as { name: string }[];
+      return (
+        processes.filter((process) => process.name === "chrome").length >= 4
+      );
+    },
+    "Chrome workload processes",
+    45000,
+  );
+  console.log(`Opening ${base}/space`);
   await cdp("Page.navigate", { url: `${base}/space` });
   await waitFor(
     "document.querySelector('#record')?.disabled===false",
     "VM recording baseline",
   );
+  // Let the lazy live collector refresh a snapshot retained while it was idle.
+  await delay(2000);
   const baseline = await cdp("Runtime.getHeapUsage");
+  console.log(`Recording ${seconds} seconds of VM activity`);
   await evaluate(`window.recordingBlob=null;
     URL.createObjectURL=blob=>{window.recordingBlob=blob;return 'blob:recording'};
     HTMLAnchorElement.prototype.click=function(){};
@@ -71,6 +90,9 @@ try {
   const text = await evaluate<string>("window.recordingBlob.text()");
   assert.ok(Buffer.byteLength(text) <= MAX_RECORDING_BYTES);
   const recording = parseRecording(text);
+  console.log(
+    `Baseline: ${recording.initial_snapshot.processes.length} processes, ${recording.events.length} events`,
+  );
   const zipped = gzipSync(text, { level: 9 });
   assert.ok(zipped.length <= PAGES_MAX_ASSET_BYTES);
   const chromePids = new Set(

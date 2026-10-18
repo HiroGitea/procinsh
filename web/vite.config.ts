@@ -1,4 +1,4 @@
-import { readFileSync, cpSync, mkdirSync } from "node:fs";
+import { readFileSync, cpSync, mkdirSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 
@@ -20,18 +20,24 @@ function applicationPages(): Plugin {
       );
     },
     configureServer(server) {
+      const recordings = readdirSync(
+        resolve(import.meta.dirname, "replay-public/recordings"),
+      );
       server.middlewares.use((request, response, next) => {
         const url = new URL(request.url ?? "/", "http://localhost");
         const path = url.pathname;
-        if (path === "/recordings/demo.json") {
-          response.setHeader("content-type", "application/json; charset=utf-8");
+        if (
+          path.startsWith("/recordings/") &&
+          recordings.includes(path.slice("/recordings/".length))
+        ) {
+          response.setHeader(
+            "content-type",
+            path.endsWith(".gz")
+              ? "application/gzip"
+              : "application/json; charset=utf-8",
+          );
           response.end(
-            readFileSync(
-              resolve(
-                import.meta.dirname,
-                "replay-public/recordings/demo.json",
-              ),
-            ),
+            readFileSync(resolve(import.meta.dirname, "replay-public" + path)),
           );
           return;
         }

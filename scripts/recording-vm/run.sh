@@ -1,5 +1,5 @@
 #!/bin/bash
-# Dedicated, disposable recording machine. No SSH or host filesystem sharing.
+# Dedicated, disposable recording machine. No SSH forwarding or host filesystem sharing.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 state=${VM_DIR:-/tmp/procinsh-recording-vm}
@@ -67,6 +67,7 @@ with socket.socket() as probe:
 PY
 printf 'Open http://127.0.0.1:%s/space after cloud-init finishes. Console log: %s/console.log\n' "$port" "$state"
 printf 'HOST_PORT=%s\nVM_CPUS=%s\nVM_MEMORY_MIB=%s\n' "$port" "$cpus" "$memory" >"$state/resources.txt"
+qemu-system-x86_64 --version >"$state/qemu-version.txt"
 exec qemu-system-x86_64 -enable-kvm -cpu host -smp "$cpus" -m "$memory" \
   -fw_cfg "name=opt/procinsh/host-port,string=$port" \
   -drive "file=$state/guest.qcow2,format=qcow2,if=virtio" \

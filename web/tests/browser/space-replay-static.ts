@@ -187,6 +187,26 @@ try {
       `${encoding} URL replay avoids double decompression`,
     );
   }
+  await cdp("Page.navigate", {
+    url: url.replace("recording=demo", "recording=chrome-ubuntu26"),
+  });
+  await waitFor(
+    "document.querySelector('#replay-status')?.textContent.includes('Chrome · Ubuntu 26.04') && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0",
+    "real Chrome gzip plays without a backend",
+  );
+  await evaluate(
+    "document.querySelector('#timeline').value=0.5;document.querySelector('#timeline').dispatchEvent(new Event('input'))",
+  );
+  assert.equal(
+    await evaluate("Number(document.querySelector('#timeline').value)"),
+    0.5,
+  );
+  await evaluate("document.querySelector('#play').click()");
+  await waitFor(
+    "Number(document.querySelector('#timeline').value)>0.5",
+    "real Chrome recording resumes after seek",
+  );
+  assert.ok(requests.includes("/demo/recordings/chrome-ubuntu26.json.gz"));
   assert.ok(requests.includes("/demo/recordings/demo.json"));
   assert.ok(
     requests.every((path) => !path.includes("/api/")),

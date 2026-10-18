@@ -8,6 +8,26 @@ const json = readFileSync(
   new URL("../replay-public/recordings/demo.json", import.meta.url),
   "utf8",
 );
+test("published real Chrome gzip passes the shared schema and retains activity", async () => {
+  const gzip = readFileSync(
+    new URL(
+      "../replay-public/recordings/chrome-ubuntu26.json.gz",
+      import.meta.url,
+    ),
+  );
+  const recording = parseRecording(await readRecording(chunks(gzip, 65536)));
+  expect(
+    recording.initial_snapshot.processes.filter((p) => p.name === "chrome")
+      .length,
+  ).toBeGreaterThan(4);
+  const activity = recording.events.filter(
+    (event) => event.type === "activity",
+  );
+  for (const sensor of ["cpu", "ipc", "files"] as const)
+    expect(
+      activity.some((event) => (event.data[sensor]?.length ?? 0) > 0),
+    ).toBe(true);
+});
 function chunks(bytes: Uint8Array, size = 1024) {
   let offset = 0;
   return new ReadableStream<Uint8Array<ArrayBuffer>>({

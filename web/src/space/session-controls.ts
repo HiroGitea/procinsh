@@ -7,6 +7,11 @@ import type { SystemSnapshot } from "../shared/api-types.js";
 // IDs are shared by the picker and the URL allowlist.
 const bundledRecordings = [
   { id: "demo", label: "Demo #1", path: "recordings/demo.json" },
+  {
+    id: "chrome-ubuntu26",
+    label: "Chrome · Ubuntu 26.04",
+    path: "recordings/chrome-ubuntu26.json.gz",
+  },
 ];
 
 function demoControls(open: (id: string) => void) {

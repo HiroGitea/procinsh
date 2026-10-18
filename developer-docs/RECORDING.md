@@ -6,8 +6,9 @@ file. Recording runs in memory, requires no upload or server storage, and starts
 with the current complete snapshot, including maps retained from earlier deltas.
 
 Recordings can contain process arguments, user names, paths and IP addresses.
-Review them before sharing. The bundled demo uses synthetic process, pipe, CPU,
-file and signal observations; it contains no captured machine data.
+Review them before sharing. Demo #1 uses synthetic observations. **Chrome · Ubuntu 26.04** contains real
+observations from a dedicated VM; its provenance, sizes, memory samples and
+publication review are in [the recording manifest](recordings/chrome-ubuntu26/README.md).
 
 A stream gap, reconnect, hidden tab or page exit ends the recording. The retained
 recording stays available as **Download recording** when the page is visible
@@ -64,7 +65,7 @@ npm --prefix web run build:replay
 ```
 
 Publish **`web/dist-replay/`** directly. The build includes
-`replay/space/index.html`, shared SPACE assets and `recordings/demo.json`.
+`replay/space/index.html`, shared SPACE assets and the bundled `.json`/`.json.gz` recordings.
 It contains no LIST/PROCESS/LIVE page. Direct navigation and refresh work through
 the directory's `index.html`; `/replay/` is reserved for a future selector.
 The viewer never opens SSE or calls live APIs.
@@ -87,8 +88,8 @@ and URL allowlist share the `bundledRecordings` catalog in
 adding a recording to `web/replay-public/recordings/`.
 
 Open `/replay/space/?recording=demo` on the deployed site. `recording` is an
-allowlisted ID, never a user-supplied fetch URL. A single synthetic sanitized JSON
-is shared by the normal embedded build and the static build. The build rejects
+allowlisted ID, never a user-supplied fetch URL. Both bundled recordings are shared by the normal embedded build and static build.
+Use `?recording=chrome-ubuntu26` for the real Chrome workload. The build rejects
 any static asset larger than 25 MiB, including public demos, according to
 [Cloudflare Pages Free limits](https://developers.cloudflare.com/pages/platform/limits/).
 No chunk conversion or companion files are needed.
@@ -179,7 +180,7 @@ and reload cadence with a `sudo systemctl edit chrome-demo` Environment override
 the guest console; use `journalctl -u chrome-demo` to inspect workload failures.
 
 The serial console automatically logs in as the locked-password `demo` user;
-there is no password or SSH login. To shut down cleanly, in another host terminal:
+password authentication is disabled and no SSH port is forwarded. To shut down cleanly, in another host terminal:
 
 ```sh
 VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh stop
