@@ -158,19 +158,22 @@ Node.js and the selected browser, builds procinsh, and starts two systemd servic
   its systemd service with the same port as the host forwarding rule. Numeric
   host, port, Origin and Fetch Metadata checks remain enabled.
 - `browser-demo`: an unprivileged browser workload, eight tabs, ten-second
-  reloads. Chrome uses the existing CDP tab controller; Firefox uses local pages
-  that reload themselves. Both use the same `scripts/browser_workload.mjs`
-  server. Each tab has a distinct local origin, a Web Worker, periodic 64 KiB
-  loopback fetches and IndexedDB writes. No external website is required.
+  reloads. Both browsers run `scripts/browser_workload.mjs` with the same external
+  URLs in `scripts/browser_sites.txt`: Mozilla, Chromium, Python, Rust, Go,
+  Node.js, TypeScript and the Linux kernel. Chrome uses CDP and Firefox uses its
+  built-in WebDriver BiDi endpoint to open and reload tabs with the cache bypassed.
+  Each run creates a disposable browser profile. No page server or generated
+  workload HTML is involved. `SITE_LIST` can select a different URL list for both
+  browsers; `scripts/chrome_load.mjs` retains its larger Chrome-only default list.
 
 Firefox uses the fixed Mozilla build 158.0, verified against its official
 SHA512SUMS before extraction into the guest's `/opt/firefox`. It uses a new,
-locked-down disposable profile; no host Firefox installation is required.
+disposable profile; no host Firefox installation is required.
 
 The unauthenticated collector is intended only for this disposable VM. Do not
-copy personal data, secrets or credentials into it. Initial installation needs
-Internet access. Browser background networking is reduced for the local workload; publication
-review still checks all recorded addresses.
+copy personal data, secrets or credentials into it. Installation and browser workloads require Internet access. Publication
+review checks all recorded addresses. The shared site list is retained as
+`sites.txt` in the recording metadata.
 The image, repository SHA, installed packages, kernel, Rust, Node.js, Chrome and
 bpftool versions and kernel BPF feature probe are saved in the guest's
 `/opt/recording-metadata/`. Apt/Rust/Chrome downloads are not immutable mirrors;

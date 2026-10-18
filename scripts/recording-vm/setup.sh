@@ -34,6 +34,7 @@ else
   apt-get install -y /tmp/chrome.deb
 fi
 mkdir -p /opt/recording-metadata
+cp scripts/browser_sites.txt /opt/recording-metadata/sites.txt
 cp /opt/recording-source.json /opt/recording-metadata/source.json
 uname -a >/opt/recording-metadata/kernel.txt
 dpkg-query -W >/opt/recording-metadata/packages.txt
@@ -53,7 +54,7 @@ WantedBy=multi-user.target
 UNIT
 cat >/etc/systemd/system/browser-demo.service <<UNIT
 [Unit]
-Description=Local browser workload for SPACE recordings
+Description=External-site browser workload for SPACE recordings
 After=network.target
 [Service]
 User=demo
