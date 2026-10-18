@@ -60,7 +60,9 @@ sudo setcap \
 Without it, ProcInSh keeps available socket information and reports missing
 peer diagnostics as warnings; an unknown peer does not mean an unconnected socket.
 
-### Self build
+### Self build on Linux
+
+#### Ubuntu
 
 Also requires Node.js 22.12 or newer with npm and Rust via rustup. The Rust version
 and components are pinned in `rust-toolchain.toml`; rustup installs them
@@ -78,6 +80,37 @@ cargo build --release --locked
 ```
 
 Then run:
+
+```sh
+sudo ./target/release/procinsh --listen 127.0.0.1:9090
+```
+
+#### NixOS
+
+With Rust installed via rustup, create `shell.nix` in the repository root:
+
+```nix
+{ pkgs ? import <nixpkgs> { } }:
+pkgs.mkShell {
+  packages = with pkgs; [ nodejs_22 clang llvm pkg-config elfutils zlib bpftools gnumake ];
+  hardeningDisable = [ "all" ];
+}
+```
+
+Build the web assets and binary inside the Nix shell:
+
+```sh
+nix-shell --run 'npm --prefix web ci --no-audit --no-fund && npm --prefix web run build && cargo build --release --locked'
+```
+
+The binary links to libraries such as `libelf` in `/nix/store`. Create a GC root
+to keep these dependencies from being removed by `nix-collect-garbage`:
+
+```sh
+nix-build shell.nix -A inputDerivation -o .nix-gcroot
+```
+
+Keep `.nix-gcroot` while using the binary. Then run:
 
 ```sh
 sudo ./target/release/procinsh --listen 127.0.0.1:9090
