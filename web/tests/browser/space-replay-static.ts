@@ -15,9 +15,13 @@ let demoEncoding: "plain" | "gzip" | "http-gzip" | "asset" = "plain";
 const server = createServer(async (request, response) => {
   const url = new URL(request.url!, "http://localhost");
   requests.push(url.pathname);
+  if (!url.pathname.startsWith("/procinsh/demo/")) {
+    response.writeHead(404).end();
+    return;
+  }
   const path = resolve(
     root,
-    url.pathname.replace(/^\/demo\//, "") +
+    url.pathname.slice("/procinsh/demo/".length) +
       (url.pathname.endsWith("/") ? "index.html" : ""),
   );
   if (!path.startsWith(root + "/")) {
@@ -96,7 +100,28 @@ try {
   await cdp("Page.addScriptToEvaluateOnNewDocument", {
     source: `window.EventSource=class { constructor(){throw Error('Static replay attempted SSE')} };`,
   });
-  const url = `http://127.0.0.1:${address.port}/demo/replay/space/?recording=chrome-ubuntu26`;
+  const url = `http://127.0.0.1:${address.port}/procinsh/demo/replay/space/?recording=chrome-ubuntu26`;
+  await cdp("Page.navigate", {
+    url: `http://127.0.0.1:${address.port}/procinsh/demo/`,
+  });
+  await waitFor(
+    "document.querySelectorAll('main a').length===2",
+    "demo landing page offers both recordings",
+  );
+  assert.deepEqual(
+    await evaluate(
+      "Array.from(document.querySelectorAll('main a'), a => new URL(a.href).pathname + new URL(a.href).search)",
+    ),
+    [
+      "/procinsh/demo/replay/space/?recording=chrome-ubuntu26",
+      "/procinsh/demo/replay/space/?recording=firefox-ubuntu26",
+    ],
+  );
+  await evaluate("document.querySelector('main a').click()");
+  await waitFor(
+    "document.querySelector('#play')?.textContent==='Pause'",
+    "landing page link starts replay",
+  );
   await cdp("Page.navigate", { url: url.split("?")[0] });
   await waitFor(
     "document.querySelector('#open-demo')",
@@ -225,11 +250,14 @@ try {
       "Number(document.querySelector('#timeline').value)>0.5",
       `real ${id} resumes after seek`,
     );
-    assert.ok(requests.includes(`/demo/recordings/${id}.json.gz`));
+    assert.ok(requests.includes(`/procinsh/demo/recordings/${id}.json.gz`));
   }
   assert.equal(
-    (await fetch(`http://127.0.0.1:${address.port}/demo/recordings/demo.json`))
-      .status,
+    (
+      await fetch(
+        `http://127.0.0.1:${address.port}/procinsh/demo/recordings/demo.json`,
+      )
+    ).status,
     404,
   );
   assert.ok(

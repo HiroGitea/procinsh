@@ -22,5 +22,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm --prefix web ci
-      - name: Build standalone replay with Cloudflare Pages Free asset limits
+      - name: Build standalone replay for GitHub Pages
+        env:
+          PROCINSH_REPLAY_BASE: /procinsh/demo/
         run: npm --prefix web run build:replay
