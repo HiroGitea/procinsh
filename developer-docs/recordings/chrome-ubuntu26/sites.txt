@@ -1,8 +1,0 @@
-https://www.mozilla.org/
-https://www.chromium.org/
-https://www.python.org/
-https://www.rust-lang.org/
-https://go.dev/
-https://nodejs.org/
-https://www.typescriptlang.org/
-https://www.kernel.org/

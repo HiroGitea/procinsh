@@ -6,8 +6,8 @@ from pathlib import Path
 import re
 import sys
 
-state, revision, image_url = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
-port = int(sys.argv[4])
+state, revision = Path(sys.argv[1]), sys.argv[2]
+port = int(sys.argv[3])
 if not 1 <= port <= 65535:
     raise SystemExit("HOST_PORT must be between 1 and 65535")
 if not re.fullmatch(r"[0-9a-f]{40}", revision):
@@ -27,11 +27,6 @@ config = {
                  "pkg-config", "libelf-dev", "zlib1g-dev", "bpftool", "nodejs", "npm", "python3"],
     "write_files": [
         {"path": "/opt/setup-recording.sh", "permissions": "0755", "content": setup},
-        {"path": "/opt/recording-source.json", "content": json.dumps({
-            "revision": revision, "image_url": image_url, "http_port": port, "browser": browser,
-            "image_sha256": next(line.split()[0] for line in (state/"SHA256SUMS").read_text().splitlines()
-                                 if line.split()[-1].lstrip('*') == image_url.rsplit('/', 1)[1]),
-        }, indent=2)},
     ],
     "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port), browser]],
 }

@@ -6,10 +6,10 @@ file. Recording runs in memory, requires no upload or server storage, and starts
 with the current complete snapshot, including maps retained from earlier deltas.
 
 Recordings can contain process arguments, user names, paths and IP addresses.
-Review them before sharing. **Chrome** and **Firefox** contain real observations from dedicated VMs.
-Their provenance, sizes, memory samples and publication reviews are in the
-[Chrome manifest](recordings/chrome-ubuntu26/README.md) and
-[Firefox manifest](recordings/firefox-ubuntu26/README.md).
+Review them before sharing. The bundled **Chrome** and **Firefox** demos show real
+browser activity captured in an Ubuntu 26.04 VM. Both open the same eight external
+sites from [`scripts/browser_sites.txt`](../scripts/browser_sites.txt), with a
+reload every ten seconds.
 
 A stream gap, reconnect, hidden tab or page exit ends the recording. The retained
 recording stays available as **Download recording** when the page is visible
@@ -103,121 +103,51 @@ output under that prefix. Asset URLs and the demo fetch respect that base.
 The normal `npm --prefix web run build` still outputs `web/dist/` for embedding
 in Rust, with live `/space` and `/replay/space/` as separate page routes.
 
-## Validation
+## Capturing browser demos
 
-Run `bash scripts/docker_test.sh ordinary`, `checks` and `browser`. Ordinary tests
-include the standalone build, schema validation, midstream recording with merged
-maps, relative timestamps, event ordering, playback/seek/step and asset size
-boundaries. Browser tests cover recording download, unchanged local JSON picker
-and drop loading, and a replay-only static server under `/demo/`, including
-refresh, slow playback, unknown recording IDs and zero live API requests.
-
-## Dedicated Ubuntu 26.04 browser recording VM
-
-Use a Linux x86-64 host with readable/writable `/dev/kvm`, QEMU (`qemu-system-x86`
-and `qemu-utils`), `cloud-image-utils`, curl and Python 3. The scripts use KVM,
-virtio disks and networking, a QCOW2 Ubuntu Cloud Image and a NoCloud seed. They
-use QEMU directly, with no libvirt, Vagrant, TAP, bridge, SSH tunnel, shared host
-directory or host credentials. The default image is the dated Ubuntu 26.04 build
-`release-20260927`; its SHA256 is checked against the official HTTPS checksum
-list. `IMAGE_BASE` selects another dated official image directory.
-
-The invoking user must have read/write access to `/dev/kvm`. On hosts where the
-device belongs to the `kvm` group, add the user with
-`sudo usermod -aG kvm "$USER"`, then log out and back in before starting QEMU.
-Check access with `test -r /dev/kvm && test -w /dev/kvm`. QEMU runs directly as
-that user; no container or root QEMU process is required. Disk preparation needs
-`qemu-img`, `cloud-localds` and curl; starting a prepared guest only needs
-`qemu-system-x86_64`, Python 3 and flock (from util-linux).
+The VM scripts require a Linux x86-64 host with read/write access to `/dev/kvm`,
+QEMU (`qemu-system-x86` and `qemu-utils`), `cloud-image-utils`, curl and Python 3.
+If needed, add your user to the `kvm` group with `sudo usermod -aG kvm "$USER"`
+and log out and back in.
 
 ```sh
-# The commit must be published so the guest can clone it.
-# BROWSER can be chrome (default) or firefox.
+# The guest clones the published commit from the current checkout.
+# BROWSER accepts chrome (default) or firefox.
 BROWSER=firefox VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh prepare
-VM_DIR=/tmp/space-demo HOST_PORT=10090 VM_CPUS=4 VM_MEMORY_MIB=8192 \
-  scripts/recording-vm/run.sh run
+VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh run
 ```
 
-`prepare` refuses to overwrite an existing guest. `PROCINSH_REF` defaults to the
-checkout's full commit SHA; `VM_DISK_GIB` defaults to 40. `HOST_PORT` defaults to
-10090 and sets the same HTTP port on both the host and guest during `prepare`.
-The selected port is retained in `http-port`; `run` uses it automatically. To use
-a different port, prepare a new VM directory with `HOST_PORT=...`. `run` rejects a
-conflicting `HOST_PORT` override. `run` checks the requested
-port before starting QEMU and reports an explicit error if it is busy. QEMU also
-checks the bind, covering a race after the preliminary check. Its forwarding is
-`hostfwd=tcp:127.0.0.1:${HOST_PORT}-:${HOST_PORT}`; the host's LAN is not exposed. CPU and
-memory settings are saved to `resources.txt` and QEMU's version to
-`qemu-version.txt`. The state directory must not contain commas or whitespace.
+The guest installs procinsh and the selected browser, then starts the collector
+and browser workload. Both browsers use the same Puppeteer WebDriver BiDi calls
+for tab creation, cache disabling, navigation and reload. They use fresh profiles
+and the shared site list in `scripts/browser_sites.txt`.
 
-Cloud-init installs build dependencies, the repository's pinned Rust toolchain,
-Node.js, the npm dependencies (including pinned `puppeteer-core`) and the selected browser, builds procinsh, and starts two systemd services:
+Wait for `SPACE recording ready on guest port 10090` in
+`/tmp/space-demo/console.log`, then open `http://127.0.0.1:10090/space` and use
+**Record** / **Stop & Download**. The host and guest share port 10090; set
+`HOST_PORT` during `prepare` to choose another port. `run` retains that port.
+`VM_CPUS`, `VM_MEMORY_MIB` and `VM_DISK_GIB` control VM resources.
 
-- `space-demo`: the privileged collector on guest `0.0.0.0:HOST_PORT` (default
-  10090), using `scripts/dev_run.sh --allow-non-loopback`. Cloud-init configures
-  its systemd service with the same port as the host forwarding rule. Numeric
-  host, port, Origin and Fetch Metadata checks remain enabled.
-- `browser-demo`: an unprivileged browser workload, eight tabs, ten-second
-  reloads. Both browsers run `scripts/browser_workload.mjs` with the same external
-  URLs in `scripts/browser_sites.txt`: Mozilla, Chromium, Python, Rust, Go,
-  Node.js, TypeScript and the Linux kernel. Both use Puppeteer with `protocol: 'webDriverBiDi'` and identical calls to
-  `newPage()`, `setCacheEnabled(false)`, `goto()` and `reload()`. Navigation and
-  reload wait for DOMContentLoaded. Only the browser name and executable differ.
-  Puppeteer provides Chrome's BiDi adapter; Firefox exposes native BiDi.
-  Each run creates a disposable browser profile. No page server or generated
-  workload HTML is involved. `SITE_LIST` can select a different URL list for both
-  browsers; `scripts/chrome_load.mjs` retains its larger Chrome-only default list.
-
-Firefox uses the fixed Mozilla build 158.0, verified against its official
-SHA512SUMS before extraction into the guest's `/opt/firefox`. It uses a new,
-disposable profile; no host Firefox installation is required.
-
-The unauthenticated collector is intended only for this disposable VM. Do not
-copy personal data, secrets or credentials into it. Installation and browser workloads require Internet access. Publication
-review checks all recorded addresses. The shared site list is retained as
-`sites.txt` in the recording metadata.
-The image, repository SHA, installed packages, kernel, Rust, Node.js, Chrome and
-bpftool versions and kernel BPF feature probe are saved in the guest's
-`/opt/recording-metadata/`. Apt/Rust/Chrome downloads are not immutable mirrors;
-retain that manifest when regenerating recordings to identify version drift.
-
-Follow `tail -f /tmp/space-demo/console.log` and wait for
-`SPACE recording ready on guest port 10090`. Connect an interactive serial console
-with `VM_DIR=/tmp/space-demo python3 scripts/recording-vm/console.py` (Ctrl-]
-disconnects). Setup
-can take several minutes. Open `http://127.0.0.1:10090/space` on the host, select
-**Record**, and then **Stop & Download**. Compress the download with standard
-`gzip -n -9 recording.json`. Keep the JSON below 128 MiB and gzip below 25 MiB
-(target 20 MiB). Open the `.json.gz` in `/replay/space/` to verify it.
-
-For an automated host-browser capture through the same Record/Download controls:
+To capture automatically through the same browser controls:
 
 ```sh
 (cd web && BROWSER=firefox HOST_PORT=10090 RECORD_SECONDS=15 \
   RECORD_OUTPUT=/tmp/firefox-vm.json.gz node --import tsx scripts/capture-vm-recording.ts)
 ```
 
-The host needs Google Chrome (`CHROME` can override its path). The script also
-loads the resulting gzip in the VM's replay page, checks that it plays, and writes
-compressed/uncompressed sizes and browser JavaScript heap samples to
-`/tmp/firefox-vm.json.gz.metrics.json`. Heap measurements are JavaScript allocations,
-not total Chrome/OS memory; retain VM resource settings alongside them. Adjust
-duration or tab count if recording approaches the 128 MiB limit. Change tab count
-and reload cadence with a `sudo systemctl edit browser-demo` Environment override via
-the guest console; use `journalctl -u browser-demo` to inspect workload failures.
+The host needs Google Chrome and `npm --prefix web ci`. `CHROME` overrides its
+executable path. The capture script saves a gzip recording and checks activity,
+file size and playback. To compress a manual download, use
+`gzip -n -9 recording.json`. Copy the demo to `web/replay-public/recordings/` and
+add its entry in `web/src/space/session-controls.ts`.
 
-The serial console automatically logs in as the locked-password `demo` user;
-password authentication is disabled and no SSH port is forwarded. To shut down cleanly, in another host terminal:
+For the guest console, run
+`VM_DIR=/tmp/space-demo python3 scripts/recording-vm/console.py` (Ctrl-] disconnects).
+Use `journalctl -u browser-demo` to inspect the workload. `TAB_COUNT`,
+`INTERVAL_SECONDS` and `SITE_LIST` can be set in the `browser-demo` systemd service.
+Stop the VM with `VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh stop` and wait
+for QEMU to exit before restarting it.
 
-```sh
-VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh stop
-```
+## Validation
 
-Wait for QEMU to exit before restarting or removing the state directory.
-Terminating the QEMU process immediately can leave an unclean guest filesystem.
-Inspect `/var/log/recording-setup.log` and `journalctl -u space-demo` on failures.
-Before publishing a recording, review process arguments, usernames, paths and
-network addresses, and retain process/IPC identities if sanitization is needed.
-Only then copy the gzip to `web/replay-public/recordings/` and add its catalog entry
-in `web/src/space/session-controls.ts`. The standalone build checks every source
-asset and every generated file against the Pages Free 25 MiB maximum.
+Run `bash scripts/docker_test.sh ordinary`, `checks` and `browser`.

@@ -33,14 +33,6 @@ else
   curl -fL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o /tmp/chrome.deb
   apt-get install -y /tmp/chrome.deb
 fi
-mkdir -p /opt/recording-metadata
-cp scripts/browser_sites.txt /opt/recording-metadata/sites.txt
-cp /opt/recording-source.json /opt/recording-metadata/source.json
-uname -a >/opt/recording-metadata/kernel.txt
-dpkg-query -W >/opt/recording-metadata/packages.txt
-{ rustc --version; cargo --version; node --version; npm --version; if [[ $browser == firefox ]]; then /opt/firefox/firefox --version; else google-chrome --version; fi; bpftool version; git rev-parse HEAD; } >/opt/recording-metadata/versions.txt
-bpftool feature probe kernel >/opt/recording-metadata/bpf-features.txt
-chown -R demo:demo /opt/recording-metadata
 cat >/etc/systemd/system/space-demo.service <<UNIT
 [Unit]
 Description=Dedicated SPACE recording collector

@@ -60,9 +60,8 @@ if expected != [actual]:
 (root/(name+'.partial')).rename(root/name)
 PY
   qemu-img create -f qcow2 -F qcow2 -b "$state/$image_name" "$state/guest.qcow2" "${VM_DISK_GIB:-40}G"
-  python3 "$root/scripts/recording-vm/seed.py" "$state" "${PROCINSH_REF:-$(git -C "$root" rev-parse HEAD)}" "$image_base/$image_name" "$port"
+  python3 "$root/scripts/recording-vm/seed.py" "$state" "${PROCINSH_REF:-$(git -C "$root" rev-parse HEAD)}" "$port"
   cloud-localds "$state/seed.img" "$state/user-data" "$state/meta-data"
-  qemu-system-x86_64 --version >"$state/qemu-version.txt"
   echo "Prepared $state. Run: VM_DIR=$state $0 run"
   exit
 fi
@@ -80,8 +79,6 @@ with socket.socket() as probe:
         raise SystemExit(f'HOST_PORT {port} is unavailable: {error}')
 PY
 printf 'Open http://127.0.0.1:%s/space after cloud-init finishes. Console log: %s/console.log\n' "$port" "$state"
-printf 'HOST_PORT=%s\nVM_CPUS=%s\nVM_MEMORY_MIB=%s\n' "$port" "$cpus" "$memory" >"$state/resources.txt"
-qemu-system-x86_64 --version >"$state/qemu-version.txt"
 exec qemu-system-x86_64 -enable-kvm -cpu host -smp "$cpus" -m "$memory" \
   -drive "file=$state/guest.qcow2,format=qcow2,if=virtio" \
   -drive "file=$state/seed.img,format=raw,if=virtio,readonly=on" \

@@ -81,16 +81,13 @@ try {
   );
   // Let the lazy live collector refresh a snapshot retained while it was idle.
   await delay(2000);
-  const baseline = await cdp("Runtime.getHeapUsage");
   console.log(`Recording ${seconds} seconds of VM activity`);
   await evaluate(`window.recordingBlob=null;
     URL.createObjectURL=blob=>{window.recordingBlob=blob;return 'blob:recording'};
     HTMLAnchorElement.prototype.click=function(){};
     document.querySelector('#record').click()`);
-  const recordingHeap = [];
   for (let elapsed = 0; elapsed < seconds; elapsed++) {
     await delay(1000);
-    recordingHeap.push(await cdp("Runtime.getHeapUsage"));
     assert.match(
       await evaluate<string>(
         "document.querySelector('#recording-status').textContent",
@@ -150,27 +147,10 @@ try {
     "document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'",
     "Real gzip replays",
   );
-  const replayHeap = await cdp("Runtime.getHeapUsage");
-  await writeFile(
-    output + ".metrics.json",
-    JSON.stringify(
-      {
-        started_at: recording.started_at,
-        duration_ms: recording.duration_ms,
-        json_bytes: Buffer.byteLength(text),
-        gzip_bytes: zipped.length,
-        browser,
-        browser_processes: browserPids.size,
-        activity_events: activities.length,
-        browser_observations: browserObservations,
-        baseline_heap: baseline,
-        recording_heap_samples: recordingHeap,
-        replay_heap: replayHeap,
-        browser_errors: errors,
-      },
-      null,
-      2,
-    ) + "\n",
+  assert.deepEqual(
+    errors,
+    [],
+    "Recording and replay must not raise browser errors",
   );
   console.log(
     `Saved ${output}: ${Buffer.byteLength(text)} JSON bytes, ${zipped.length} gzip bytes, ${browserPids.size} ${browserName} processes`,
