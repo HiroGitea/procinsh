@@ -130,7 +130,7 @@ try {
     0.4,
   );
   await evaluate(
-    "document.querySelector('select').value='0.1';document.querySelector('select').dispatchEvent(new Event('change'));document.querySelector('#play').click()",
+    "document.querySelector('.replay-controls-row select').value='0.1';document.querySelector('.replay-controls-row select').dispatchEvent(new Event('change'));document.querySelector('#play').click()",
   );
   await delay(300);
   const slow = await evaluate<number>(
@@ -141,7 +141,7 @@ try {
     `slow playback advances on virtual clock: ${slow}`,
   );
   await evaluate(
-    "document.querySelector('#play').click();if(!document.querySelector('#loop').checked)document.querySelector('#loop').click();document.querySelector('select').value='1';document.querySelector('select').dispatchEvent(new Event('change'));document.querySelector('#timeline').value=29900/30000;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
+    "document.querySelector('#play').click();if(!document.querySelector('#loop').checked)document.querySelector('#loop').click();document.querySelector('.replay-controls-row select').value='1';document.querySelector('.replay-controls-row select').dispatchEvent(new Event('change'));document.querySelector('#timeline').value=29900/30000;document.querySelector('#timeline').dispatchEvent(new Event('input'));document.querySelector('#play').click()",
   );
   await waitFor(
     "Number(document.querySelector('#timeline').value)<2000/30000 && document.querySelector('#play').textContent==='Pause'",

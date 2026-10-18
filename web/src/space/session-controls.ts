@@ -276,7 +276,7 @@ export function mountReplayControls(
     history.replaceState(null, "", url);
     openDemo(id);
   });
-  host.append(demo);
+  open.after(demo);
   const id = new URL(location.href).searchParams.get("recording");
   if (id) openDemo(id);
   refresh();
