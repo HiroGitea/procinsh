@@ -75,8 +75,7 @@ To configure a Cloudflare Pages Git integration, choose the Free plan, connect
 this repository, leave the root directory at the repository root, select no
 framework preset, set the build command to
 `npm --prefix web ci && npm --prefix web run build:replay`, and set the output
-directory to `web/dist-replay`. Use Node.js 22.12 or newer. The root
-`wrangler.jsonc` also declares the Pages output directory for direct upload.
+directory to `web/dist-replay`. Use Node.js 22.12 or newer.
 No Worker, Pages Function, Rust toolchain, collector, privileged access, backend,
 or paid service is involved. The documentation publishing workflow is independent.
 Creating the Cloudflare account/project and its initial deployment requires the
