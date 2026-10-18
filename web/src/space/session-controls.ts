@@ -31,7 +31,7 @@ function demoControls(open: (id: string) => void) {
   button.type = "button";
   button.textContent = "Open demo";
   button.onclick = () => open(select.value);
-  controls.append(select, button);
+  controls.append(button, select);
   return controls;
 }
 
