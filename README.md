@@ -5,8 +5,6 @@ Like [Ghost in the Shell](https://en.wikipedia.org/wiki/Ghost_in_the_Shell), you
 
 See also [a blog post](https://akawashiro.com/articles/procinsh-en).
 
-Try the [SPACE replay demos](https://akawashiro.github.io/procinsh/demo/) in your browser with recorded Chrome and Firefox activity. No installation is required.
-
 Join our [Discord server](https://discord.gg/aQuNSczpw) for questions and discussion.
 
 ## Screenshot
