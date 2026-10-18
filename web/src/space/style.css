@@ -15,3 +15,23 @@ header a.github-link{margin-left:auto;white-space:nowrap;text-decoration:underli
 header .brand{display:flex;align-items:center;gap:6px;flex:none;white-space:nowrap;letter-spacing:0}
 header #build-commit{text-decoration:underline;text-underline-offset:3px;font-size:10px;letter-spacing:0}
 @media(max-width:480px){header{height:auto;min-height:42px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}header a.github-link{order:1}header a.view-link{order:2}.left-hud{top:80px}aside{top:74px}}
+
+.tools { flex-wrap: wrap; max-width: calc(100vw - 40px); }
+.tools a, .tools strong, .tools span { color: #bcebe8; align-self: center; }
+.tools select, .tools input[type="file"] { max-width: 220px; background: #102327; color: #d7eeed; }
+.tools input[type="range"] { width: 100%; min-width: 0; margin: 0; padding: 9px 0 !important; }
+#recording-status { color: #ffb3a5; }
+#recording-status:empty, #replay-status:empty { display: none; }
+.left-hud { max-height: calc(100vh - 130px); overflow-y: auto; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+header #brand { color: var(--cyan); font-size: 11px; font-weight: bold; letter-spacing: 1px; }
+.replay-controls-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.replay-controls-row select { width: 100%; min-width: 0; max-width: none; }
+.replay-controls-row label { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; border: 1px solid #23433f; border-radius: 3px; background: #08171ee6; color: #bde7db; font: inherit; }
+.replay-controls-row input[type="checkbox"] { margin: 0; padding: 0 !important; }
+.tools #replay-status { align-self: stretch; overflow-wrap: anywhere; font-size: 11px; line-height: 1.5; }
+
+.demo-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
+.demo-controls select { width: 100%; min-width: 0; max-width: none; }
+.demo-controls button { white-space: nowrap; }
