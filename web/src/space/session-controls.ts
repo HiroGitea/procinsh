@@ -134,7 +134,7 @@ export function mountReplayControls(
   const options = document.createElement("div");
   options.className = "replay-controls-row";
   options.append(speed, loopLabel);
-  host.append(play, open, file, steps, timeline, options, status);
+  host.append(open, file, play, steps, timeline, options, status);
   let replay: SpaceReplay | null = null;
   let loading = 0;
   let label = "";
