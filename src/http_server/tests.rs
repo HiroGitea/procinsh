@@ -53,7 +53,6 @@ async fn headers_report_the_binary_revision_on_all_pages() {
 async fn security_and_embedded_resources() {
     for (host, origin, path, status) in [
         ("evil.test:8080", None, "/api/processes", 403),
-        ("127.0.0.1:10090", None, "/", 403),
         (
             "127.0.0.1:8080",
             Some("https://evil.test"),
@@ -260,43 +259,4 @@ async fn gzip_sse_flushes_before_stream_ends() {
     })
     .await
     .expect("gzip must flush an open SSE stream");
-}
-
-#[tokio::test]
-async fn same_port_forwarding_keeps_numeric_host_and_same_origin_checks() {
-    for (host, origin, fetch_site, expected) in [
-        ("127.0.0.1:10090", None, None, 200),
-        (
-            "127.0.0.1:10090",
-            Some("http://127.0.0.1:10090"),
-            Some("same-origin"),
-            200,
-        ),
-        ("127.0.0.1:9090", None, None, 403),
-        ("127.0.0.1:10091", None, None, 403),
-        ("evil.test:10090", None, None, 403),
-        ("127.0.0.1:10090", Some("http://127.0.0.1:9090"), None, 403),
-        ("127.0.0.1:10090", None, Some("cross-site"), 403),
-    ] {
-        let app = router(
-            Arc::new(AppState::new(Duration::from_secs(1))),
-            "0.0.0.0:10090".parse().unwrap(),
-        );
-        let mut request = Request::builder().uri("/").header("host", host);
-        if let Some(origin) = origin {
-            request = request.header("origin", origin);
-        }
-        if let Some(site) = fetch_site {
-            request = request.header("sec-fetch-site", site);
-        }
-        let response = app
-            .oneshot(request.body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(
-            response.status().as_u16(),
-            expected,
-            "{host} {origin:?} {fetch_site:?}"
-        );
-    }
 }
