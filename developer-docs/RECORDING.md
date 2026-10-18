@@ -151,7 +151,7 @@ memory settings are saved to `resources.txt` and QEMU's version to
 `qemu-version.txt`. The state directory must not contain commas or whitespace.
 
 Cloud-init installs build dependencies, the repository's pinned Rust toolchain,
-Node.js and the selected browser, builds procinsh, and starts two systemd services:
+Node.js, the npm dependencies (including pinned `puppeteer-core`) and the selected browser, builds procinsh, and starts two systemd services:
 
 - `space-demo`: the privileged collector on guest `0.0.0.0:HOST_PORT` (default
   10090), using `scripts/dev_run.sh --allow-non-loopback`. Cloud-init configures
@@ -160,8 +160,9 @@ Node.js and the selected browser, builds procinsh, and starts two systemd servic
 - `browser-demo`: an unprivileged browser workload, eight tabs, ten-second
   reloads. Both browsers run `scripts/browser_workload.mjs` with the same external
   URLs in `scripts/browser_sites.txt`: Mozilla, Chromium, Python, Rust, Go,
-  Node.js, TypeScript and the Linux kernel. Chrome uses CDP and Firefox uses its
-  built-in WebDriver BiDi endpoint to open and reload tabs with the cache bypassed.
+  Node.js, TypeScript and the Linux kernel. Both use Puppeteer with `protocol: webDriverBiDi` and identical calls to
+  `newPage()`, `setCacheEnabled(false)`, `goto()` and `reload()`. Navigation and
+  reload wait for DOMContentLoaded. Only the browser name and executable differ.
   Each run creates a disposable browser profile. No page server or generated
   workload HTML is involved. `SITE_LIST` can select a different URL list for both
   browsers; `scripts/chrome_load.mjs` retains its larger Chrome-only default list.

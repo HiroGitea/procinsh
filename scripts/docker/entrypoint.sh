@@ -30,6 +30,7 @@ case "$suite" in
     bash -n scripts/docker_test.sh scripts/docker/entrypoint.sh scripts/recording-vm/*.sh
     node --check scripts/chrome_load.mjs
     node --check scripts/browser_workload.mjs
+    node --check web/scripts/browser-workload.mjs
     npm --prefix web run format:check
     cargo fmt --all --check
     python3 scripts/format_c.py --check

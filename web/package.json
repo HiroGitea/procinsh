@@ -30,6 +30,7 @@
     "devtools-protocol": "0.0.1714151",
     "jsdom": "26.1.0",
     "prettier": "3.9.9",
+    "puppeteer-core": "25.14.0",
     "tsx": "4.23.15",
     "typedoc": "0.28.20",
     "typescript": "5.9.3",
