@@ -2,11 +2,13 @@
 """Offline release tests: real Git/worktrees, simulated GitHub/build/registry."""
 
 import hashlib
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -53,6 +55,7 @@ class ReleaseTest(unittest.TestCase):
         self.directory = self.root / ".git/procinsh-release"
         self.directory.mkdir()
         self.runner = release.Release(self.root, self.directory, "patch")
+        self.directory = self.runner.directory
         self.calls = []
         self.pr = None
         self.registry = None
@@ -74,8 +77,6 @@ class ReleaseTest(unittest.TestCase):
         self.calls.append(args)
         if args[0] == "git":
             return self.real_run(*args, cwd=cwd, capture=capture)
-        if args[:3] == ("gh", "pr", "list"):
-            return json.dumps([{"url": self.pr}] if self.pr else [])
         if args[:3] == ("gh", "pr", "create"):
             self.pr = "https://github.com/akawashiro/procinsh/pull/999"
             return self.pr
@@ -85,7 +86,7 @@ class ReleaseTest(unittest.TestCase):
         if args[:3] == ("gh", "pr", "view"):
             self.views += 1
             return json.dumps({"state": "MERGED" if self.merged else "OPEN",
-                               "headRefOid": self.runner.state["head"], "baseRefName": "main",
+                               "headRefOid": self.runner.info["head"], "baseRefName": "main",
                                "mergeCommit": {"oid": self.merged}, "mergeable": "MERGEABLE",
                                "mergeStateStatus": "CLEAN", "reviewDecision": "",
                                "statusCheckRollup": self.checks})
@@ -93,8 +94,8 @@ class ReleaseTest(unittest.TestCase):
             self.assertIn("--match-head-commit", args)
             self.assertIn("--squash", args)
             # Squash produces a commit distinct from the PR's head.
-            self.git("checkout", "--detach", self.runner.state["base"], cwd=self.runner.work)
-            self.git("merge", "--squash", self.runner.state["head"], cwd=self.runner.work)
+            self.git("checkout", "--detach", self.runner.info["base"], cwd=self.runner.work)
+            self.git("merge", "--squash", self.runner.info["head"], cwd=self.runner.work)
             self.git("commit", "-m", "merged release", cwd=self.runner.work)
             self.merged = self.git("rev-parse", "HEAD", cwd=self.runner.work)
             self.git("push", "origin", f"{self.merged}:refs/heads/main")
@@ -108,9 +109,9 @@ class ReleaseTest(unittest.TestCase):
                 (Path(cwd) / "web/dist/index.html").write_text("built frontend")
             return ""
         if args[:2] == ("python3", "scripts/check_web_package.py"):
-            archive = Path(cwd) / f"target/package/procinsh-{self.runner.state['version']}.crate"
+            archive = Path(cwd) / f"target/package/procinsh-{self.runner.info['version']}.crate"
             archive.parent.mkdir(parents=True, exist_ok=True)
-            archive.write_bytes(crate(self.runner.state["version"], self.git("rev-parse", "HEAD", cwd=cwd)))
+            archive.write_bytes(crate(self.runner.info["version"], self.git("rev-parse", "HEAD", cwd=cwd)))
             return ""
         if args[:2] == ("cargo", "publish"):
             self.assertEqual(self.git("rev-parse", "HEAD", cwd=cwd), self.merged)
@@ -122,10 +123,6 @@ class ReleaseTest(unittest.TestCase):
             return ""
         self.fail(f"Unexpected command: {args}")
 
-    def resume(self):
-        self.runner = release.Release(self.root, self.directory, "patch")
-        self.runner.execute()
-
     def test_end_to_end_pins_merge_commit_and_preserves_checkout(self):
         (self.root / "local-work").write_text("keep me")
         self.runner.execute()
@@ -134,24 +131,34 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "v0.1.14^{commit}"), self.merged)
         self.assertNotEqual(self.merged, self.git("rev-parse", "origin/main"))
         self.assertEqual(self.uploads, 1)
-        self.assertFalse(self.runner.state_path.exists())
-        self.assertTrue((self.directory / "v0.1.14.json").exists())
+        self.assertFalse(self.runner.directory.exists())
 
-    def test_failed_checks_stop_and_resume_without_bump(self):
+    def test_failed_checks_stop_and_leave_worktree_for_inspection(self):
         self.checks = [{"conclusion": "FAILURE"}]
         with self.assertRaisesRegex(RuntimeError, "checks failed"):
             self.runner.execute()
         self.assertEqual(self.uploads, 0)
+        self.assertTrue(self.runner.work.exists())
+        previous_pr = self.runner.info["pr"]
+        previous_work = self.runner.work
+        self.runner = release.Release(self.root, self.directory.parent, "patch")
+        self.assertNotEqual(self.runner.work, previous_work)
         self.checks = [{"conclusion": "SUCCESS"}]
-        self.resume()
-        self.assertEqual(self.runner.state["version"], "0.1.14")
+        with self.assertRaisesRegex(RuntimeError, "branch .* already exists"):
+            self.runner.execute()
+        self.assertEqual(self.pr, previous_pr)
+        self.assertEqual(self.uploads, 0)
+        self.assertNotIn("pr", self.runner.info)
 
-    def test_upload_timeout_resumes_without_second_upload(self):
+    def test_upload_failure_stops_without_tag_and_preserves_files(self):
         self.fail_upload = True
         with self.assertRaises(subprocess.CalledProcessError):
             self.runner.execute()
-        self.resume()
         self.assertEqual(self.uploads, 1)
+        self.assertTrue(self.runner.work.exists())
+        self.assertTrue((self.directory / "attempt.crate").exists())
+        self.assertFalse(self.git("tag", "--list", "v0.1.14"))
+        self.assertFalse(list(self.directory.glob("*.json")))
 
     def test_changed_remote_archive_is_rejected(self):
         self.fail_upload = True
@@ -160,7 +167,7 @@ class ReleaseTest(unittest.TestCase):
         self.remote_archive = crate("0.1.14", self.merged, b"unexpected")
         self.registry["checksum"] = hashlib.sha256(self.remote_archive).hexdigest()
         with self.assertRaisesRegex(RuntimeError, "differs"):
-            self.resume()
+            release.verify_published("0.1.14", self.merged, self.directory / "attempt.crate", self.registry)
 
     def test_conflicting_tag_is_not_overwritten(self):
         self.runner.prepare()
@@ -188,10 +195,17 @@ class ReleaseTest(unittest.TestCase):
         lock = release.tomllib.loads((self.root / "Cargo.lock").read_text())
         self.assertEqual([p["version"] for p in lock["package"]], ["0.1.13", "0.2.0"])
 
-    def test_resume_rejects_different_bump(self):
-        self.runner.prepare()
-        with self.assertRaisesRegex(RuntimeError, "rerun with patch"):
-            release.Release(self.root, self.directory, "minor")
+    def test_legacy_saved_state_is_ignored_and_worktree_path_logged(self):
+        legacy = self.directory.parent / "current.json"
+        legacy.write_text('{"kind":"minor","version":"9.9.9","complete":true}')
+        logs = io.StringIO()
+        with redirect_stderr(logs):
+            fresh = release.Release(self.root, self.directory.parent, "patch")
+        self.assertNotEqual(fresh.work, self.runner.work)
+        self.assertIn(f"Release worktree: {fresh.work}", logs.getvalue())
+        self.assertTrue(fresh.work.is_absolute())
+        self.assertEqual(fresh.info, {})
+        self.assertEqual(json.loads(legacy.read_text())["version"], "9.9.9")
 
     def test_checks_and_reviews_are_waited_for(self):
         self.runner.prepare()
@@ -214,39 +228,114 @@ class ReleaseTest(unittest.TestCase):
         self.assertGreaterEqual(self.views, 5)
         self.assertEqual(sum(c[:3] == ("gh", "pr", "merge") for c in self.calls), 1)
 
-    def test_commit_created_before_state_save_is_recovered(self):
-        self.runner.prepare()
-        head = self.runner.state.pop("head")
-        self.runner.state.pop("pr")
-        self.runner.save()
-        self.runner.prepare()
-        self.assertEqual(self.runner.state["head"], head)
-
     def test_unexpected_publication_stops_without_tag(self):
         self.runner.prepare()
         self.runner.merge()
         self.registry = {"checksum": "unexpected"}
-        with self.assertRaisesRegex(RuntimeError, "outside this attempt"):
+        with self.assertRaisesRegex(RuntimeError, "already published"):
             self.runner.publish()
         self.assertEqual(self.uploads, 0)
         self.assertFalse(self.git("tag", "--list", "v0.1.14"))
 
-    def test_cleanup_can_resume_after_worktree_removal(self):
+    def test_interruption_preserves_worktree_without_persisting_state(self):
         self.runner.prepare()
-        self.runner.merge()
-        self.runner.publish()
-        original = self.runner.git
-        def git(*args, **kwargs):
-            result = original(*args, **kwargs)
-            if args[:2] == ("worktree", "remove"):
-                raise KeyboardInterrupt()
-            return result
-        self.runner.git = git
-        with self.assertRaises(KeyboardInterrupt):
-            self.runner.tag()
-        self.resume()
-        self.assertFalse(self.runner.state_path.exists())
-        self.assertEqual(self.uploads, 1)
+        with patch.object(self.runner, "gh", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.runner.merge()
+        self.assertTrue(self.runner.work.exists())
+        self.assertFalse(list(self.directory.glob("*.json")))
+        self.assertEqual(self.uploads, 0)
+
+
+class FailureLogTest(unittest.TestCase):
+    def test_failure_and_interruption_report_worktree_without_resume_instructions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            common = root / ".git"
+            common.mkdir()
+            runner = unittest.mock.Mock(work=root / "run-test/worktree", directory=root / "run-test")
+
+            def bootstrap(*args, **kwargs):
+                if args[:3] == ("git", "rev-parse", "--show-toplevel"):
+                    return str(root)
+                if args[:2] == ("git", "rev-parse"):
+                    return str(common)
+                if args[:3] == ("gh", "auth", "status"):
+                    return ""
+                if args[:3] == ("git", "remote", "get-url"):
+                    return "https://github.com/akawashiro/procinsh.git"
+                self.fail(f"Unexpected bootstrap command: {args}")
+
+            for error, code in [(RuntimeError("test failure"), 1), (KeyboardInterrupt(), 130)]:
+                with self.subTest(error=type(error).__name__):
+                    logs = io.StringIO()
+                    runner.execute.side_effect = error
+                    with (redirect_stderr(logs),
+                          patch.object(release, "run", side_effect=bootstrap),
+                          patch.object(release, "Release", return_value=runner),
+                          patch.object(release.shutil, "which", return_value="/test/tool"),
+                          patch.object(sys, "argv", ["release.py", "patch"])):
+                        with self.assertRaises(SystemExit) as raised:
+                            release.main()
+                    self.assertEqual(raised.exception.code, code)
+                    self.assertIn(str(runner.work), logs.getvalue())
+                    self.assertIn("manually", logs.getvalue())
+                    self.assertNotIn("resume", logs.getvalue())
+                    self.assertNotIn("rerun", logs.getvalue())
+
+
+class CommandLogTest(unittest.TestCase):
+    def test_capture_keeps_logs_out_of_result_and_stdout(self):
+        logs = io.StringIO()
+        stdout = io.StringIO()
+        with redirect_stderr(logs), redirect_stdout(stdout):
+            result = release.run(sys.executable, "-c", "print('captured output')",
+                                 cwd=Path(tempfile.gettempdir()), capture=True)
+        self.assertEqual(result, "captured output")
+        self.assertEqual(stdout.getvalue(), "")
+        lines = logs.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertRegex(lines[0], r"^\[\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\] START cwd=")
+        self.assertIn("command=" + release.shlex.join((sys.executable, "-c", "print('captured output')")), lines[0])
+        self.assertRegex(lines[1], r"END exit=0 elapsed=\d+\.\d{2}s command=")
+
+    def test_start_is_flushed_before_launch_and_end_after_completion(self):
+        stream = unittest.mock.Mock()
+        with patch.object(release.sys, "stderr", stream):
+            def execute(*args, **kwargs):
+                self.assertIn("START cwd=", stream.write.call_args_list[0].args[0])
+                stream.flush.assert_called_once_with()
+                return subprocess.CompletedProcess(args, 0)
+            with patch.object(release.subprocess, "run", side_effect=execute):
+                self.assertIsNone(release.run("npm", "--prefix", "web", "run", "build", cwd=Path("/tmp")))
+        self.assertIn("END exit=0", "".join(call.args[0] for call in stream.write.call_args_list))
+        self.assertEqual(stream.flush.call_count, 2)
+
+    def test_nonzero_exit_is_logged_and_exception_preserved(self):
+        logs = io.StringIO()
+        with redirect_stderr(logs):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                release.run(sys.executable, "-c", "raise SystemExit(7)",
+                            cwd=Path(tempfile.gettempdir()), capture=True)
+        self.assertEqual(raised.exception.returncode, 7)
+        self.assertIn("END exit=7 elapsed=", logs.getvalue())
+        self.assertNotIn("END exit=0", logs.getvalue())
+
+    def test_start_failure_is_logged_and_exception_preserved(self):
+        logs = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, redirect_stderr(logs):
+            with self.assertRaises(FileNotFoundError):
+                release.run(str(Path(directory) / "missing-executable"), cwd=Path(directory))
+        self.assertIn("START_FAILED errno=2 elapsed=", logs.getvalue())
+        self.assertNotIn("END exit=", logs.getvalue())
+
+    def test_interruption_is_logged_and_propagated(self):
+        logs = io.StringIO()
+        with redirect_stderr(logs), patch.object(release.subprocess, "run", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                release.run("cargo", "publish", cwd=Path("/tmp"))
+        self.assertIn("INTERRUPTED elapsed=", logs.getvalue())
+        self.assertNotIn("END exit=", logs.getvalue())
 
 
 class InterfaceTest(unittest.TestCase):
