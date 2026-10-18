@@ -29,7 +29,7 @@ import { TestEventSource } from "./support/mocks.js";
 const sample = () =>
   parseRecording(
     readFileSync(
-      new URL("../replay-public/recordings/demo.json", import.meta.url),
+      new URL("./fixtures/space-recording.json", import.meta.url),
       "utf8",
     ),
   );
@@ -155,7 +155,7 @@ test("shared validator rejects invalid metadata, ordering, and nested payloads",
   }
 });
 
-test("public demo is self-contained and contains synthetic values only", () => {
+test("recording fixture is self-contained and contains synthetic values only", () => {
   const recording = sample();
   expect(recording.events.length).toBeGreaterThan(100);
   expect(

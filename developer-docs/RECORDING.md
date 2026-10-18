@@ -6,8 +6,10 @@ file. Recording runs in memory, requires no upload or server storage, and starts
 with the current complete snapshot, including maps retained from earlier deltas.
 
 Recordings can contain process arguments, user names, paths and IP addresses.
-Review them before sharing. The bundled demo uses synthetic process, pipe, CPU,
-file and signal observations; it contains no captured machine data.
+Review them before sharing. The bundled **Chrome** and **Firefox** demos show real
+browser activity captured in an Ubuntu 26.04 VM. Both open the same eight external
+sites from [`scripts/browser_sites.txt`](../scripts/browser_sites.txt), with a
+reload every ten seconds.
 
 A stream gap, reconnect, hidden tab or page exit ends the recording. The retained
 recording stays available as **Download recording** when the page is visible
@@ -18,7 +20,11 @@ storage. At 128 MiB the recorder stops and retains the completed prefix; local
 replay uses the same size limit. The live view continues independently.
 
 **Open recording** opens `/replay/space/`. Select or drop the original downloaded
-JSON. Files are read with the browser File API and never uploaded. Choose another
+JSON or a standard gzip-compressed `.json.gz`. Files are streamed with the browser
+File API and never uploaded. Both the input and decompressed data are limited to
+128 MiB; malformed gzip and invalid recordings are rejected. The loader inspects
+the gzip magic bytes, so HTTP `Content-Encoding: gzip` decoding does not cause
+double decompression. Choose another
 file on the same page. Each recording starts playing automatically with **Loop**
 enabled after it loads, including bundled demos opened by URL. Play/pause,
 timeline seeking and 0.1×/0.25×/0.5×/1×/2× speeds use a virtual clock shared with
@@ -60,7 +66,7 @@ npm --prefix web run build:replay
 ```
 
 Publish **`web/dist-replay/`** directly. The build includes
-`replay/space/index.html`, shared SPACE assets and `recordings/demo.json`.
+`replay/space/index.html`, shared SPACE assets and the bundled `.json`/`.json.gz` recordings.
 It contains no LIST/PROCESS/LIVE page. Direct navigation and refresh work through
 the directory's `index.html`; `/replay/` is reserved for a future selector.
 The viewer never opens SSE or calls live APIs.
@@ -82,9 +88,10 @@ and URL allowlist share the `bundledRecordings` catalog in
 `web/src/space/session-controls.ts`; add an ID, label, and asset path there when
 adding a recording to `web/replay-public/recordings/`.
 
-Open `/replay/space/?recording=demo` on the deployed site. `recording` is an
-allowlisted ID, never a user-supplied fetch URL. A single synthetic sanitized JSON
-is shared by the normal embedded build and the static build. The build rejects
+Open `/replay/space/?recording=chrome-ubuntu26` on the deployed site. `recording` is an
+allowlisted ID, never a user-supplied fetch URL. Both bundled recordings are shared by the normal embedded build and static build.
+Use `?recording=firefox-ubuntu26` for the Firefox workload. Synthetic data is
+retained only as a private test fixture, outside the published asset directories. The build rejects
 any static asset larger than 25 MiB, including public demos, according to
 [Cloudflare Pages Free limits](https://developers.cloudflare.com/pages/platform/limits/).
 No chunk conversion or companion files are needed.
@@ -96,11 +103,51 @@ output under that prefix. Asset URLs and the demo fetch respect that base.
 The normal `npm --prefix web run build` still outputs `web/dist/` for embedding
 in Rust, with live `/space` and `/replay/space/` as separate page routes.
 
+## Capturing browser demos
+
+The VM scripts require a Linux x86-64 host with read/write access to `/dev/kvm`,
+QEMU (`qemu-system-x86` and `qemu-utils`), `cloud-image-utils`, curl and Python 3.
+If needed, add your user to the `kvm` group with `sudo usermod -aG kvm "$USER"`
+and log out and back in.
+
+```sh
+# The guest clones the published commit from the current checkout.
+# BROWSER accepts chrome (default) or firefox.
+BROWSER=firefox VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh prepare
+VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh run
+```
+
+The guest installs procinsh and the selected browser, then starts the collector
+and browser workload. Both browsers use the same Puppeteer WebDriver BiDi calls
+for tab creation, cache disabling, navigation and reload. They use fresh profiles
+and the shared site list in `scripts/browser_sites.txt`.
+
+Wait for `SPACE recording ready on guest port 10090` in
+`/tmp/space-demo/console.log`, then open `http://127.0.0.1:10090/space` and use
+**Record** / **Stop & Download**. The host and guest share port 10090; set
+`HOST_PORT` during `prepare` to choose another port. `run` retains that port.
+`VM_CPUS`, `VM_MEMORY_MIB` and `VM_DISK_GIB` control VM resources.
+
+To capture automatically through the same browser controls:
+
+```sh
+(cd web && BROWSER=firefox HOST_PORT=10090 RECORD_SECONDS=15 \
+  RECORD_OUTPUT=/tmp/firefox-vm.json.gz node --import tsx scripts/capture-vm-recording.ts)
+```
+
+The host needs Google Chrome and `npm --prefix web ci`. `CHROME` overrides its
+executable path. The capture script saves a gzip recording and checks activity,
+file size and playback. To compress a manual download, use
+`gzip -n -9 recording.json`. Copy the demo to `web/replay-public/recordings/` and
+add its entry in `web/src/space/session-controls.ts`.
+
+For the guest console, run
+`VM_DIR=/tmp/space-demo python3 scripts/recording-vm/console.py` (Ctrl-] disconnects).
+Use `journalctl -u browser-demo` to inspect the workload. `TAB_COUNT`,
+`INTERVAL_SECONDS` and `SITE_LIST` can be set in the `browser-demo` systemd service.
+Stop the VM with `VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh stop` and wait
+for QEMU to exit before restarting it.
+
 ## Validation
 
-Run `bash scripts/docker_test.sh ordinary`, `checks` and `browser`. Ordinary tests
-include the standalone build, schema validation, midstream recording with merged
-maps, relative timestamps, event ordering, playback/seek/step and asset size
-boundaries. Browser tests cover recording download, unchanged local JSON picker
-and drop loading, and a replay-only static server under `/demo/`, including
-refresh, slow playback, unknown recording IDs and zero live API requests.
+Run `bash scripts/docker_test.sh ordinary`, `checks` and `browser`.

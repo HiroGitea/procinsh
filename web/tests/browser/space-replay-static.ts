@@ -4,12 +4,14 @@ import { createServer } from "node:http";
 import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, extname } from "node:path";
 import { tmpdir } from "node:os";
+import { gzipSync } from "node:zlib";
 import { connectPage, pages } from "./harness.js";
 import { checkReplaySliderTravel } from "./replay-slider.js";
 import { launch, until, delay } from "../support/runtime.js";
 
 const root = resolve(import.meta.dirname, "../../dist-replay");
 const requests: string[] = [];
+let demoEncoding: "plain" | "gzip" | "http-gzip" | "asset" = "plain";
 const server = createServer(async (request, response) => {
   const url = new URL(request.url!, "http://localhost");
   requests.push(url.pathname);
@@ -23,7 +25,14 @@ const server = createServer(async (request, response) => {
     return;
   }
   try {
-    const body = await readFile(path);
+    const useFixture =
+      path.endsWith("/recordings/chrome-ubuntu26.json.gz") &&
+      demoEncoding !== "asset";
+    const body = await readFile(
+      useFixture
+        ? resolve(import.meta.dirname, "../fixtures/space-recording.json")
+        : path,
+    );
     response.setHeader(
       "content-type",
       (
@@ -35,7 +44,11 @@ const server = createServer(async (request, response) => {
         } as Record<string, string>
       )[extname(path)] || "application/octet-stream",
     );
-    response.end(body);
+    if (useFixture && demoEncoding !== "plain") {
+      if (demoEncoding === "http-gzip")
+        response.setHeader("Content-Encoding", "gzip");
+      response.end(gzipSync(body));
+    } else response.end(body);
   } catch {
     response.writeHead(404).end();
   }
@@ -83,7 +96,7 @@ try {
   await cdp("Page.addScriptToEvaluateOnNewDocument", {
     source: `window.EventSource=class { constructor(){throw Error('Static replay attempted SSE')} };`,
   });
-  const url = `http://127.0.0.1:${address.port}/demo/replay/space/?recording=demo`;
+  const url = `http://127.0.0.1:${address.port}/demo/replay/space/?recording=chrome-ubuntu26`;
   await cdp("Page.navigate", { url: url.split("?")[0] });
   await waitFor(
     "document.querySelector('#open-demo')",
@@ -91,11 +104,17 @@ try {
   );
   assert.equal(
     await evaluate("document.querySelector('#demo-recording').value"),
-    "demo",
+    "chrome-ubuntu26",
+  );
+  assert.deepEqual(
+    await evaluate(
+      "Array.from(document.querySelectorAll('#demo-recording option'), option => option.textContent)",
+    ),
+    ["Chrome", "Firefox"],
   );
   await evaluate("document.querySelector('#open-demo').click()");
   await waitFor(
-    "document.querySelector('#replay-status')?.textContent.includes('Demo #1')",
+    "document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'",
     "demo loads at deployment base path",
   );
   assert.equal(
@@ -157,11 +176,14 @@ try {
   const timeOrigin = await evaluate<number>("performance.timeOrigin");
   await cdp("Page.reload");
   await waitFor(
-    `performance.timeOrigin!==${timeOrigin} && document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'`,
+    `performance.timeOrigin!==${timeOrigin} && document.querySelector('#replay-status')?.hidden && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'`,
     "direct route refresh works",
   );
   await cdp("Page.navigate", {
-    url: url.replace("recording=demo", "recording=https://example.com"),
+    url: url.replace(
+      "recording=chrome-ubuntu26",
+      "recording=https://example.com",
+    ),
   });
   await waitFor(
     "document.querySelector('#replay-status')?.textContent.includes('Unknown bundled recording')",
@@ -169,10 +191,47 @@ try {
   );
   await evaluate("document.querySelector('#open-demo').click()");
   await waitFor(
-    "document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
+    "document.querySelector('#replay-status')?.hidden && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
     "demo picker recovers from an unknown recording ID",
   );
-  assert.ok(requests.includes("/demo/recordings/demo.json"));
+  for (const encoding of ["gzip", "http-gzip"] as const) {
+    demoEncoding = encoding;
+    const previousOrigin = await evaluate<number>("performance.timeOrigin");
+    await cdp("Page.navigate", { url });
+    await waitFor(
+      `performance.timeOrigin!==${previousOrigin} && document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'`,
+      `${encoding} URL replay avoids double decompression`,
+    );
+  }
+  demoEncoding = "asset";
+  for (const id of ["chrome-ubuntu26", "firefox-ubuntu26"]) {
+    const previousOrigin = await evaluate<number>("performance.timeOrigin");
+    await cdp("Page.navigate", {
+      url: url.replace("recording=chrome-ubuntu26", `recording=${id}`),
+    });
+    await waitFor(
+      `performance.timeOrigin!==${previousOrigin} && document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0`,
+      `real ${id} gzip plays without a backend`,
+    );
+    await evaluate(
+      "document.querySelector('#timeline').value=0.5;document.querySelector('#timeline').dispatchEvent(new Event('input'))",
+    );
+    assert.equal(
+      await evaluate("Number(document.querySelector('#timeline').value)"),
+      0.5,
+    );
+    await evaluate("document.querySelector('#play').click()");
+    await waitFor(
+      "Number(document.querySelector('#timeline').value)>0.5",
+      `real ${id} resumes after seek`,
+    );
+    assert.ok(requests.includes(`/demo/recordings/${id}.json.gz`));
+  }
+  assert.equal(
+    (await fetch(`http://127.0.0.1:${address.port}/demo/recordings/demo.json`))
+      .status,
+    404,
+  );
   assert.ok(
     requests.every((path) => !path.includes("/api/")),
     `no API requests: ${requests}`,

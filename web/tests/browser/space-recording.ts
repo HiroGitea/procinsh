@@ -70,7 +70,7 @@ export async function checkSpaceRecording(
     const input=document.querySelector('input[type=file]');input.files=transfer.files;
     input.dispatchEvent(new Event('change'))`);
   await waitFor(
-    "document.querySelector('#replay-status').textContent.includes('local-recording.json')",
+    "document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'",
     "downloaded JSON opens unchanged",
   );
   assert.equal(
@@ -119,7 +119,7 @@ export async function checkSpaceRecording(
     `document.dispatchEvent(new DragEvent('drop',{dataTransfer:(()=>{const t=new DataTransfer();t.items.add(new File([${JSON.stringify(text)}],'dropped.json'));return t})()}))`,
   );
   await waitFor(
-    "document.querySelector('#replay-status').textContent.includes('dropped.json')",
+    "document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'",
     "another recording opens by drop",
   );
   assert.equal(
@@ -129,6 +129,21 @@ export async function checkSpaceRecording(
     true,
     "opening another recording re-enables loop autoplay",
   );
+  for (const method of ["picker", "drop"]) {
+    await evaluate(`(async()=>{
+      const gzip = await new Response(new Blob([${JSON.stringify(text)}]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([gzip], 'compressed-${method}.json.gz', {type:'application/gzip'}));
+      if (${JSON.stringify(method)} === 'picker') {
+        const input=document.querySelector('input[type=file]'); input.files=transfer.files;
+        input.dispatchEvent(new Event('change'));
+      } else document.dispatchEvent(new DragEvent('drop',{dataTransfer:transfer}));
+    })()`);
+    await waitFor(
+      `document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'`,
+      `gzip ${method} replays`,
+    );
+  }
   assert.equal(
     await evaluate(
       'document.querySelectorAll(\'a[href^="/process/"],a[href="/list"],a[href="/space"]\').length',
@@ -139,7 +154,7 @@ export async function checkSpaceRecording(
   await waitFor("document.querySelector('#open-demo')", "live demo picker");
   await evaluate("document.querySelector('#open-demo').click()");
   await waitFor(
-    "location.search==='?recording=demo' && document.querySelector('#replay-status')?.textContent.includes('Demo #1') && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
+    "location.search==='?recording=chrome-ubuntu26' && document.querySelector('#replay-status')?.hidden && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
     "live Open demo navigates to looping demo playback",
   );
 }

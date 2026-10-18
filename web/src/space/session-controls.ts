@@ -1,16 +1,21 @@
 // Browser acquisition and transport controls; both loaders use the same parser.
-import {
-  parseRecording,
-  SpaceRecorder,
-  SpaceReplay,
-  MAX_RECORDING_BYTES,
-} from "./recording.js";
+import { parseRecording, SpaceRecorder, SpaceReplay } from "./recording.js";
+import { readRecording } from "./recording-input.js";
 import type { RecordingEvent } from "./recording.js";
 import type { SystemSnapshot } from "../shared/api-types.js";
 
 // IDs are shared by the picker and the URL allowlist.
 const bundledRecordings = [
-  { id: "demo", label: "Demo #1", path: "recordings/demo.json" },
+  {
+    id: "chrome-ubuntu26",
+    label: "Chrome",
+    path: "recordings/chrome-ubuntu26.json.gz",
+  },
+  {
+    id: "firefox-ubuntu26",
+    label: "Firefox",
+    path: "recordings/firefox-ubuntu26.json.gz",
+  },
 ];
 
 function demoControls(open: (id: string) => void) {
@@ -124,7 +129,7 @@ export function mountReplayControls(
   const file = document.createElement("input");
   file.type = "file";
   file.hidden = true;
-  file.accept = ".json,application/json";
+  file.accept = ".json,.json.gz,application/json,application/gzip";
   file.setAttribute("aria-label", "Open recording JSON");
   const open = document.createElement("button");
   open.id = "open-recording";
@@ -164,7 +169,7 @@ export function mountReplayControls(
   host.append(open, file, play, timeline, options, status);
   let replay: SpaceReplay | null = null;
   let loading = 0;
-  let label = "";
+  let message = "";
   let previousWallTime = performance.now();
   function refresh() {
     for (const element of [play, timeline, speed, loop])
@@ -180,14 +185,13 @@ export function mountReplayControls(
         ? `${(replay.time / 1000).toFixed(1)} / ${(replay.duration / 1000).toFixed(1)} seconds`
         : "",
     );
-    status.textContent = replay
-      ? `${label} · ${(replay.time / 1000).toFixed(1)} / ${(replay.duration / 1000).toFixed(1)}s`
-      : label;
+    status.textContent = message;
+    status.hidden = !message;
   }
-  async function load(read: () => Promise<string>, name: string) {
+  async function load(read: () => Promise<string>) {
     const request = ++loading;
     if (replay) replay.playing = false;
-    label = "Loading…";
+    message = "Loading…";
     refresh();
     try {
       const text = await read();
@@ -199,22 +203,18 @@ export function mountReplayControls(
       replay.loop = true;
       replay.playing = replay.duration > 0 && !document.hidden;
       previousWallTime = performance.now();
-      label = name;
+      message = "";
     } catch (error) {
       if (request === loading) {
         replay = null;
-        label = error instanceof Error ? error.message : String(error);
+        message = error instanceof Error ? error.message : String(error);
       }
     }
     refresh();
   }
   function local(recording: File | undefined) {
     if (!recording) return;
-    void load(() => {
-      if (recording.size > MAX_RECORDING_BYTES)
-        throw new Error("Recording exceeds the 128 MiB local replay limit.");
-      return recording.text();
-    }, recording.name);
+    void load(() => readRecording(recording.stream()));
   }
   file.onchange = () => {
     local(file.files?.[0]);
@@ -254,7 +254,7 @@ export function mountReplayControls(
   function openDemo(id: string) {
     const recording = bundledRecordings.find((entry) => entry.id === id);
     if (!recording) {
-      label = `Unknown bundled recording: ${id}. Choose a local JSON file.`;
+      message = `Unknown bundled recording: ${id}. Choose a local JSON file.`;
       refresh();
       return;
     }
@@ -267,8 +267,9 @@ export function mountReplayControls(
         throw new Error(
           `Unable to load bundled recording (${response.status}).`,
         );
-      return response.text();
-    }, recording.label);
+      if (!response.body) throw new Error("Recording response has no body.");
+      return readRecording(response.body);
+    });
   }
   const demo = demoControls((id) => {
     const url = new URL(location.href);
