@@ -2,6 +2,7 @@
 """Release from origin/main, keeping resumable state in Git's common directory."""
 
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import io
@@ -9,8 +10,10 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
+import sys
 import tarfile
 import time
 import tomllib
@@ -26,8 +29,27 @@ def run(*args, cwd, capture=False):
     env = dict(os.environ)
     env.pop("PROCINSH_GIT_SHA", None)
     env["CARGO_TARGET_DIR"] = str(Path(cwd) / "target")
-    result = subprocess.run(args, cwd=cwd, env=env, check=True, text=True,
-                            stdout=subprocess.PIPE if capture else None)
+    command = shlex.join(args)
+
+    def log(message):
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        print(f"[{timestamp}] {message} command={command}", file=sys.stderr, flush=True)
+
+    started = time.monotonic()
+    log(f"START cwd={shlex.quote(str(cwd))}")
+    try:
+        result = subprocess.run(args, cwd=cwd, env=env, check=True, text=True,
+                                stdout=subprocess.PIPE if capture else None)
+    except subprocess.CalledProcessError as error:
+        log(f"END exit={error.returncode} elapsed={time.monotonic() - started:.2f}s")
+        raise
+    except OSError as error:
+        log(f"START_FAILED errno={error.errno} elapsed={time.monotonic() - started:.2f}s")
+        raise
+    except KeyboardInterrupt:
+        log(f"INTERRUPTED elapsed={time.monotonic() - started:.2f}s")
+        raise
+    log(f"END exit={result.returncode} elapsed={time.monotonic() - started:.2f}s")
     return result.stdout.strip() if capture else None
 
 

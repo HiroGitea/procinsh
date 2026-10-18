@@ -2,11 +2,13 @@
 """Offline release tests: real Git/worktrees, simulated GitHub/build/registry."""
 
 import hashlib
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -247,6 +249,60 @@ class ReleaseTest(unittest.TestCase):
         self.resume()
         self.assertFalse(self.runner.state_path.exists())
         self.assertEqual(self.uploads, 1)
+
+
+class CommandLogTest(unittest.TestCase):
+    def test_capture_keeps_logs_out_of_result_and_stdout(self):
+        logs = io.StringIO()
+        stdout = io.StringIO()
+        with redirect_stderr(logs), redirect_stdout(stdout):
+            result = release.run(sys.executable, "-c", "print('captured output')",
+                                 cwd=Path(tempfile.gettempdir()), capture=True)
+        self.assertEqual(result, "captured output")
+        self.assertEqual(stdout.getvalue(), "")
+        lines = logs.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertRegex(lines[0], r"^\[\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\] START cwd=")
+        self.assertIn("command=" + release.shlex.join((sys.executable, "-c", "print('captured output')")), lines[0])
+        self.assertRegex(lines[1], r"END exit=0 elapsed=\d+\.\d{2}s command=")
+
+    def test_start_is_flushed_before_launch_and_end_after_completion(self):
+        stream = unittest.mock.Mock()
+        with patch.object(release.sys, "stderr", stream):
+            def execute(*args, **kwargs):
+                self.assertIn("START cwd=", stream.write.call_args_list[0].args[0])
+                stream.flush.assert_called_once_with()
+                return subprocess.CompletedProcess(args, 0)
+            with patch.object(release.subprocess, "run", side_effect=execute):
+                self.assertIsNone(release.run("npm", "--prefix", "web", "run", "build", cwd=Path("/tmp")))
+        self.assertIn("END exit=0", "".join(call.args[0] for call in stream.write.call_args_list))
+        self.assertEqual(stream.flush.call_count, 2)
+
+    def test_nonzero_exit_is_logged_and_exception_preserved(self):
+        logs = io.StringIO()
+        with redirect_stderr(logs):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                release.run(sys.executable, "-c", "raise SystemExit(7)",
+                            cwd=Path(tempfile.gettempdir()), capture=True)
+        self.assertEqual(raised.exception.returncode, 7)
+        self.assertIn("END exit=7 elapsed=", logs.getvalue())
+        self.assertNotIn("END exit=0", logs.getvalue())
+
+    def test_start_failure_is_logged_and_exception_preserved(self):
+        logs = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, redirect_stderr(logs):
+            with self.assertRaises(FileNotFoundError):
+                release.run(str(Path(directory) / "missing-executable"), cwd=Path(directory))
+        self.assertIn("START_FAILED errno=2 elapsed=", logs.getvalue())
+        self.assertNotIn("END exit=", logs.getvalue())
+
+    def test_interruption_is_logged_and_propagated(self):
+        logs = io.StringIO()
+        with redirect_stderr(logs), patch.object(release.subprocess, "run", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                release.run("cargo", "publish", cwd=Path("/tmp"))
+        self.assertIn("INTERRUPTED elapsed=", logs.getvalue())
+        self.assertNotIn("END exit=", logs.getvalue())
 
 
 class InterfaceTest(unittest.TestCase):
