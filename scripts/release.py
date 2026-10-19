@@ -23,6 +23,7 @@ import urllib.request
 
 
 REPO = "akawashiro/procinsh"
+REMOTE_URL = f"https://github.com/{REPO}.git"
 PACKAGE = "procinsh"
 
 
@@ -133,7 +134,11 @@ class Release:
         log(f"Release worktree: {self.work}")
 
     def git(self, *args, work=False):
-        return run("git", *args, cwd=self.work if work else self.root, capture=True)
+        # Use gh's credentials without changing persistent Git config.
+        return run("git",
+                   "-c", "credential.https://github.com.helper=",
+                   "-c", "credential.https://github.com.helper=!gh auth git-credential",
+                   *args, cwd=self.work if work else self.root, capture=True)
 
     def gh(self, *args):
         return run("gh", *args, "--repo", REPO, cwd=self.root, capture=True)
@@ -157,7 +162,7 @@ class Release:
             raise RuntimeError("Build changed the release worktree commit")
 
     def prepare(self):
-        self.git("fetch", "origin", "main", "--tags")
+        self.git("fetch", REMOTE_URL, "+refs/heads/main:refs/remotes/origin/main", "--tags")
         base = self.git("rev-parse", "origin/main")
         manifest = tomllib.loads(self.git("show", f"{base}:Cargo.toml"))
         previous = manifest["package"]["version"]
@@ -167,7 +172,7 @@ class Release:
             raise RuntimeError(f"{version} is already published; reconcile origin/main first")
         if self.git("tag", "--list", f"v{version}"):
             raise RuntimeError(f"Tag v{version} already exists")
-        if self.git("ls-remote", "--heads", "origin", f"refs/heads/{branch}"):
+        if self.git("ls-remote", "--heads", REMOTE_URL, f"refs/heads/{branch}"):
             raise RuntimeError(f"Release branch {branch} already exists; inspect the previous attempt manually")
         self.info.update(previous=previous, version=version, base=base, branch=branch)
         log(f"Releasing {version} ({self.kind}); worktree: {self.work}")
@@ -179,7 +184,7 @@ class Release:
         self.validate_version_commit(head)
         self.info.update(head=head)
         self.build(head)
-        self.git("push", "origin", f"{head}:refs/heads/{branch}")
+        self.git("push", REMOTE_URL, f"{head}:refs/heads/{branch}")
         body = self.directory / "pr-body.md"
         body.write_text(f"Release procinsh {version}.\n\n"
                         "Updates the package version and lockfile. Local Web build and "
@@ -247,7 +252,7 @@ class Release:
         attempt = self.directory / "attempt.crate"
         if published(version):
             raise RuntimeError(f"{version} is already published; inspect manually")
-        self.git("fetch", "origin", "main")
+        self.git("fetch", REMOTE_URL, "+refs/heads/main:refs/remotes/origin/main")
         self.git("merge-base", "--is-ancestor", commit, "origin/main")
         self.ensure_clean()
         self.git("checkout", "--detach", commit, work=True)
@@ -274,7 +279,7 @@ class Release:
         local = self.git("tag", "--list", tag)
         if local and self.git("rev-parse", f"{tag}^{{commit}}") != commit:
             raise RuntimeError(f"Local tag {tag} points to another commit; it will not be overwritten")
-        remote = self.git("ls-remote", "--tags", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}")
+        remote = self.git("ls-remote", "--tags", REMOTE_URL, f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}")
         if remote:
             refs = dict(line.split()[::-1] for line in remote.splitlines())
             if refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}")) != commit:
@@ -282,7 +287,7 @@ class Release:
         else:
             if not local:
                 self.git("tag", "-a", tag, commit, "-m", f"Release {tag}")
-            self.git("push", "origin", f"refs/tags/{tag}")
+            self.git("push", REMOTE_URL, f"refs/tags/{tag}")
         self.ensure_clean()
         self.git("worktree", "remove", str(self.work))
         shutil.rmtree(self.directory)
@@ -314,10 +319,6 @@ def main():
                 if not shutil.which(tool):
                     raise RuntimeError(f"Required executable not found: {tool}")
             run("gh", "auth", "status", cwd=root)
-            origin = run("git", "remote", "get-url", "--push", "origin", cwd=root, capture=True)
-            if not re.fullmatch(r"(?:ssh://git@github\.com/|git@github\.com:|https://github\.com/)"
-                                + re.escape(REPO) + r"(?:\.git)?", origin):
-                raise RuntimeError(f"origin must push to github.com/{REPO}, got {origin!r}")
             current = Release(root, directory, args.kind)
             current.execute()
         except (RuntimeError, subprocess.CalledProcessError, OSError, ValueError, KeyError, tarfile.TarError) as error:
