@@ -1,5 +1,6 @@
 - github を使うときは gh コマンドを使うこと
 - 機能を実装するときは最新の main ブランチからブランチを作って PR を作ること
+- PR をマージしたら最新の main を fetch し、ローカルの main を更新してチェックアウトすること
 - Rust の型名は責務を表すようにすること
   - データ・値は表す内容（`Id`、`Info`、`Summary`、`Sample`、`Snapshot` など）、処理・状態・リソースを管理する型は役割（`Scanner`、`Monitor`、`Collector`、`Reader`、`Cache`、`Unwinder`、`Encoder`、`Resolver`、`Guard` など）が伝わる名前にすること
   - 補助メソッドの有無だけで分類せず、すべての型に機械的な接尾辞を付けることは求めない。
