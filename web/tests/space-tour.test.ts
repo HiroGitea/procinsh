@@ -12,7 +12,9 @@ import {
   cpuActivity,
 } from "./support/fixtures.js";
 
-function setup(scene: TourScene = { subjects: [], connections: [] }) {
+function setup(
+  scene: TourScene = { subjects: [], flythroughSubjects: [], connections: [] },
+) {
   const camera = new T.PerspectiveCamera(45, 1.6, 0.1, 1500);
   camera.up.set(0, 0, 1);
   camera.position.set(65, -85, 70);
@@ -56,6 +58,7 @@ function setup(scene: TourScene = { subjects: [], connections: [] }) {
   };
 }
 const busy: TourScene = {
+  flythroughSubjects: [],
   subjects: [
     {
       id: "quiet",
@@ -191,13 +194,71 @@ describe("SPACE cinematic tour", () => {
     expect(s.controls.target.distanceTo(target)).toBeLessThan(1e-9);
   });
 
+  test("flythrough visits kernel subjects at constant speed for 15 seconds", () => {
+    const s = setup({
+      subjects: [
+        {
+          id: "systemd",
+          position: { x: -1000, y: 0, z: 4 },
+          activity: 0,
+          connections: 0,
+        },
+      ],
+      connections: [],
+      flythroughSubjects: Array.from({ length: 6 }, (_, i) => ({
+        id: `kernel-${i}`,
+        position: { x: 100 + i * 6, y: (i % 3) * 5, z: 4 },
+        activity: 0,
+        connections: 0,
+      })),
+    });
+    s.tour.start();
+    for (let i = 0; s.tour.shotKind !== "flythrough" && i < 5000; i++)
+      s.advance(1 / 60);
+    expect(s.tour.shotKind).toBe("flythrough");
+    s.advance(10 / 1.4 + 0.2);
+    expect(s.controls.target.x).toBeGreaterThan(90);
+    const previous = s.camera.position.clone();
+    const sampleCount = s.samples();
+    for (let i = 0; i < 360; i++) {
+      s.advance(1 / 60);
+      const speed = s.camera.position.distanceTo(previous) * 60;
+      expect(speed).toBeGreaterThan(5.8);
+      expect(speed).toBeLessThan(6.2);
+      previous.copy(s.camera.position);
+    }
+    expect(s.samples()).toBe(sampleCount);
+    s.advance(8.6);
+    expect(s.tour.shotKind).toBe("flythrough");
+    s.advance(0.4);
+    expect(s.tour.shotKind).toBe("overview");
+  });
+
+  test("flythrough safely resumes after hiding and manual interruption freezes its pose", () => {
+    const s = setup(busy);
+    s.tour.start();
+    s.advance(52 / 1.4 + 10 / 1.4 + 3);
+    expect(s.tour.shotKind).toBe("flythrough");
+    const position = s.camera.position.clone();
+    const target = s.controls.target.clone();
+    s.tour.suspend();
+    s.tour.update(s.now() + 3600000);
+    expect(s.camera.position.distanceTo(position)).toBeLessThan(1e-9);
+    s.controls.dispatchEvent({ type: "start" });
+    s.controls.update();
+    s.advance(10);
+    expect(s.tour.active).toBe(false);
+    expect(s.camera.position.distanceTo(position)).toBeLessThan(1e-9);
+    expect(s.controls.target.distanceTo(target)).toBeLessThan(1e-9);
+  });
+
   test("hero compositions favor connected activity, then avoid the previous subject", () => {
     const s = setup(busy);
     s.tour.start();
     s.advance(44 / 1.4);
     expect(s.tour.shotKind).toBe("hero");
     expect(s.controls.target.x).toBeCloseTo(12);
-    s.advance(78 / 1.4);
+    s.advance(83 / 1.4);
     expect(s.tour.shotKind).toBe("hero");
     expect(s.controls.target.x).toBeCloseTo(-12);
     // A frozen scene does not need activity updates to keep the tour running.
@@ -232,6 +293,7 @@ describe("SPACE cinematic tour", () => {
           connections: 0,
         })),
         connections: [],
+        flythroughSubjects: [],
       });
       s.camera.aspect = 0.5;
       s.tour.start();
@@ -378,6 +440,7 @@ test("tour favors the systemd tree and excludes kthreadd descendants and their c
   const sample = tourScene(view, new Map(), 1000);
   expect(sample.subjects.map((s) => s.id)).toEqual(["1:1", "5:1", "6:1"]);
   expect(sample.connections).toHaveLength(1);
+  expect(sample.flythroughSubjects.map((s) => s.id)).toEqual(["3:1", "4:1"]);
   expect(sample.subjects.find((s) => s.id === "6:1")?.connections).toBe(1);
   // Hidden ancestors still classify their descendants; filtered or non-systemd
   // recordings fall back to other visible userspace processes.
@@ -388,6 +451,7 @@ test("tour favors the systemd tree and excludes kthreadd descendants and their c
   view.hullIds = ["3:1", "4:1"];
   expect(tourScene(view, new Map(), 1000)).toEqual({
     subjects: [],
+    flythroughSubjects: sample.flythroughSubjects,
     connections: [],
   });
 });

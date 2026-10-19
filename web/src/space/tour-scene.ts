@@ -1,4 +1,4 @@
-// Sample userspace geometry and activity only when a tour shot is chosen.
+// Sample userspace compositions and kernel flythrough subjects at shot transitions.
 import type { RenderView } from "./contracts.js";
 import type { CpuGlow, TourScene } from "./types.js";
 import { key } from "./model.js";
@@ -61,8 +61,8 @@ export function tourScene(
       subjects.has(key(socket.endpoint.process_id)),
     ),
   ];
-  return {
-    subjects: [...subjects].flatMap((id) => {
+  function sample(ids: Iterable<string>) {
+    return [...ids].flatMap((id) => {
       const node = view.nodes.get(id);
       if (!node) return [];
       const glow = cpu.get(id);
@@ -77,7 +77,15 @@ export function tourScene(
           connections: degrees.get(id) ?? 0,
         },
       ];
-    }),
+    });
+  }
+  return {
+    subjects: sample(subjects),
+    flythroughSubjects: sample(
+      view.hullIds.filter(
+        (id) => kernel.has(id) && view.nodes.get(id)?.name !== "kthreadd",
+      ),
+    ),
     connections: curves.map(({ curve }) => curve.getPoints(4)),
   };
 }
