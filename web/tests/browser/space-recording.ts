@@ -44,7 +44,7 @@ export async function checkSpaceRecording(
     "window.spaceTestSources.at(-1).dispatchEvent(new Event('error'))",
   );
   await waitFor(
-    "document.querySelector('#download-recording').textContent==='Download recording'",
+    "document.querySelector('#download-recording').textContent==='Save file'",
     "connection interruption retains recording",
   );
   assert.match(
