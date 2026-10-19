@@ -29,7 +29,8 @@ Support on WSL2 is very limited, I recommend building procinsh from source rathe
 
 In SPACE (live or replay), **Tour Mode** moves through overview, process close-up,
 and lateral flythrough shots, favoring the systemd tree and excluding
-kthreadd descendants from shot targets. The tour includes occasional pauses and automatic
+kthreadd descendants from shot targets. Each overview makes a full 360-degree orbit.
+The tour includes occasional pauses and automatic
 Rearrange at wide-shot boundaries. **Exit Tour**, Esc, drag, or zoom returns
 camera control; search, Fit all, and Rearrange also stop the tour. Share or bookmark
 `/space?tour=1` (or add `&tour=1` to a replay URL) to start touring automatically

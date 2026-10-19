@@ -14,6 +14,7 @@ interface Shot {
   travel: number;
   drift: number;
   hold: number;
+  orbitAngle: number;
 }
 const TOUR_SPEED = 1.4;
 const ease = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -92,14 +93,18 @@ export class TourCamera {
         shot.arrival,
         shot.departure,
         ease((this.elapsed - shot.travel) / shot.drift),
+        shot.orbitAngle,
       );
-    } else if (this.elapsed >= shot.travel + shot.drift + shot.hold) {
-      // Rearrange from a wide composition, without invoking manual Fit all.
-      if (shot.kind === "overview" && this.untilRearrange <= 0) {
-        this.rearrange();
-        this.untilRearrange = 100 + this.random() * 50;
+    } else {
+      this.move(shot.arrival, shot.departure, 1, shot.orbitAngle);
+      if (this.elapsed >= shot.travel + shot.drift + shot.hold) {
+        // Rearrange from a wide composition, without invoking manual Fit all.
+        if (shot.kind === "overview" && this.untilRearrange <= 0) {
+          this.rearrange();
+          this.untilRearrange = 100 + this.random() * 50;
+        }
+        this.nextShot();
       }
-      this.nextShot();
     }
   }
 
@@ -119,12 +124,15 @@ export class TourCamera {
     };
   }
 
-  private move(from: Pose, to: Pose, t: number) {
+  private move(from: Pose, to: Pose, t: number, orbitAngle?: number) {
     // Interpolate offsets in cylindrical coordinates: opposite viewpoints cannot
     // collapse through the target, and the Z-up horizon remains level.
     const a = Math.atan2(from.offset.y, from.offset.x);
     const b = Math.atan2(to.offset.y, to.offset.x);
-    const angle = a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
+    // An explicit sweep preserves full revolutions; endpoint angles alone
+    // would reduce a 360-degree orbit to a stationary pose.
+    const sweep = orbitAngle ?? Math.atan2(Math.sin(b - a), Math.cos(b - a));
+    const angle = a + sweep * t;
     const radius = T.MathUtils.lerp(
       Math.hypot(from.offset.x, from.offset.y),
       Math.hypot(to.offset.x, to.offset.y),
@@ -213,11 +221,17 @@ export class TourCamera {
         distance * elevation,
       ),
     };
+    const orbitAngle =
+      kind === "overview"
+        ? Math.PI * 2
+        : kind === "hero"
+          ? 0.12 + this.random() * 0.15
+          : 0;
     const departure: Pose = {
       target: target.clone(),
       offset: arrival.offset
         .clone()
-        .applyAxisAngle(new T.Vector3(0, 0, 1), 0.12 + this.random() * 0.15),
+        .applyAxisAngle(new T.Vector3(0, 0, 1), orbitAngle),
     };
     if (kind === "flythrough") {
       const lateral = new T.Vector3(
@@ -233,6 +247,7 @@ export class TourCamera {
     this.elapsed = 0;
     this.shot = {
       kind,
+      orbitAngle,
       arrival,
       departure,
       travel: 8 + this.random() * 4,
