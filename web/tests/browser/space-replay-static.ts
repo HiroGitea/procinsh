@@ -6,7 +6,7 @@ import { join, resolve, extname } from "node:path";
 import { tmpdir } from "node:os";
 import { gzipSync } from "node:zlib";
 import { connectPage, pages } from "./harness.js";
-import { checkSpaceTour } from "./space-tour.js";
+import { checkSpaceTour, checkSpaceTourUrl } from "./space-tour.js";
 import { checkReplaySliderTravel } from "./replay-slider.js";
 import { launch, until, delay } from "../support/runtime.js";
 
@@ -296,6 +296,7 @@ try {
         .every((path) => path.startsWith(deploymentBase)),
       `all demo requests stay beneath ${deploymentBase}: ${requests}`,
     );
+    await checkSpaceTourUrl(cdp, evaluate, waitFor, url);
     assert.deepEqual(errors, []);
     console.log(
       `Static SPACE replay passed at ${deploymentBase}: demo, refresh, seek, pause, slow playback, allowlisted IDs, zero API requests.`,
