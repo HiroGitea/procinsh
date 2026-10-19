@@ -40,6 +40,8 @@ class ReleaseTest(unittest.TestCase):
         self.root.mkdir()
         self.remote = Path(self.temp.name) / "remote.git"
         self.real_run = release.run
+        patch.object(release, "REMOTE_URL", str(self.remote)).start()
+        self.addCleanup(patch.stopall)
         self.git("init", "--initial-branch=main")
         self.git("config", "user.name", "Release Test")
         self.git("config", "user.email", "test@example.invalid")
@@ -64,7 +66,6 @@ class ReleaseTest(unittest.TestCase):
         self.checks = [{"conclusion": "SUCCESS"}]
         self.views = 0
         self.merged = None
-        self.addCleanup(patch.stopall)
         patch.object(release, "run", self.command).start()
         patch.object(release, "published", lambda version: self.registry).start()
         patch.object(release, "download", lambda url: self.remote_archive).start()
@@ -122,6 +123,17 @@ class ReleaseTest(unittest.TestCase):
                 raise subprocess.CalledProcessError(1, args)
             return ""
         self.fail(f"Unexpected command: {args}")
+
+    def test_release_uses_fixed_remote_without_changing_origin(self):
+        unused = str(self.root / "unused.git")
+        self.git("remote", "set-url", "origin", unused)
+        self.git("remote", "set-url", "--push", "origin", unused)
+        self.runner.prepare()
+        self.assertEqual(self.git("rev-parse", "origin/main"), self.initial)
+        self.assertEqual(self.git("remote", "get-url", "origin"), unused)
+        self.assertEqual(self.git("remote", "get-url", "--push", "origin"), unused)
+        self.assertIn(self.runner.info["head"], self.git(
+            "ls-remote", str(self.remote), f"refs/heads/{self.runner.info['branch']}"))
 
     def test_end_to_end_pins_merge_commit_and_preserves_checkout(self):
         (self.root / "local-work").write_text("keep me")
@@ -262,8 +274,6 @@ class FailureLogTest(unittest.TestCase):
                     return str(common)
                 if args[:3] == ("gh", "auth", "status"):
                     return ""
-                if args[:3] == ("git", "remote", "get-url"):
-                    return "https://github.com/akawashiro/procinsh.git"
                 self.fail(f"Unexpected bootstrap command: {args}")
 
             for error, code in [(RuntimeError("test failure"), 1), (KeyboardInterrupt(), 130)]:
