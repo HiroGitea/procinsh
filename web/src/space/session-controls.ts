@@ -111,7 +111,7 @@ export function mountRecordingControls(
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     recorder.recording = null;
-    status.textContent = "Recording downloaded. Review before publishing.";
+    status.textContent = "Recording downloaded.";
     refresh();
   };
   addEventListener("beforeunload", (event) => {
