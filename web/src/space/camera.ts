@@ -44,13 +44,17 @@ export function createSpaceCamera(canvas: HTMLCanvasElement) {
       box.expandByPoint(new T.Vector3(p.x, p.y, p.z - 1));
     return box;
   }
-  function adaptWorld(positions: WorldPositions) {
+  function adaptWorld(positions: WorldPositions, expandOnly = false) {
     const box = worldBounds(positions);
     if (box.isEmpty()) return;
     const size = box.getSize(new T.Vector3()),
       extent = Math.max(50, size.x, size.y, size.z);
-    controls.maxDistance = Math.max(500, extent * 2);
-    camera.far = Math.max(1500, extent * 4);
+    controls.maxDistance = Math.max(
+      500,
+      extent * 2,
+      expandOnly ? controls.maxDistance : 0,
+    );
+    camera.far = Math.max(1500, extent * 4, expandOnly ? camera.far : 0);
     camera.updateProjectionMatrix();
     return Math.min(0.0015, 0.8 / extent);
   }
