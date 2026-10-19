@@ -163,10 +163,8 @@ export class TourCamera {
       );
     const center = bounds.getCenter(new T.Vector3());
     const extent = Math.max(16, bounds.getSize(new T.Vector3()).length());
-    const kinds: TourShot[] = ["overview", "hero", "connections", "flythrough"];
+    const kinds: TourShot[] = ["overview", "hero", "flythrough"];
     let kind = kinds[this.shotIndex++ % kinds.length];
-    if (kind === "connections" && !scene.connections.length)
-      kind = "flythrough";
     if (kind === "hero" && !scene.subjects.length) kind = "overview";
     let target = center.clone();
     let distance = extent * 0.85;
@@ -190,13 +188,6 @@ export class TourCamera {
       target = vector(subject.position);
       distance = Math.max(16, Math.min(34, extent * 0.24));
       elevation = 0.5;
-    } else if (kind === "connections") {
-      const curve =
-        scene.connections[Math.floor(this.random() * scene.connections.length)];
-      const box = new T.Box3().setFromPoints(curve.map(vector));
-      target = box.getCenter(new T.Vector3());
-      distance = Math.max(22, box.getSize(new T.Vector3()).length() * 1.2);
-      elevation = 0.65;
     } else if (kind === "flythrough") {
       if (subject) target.lerp(vector(subject.position), 0.55);
       distance = Math.max(22, Math.min(80, extent * 0.4));

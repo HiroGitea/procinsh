@@ -160,4 +160,4 @@ export interface TourScene {
   /** Points along visible connection curves, including their endpoints. */
   connections: Position[][];
 }
-export type TourShot = "overview" | "flythrough" | "connections" | "hero";
+export type TourShot = "overview" | "flythrough" | "hero";
