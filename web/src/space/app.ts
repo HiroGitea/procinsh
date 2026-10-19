@@ -83,7 +83,7 @@ const tour = new TourCamera(
   camera.controls,
   () => tourScene(scene.renderView(), data.cpuGlows, spaceNow()),
   (active) => {
-    $("tour").textContent = active ? "Exit Tour" : "Tour Mode";
+    $("tour").textContent = active ? "Exit Tour" : "Tour mode";
     $("tour").setAttribute("aria-pressed", String(active));
     setTourUrl(active);
   },
