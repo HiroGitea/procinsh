@@ -127,17 +127,21 @@ export async function checkSpaceRecording(
     await evaluate("import(window.spaceTestModule).then(m => m.replayTime)"),
     pausedTime,
   );
-  await evaluate(
-    "document.querySelector('#timeline').value=0;document.querySelector('#timeline').dispatchEvent(new Event('input'))",
-  );
-  const cameraAfterSeek = await readCamera();
-  assert.ok(
-    Math.hypot(
-      ...cameraAfterSeek.position.map(
-        (value, index) => value - cameraAfter.position[index],
-      ),
-    ) < 3,
-    "replay seek does not jump the touring camera",
+  const seek = await evaluate<{
+    before: unknown;
+    after: unknown;
+  }>(`(async () => {
+    const m = await import(window.spaceTestModule);
+    const before = m.cameraView();
+    const timeline = document.querySelector('#timeline');
+    timeline.value = 0;
+    timeline.dispatchEvent(new Event('input'));
+    return { before, after: m.cameraView() };
+  })()`);
+  assert.deepEqual(
+    seek.after,
+    seek.before,
+    "replay seek preserves the camera pose in the same frame",
   );
   assert.equal(
     await evaluate(
