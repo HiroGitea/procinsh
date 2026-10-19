@@ -37,21 +37,30 @@ export function createTourFlight(
       );
     }
   } else {
-    // Visit nearby subjects in nearest-neighbor order. Bow each leg sideways
-    // so even two subjects or a collinear row allow smooth turns without stops.
-    const ordered = [selected.shift()!];
-    while (selected.length) {
-      const last = ordered.at(-1)!;
-      selected.sort(
-        (a, b) => a.distanceToSquared(last) - b.distanceToSquared(last),
-      );
-      ordered.push(selected.shift()!);
+    // Walk the cluster's convex boundary to avoid tight reversals between
+    // nearby interior subjects. Collinear clusters reduce to a rounded oval.
+    const sorted = [...selected].sort((a, b) => a.x - b.x || a.y - b.y);
+    const cross = (a: T.Vector3, b: T.Vector3, c: T.Vector3) =>
+      (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    function boundary(input: T.Vector3[]) {
+      const chain: T.Vector3[] = [];
+      for (const point of input) {
+        while (
+          chain.length > 1 &&
+          cross(chain.at(-2)!, chain.at(-1)!, point) <= 0
+        )
+          chain.pop();
+        chain.push(point);
+      }
+      chain.pop();
+      return chain;
     }
+    const ordered = [...boundary(sorted), ...boundary([...sorted].reverse())];
     for (let i = 0; i < ordered.length; i++) {
       const from = ordered[i],
         to = ordered[(i + 1) % ordered.length];
       const direction = to.clone().sub(from);
-      const side = new T.Vector3(-direction.y, direction.x, 0);
+      const side = new T.Vector3(direction.y, -direction.x, 0);
       if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
       side.normalize().multiplyScalar(Math.min(4, direction.length() * 0.35));
       points.push(from, from.clone().lerp(to, 0.5).add(side));
