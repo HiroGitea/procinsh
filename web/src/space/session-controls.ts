@@ -24,19 +24,25 @@ function demoControls(open: (id: string) => void) {
   controls.className = "demo-controls";
   const select = document.createElement("select");
   select.id = "demo-recording";
-  select.setAttribute("aria-label", "Demo recording");
+  select.setAttribute("aria-label", "Open demo");
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Open demo";
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  select.append(placeholder);
   for (const recording of bundledRecordings) {
     const option = document.createElement("option");
     option.value = recording.id;
     option.textContent = recording.label;
     select.append(option);
   }
-  const button = document.createElement("button");
-  button.id = "open-demo";
-  button.type = "button";
-  button.textContent = "Open demo";
-  button.onclick = () => open(select.value);
-  controls.append(button, select);
+  select.onchange = () => {
+    const id = select.value;
+    select.value = "";
+    if (id) open(id);
+  };
+  controls.append(select);
   return controls;
 }
 
@@ -258,7 +264,6 @@ export function mountReplayControls(
       refresh();
       return;
     }
-    demo.querySelector("select")!.value = id;
     void load(async () => {
       // Replay pages are two directories below the movable bundle root.
       const response = await fetch(

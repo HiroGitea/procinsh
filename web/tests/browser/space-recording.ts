@@ -194,8 +194,13 @@ export async function checkSpaceRecording(
     0,
   );
   await cdp("Page.navigate", { url: base + "/space" });
-  await waitFor("document.querySelector('#open-demo')", "live demo picker");
-  await evaluate("document.querySelector('#open-demo').click()");
+  await waitFor(
+    "document.querySelector('#demo-recording')",
+    "live demo picker",
+  );
+  await evaluate(
+    "document.querySelector('#demo-recording').value='chrome-ubuntu26';document.querySelector('#demo-recording').dispatchEvent(new Event('change'))",
+  );
   await waitFor(
     "location.search==='?recording=chrome-ubuntu26' && document.querySelector('#replay-status')?.hidden && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
     "live Open demo navigates to looping demo playback",
