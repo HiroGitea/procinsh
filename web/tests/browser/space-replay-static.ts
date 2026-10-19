@@ -157,7 +157,7 @@ try {
         await evaluate(
           "document.querySelector('.left-hud').getBoundingClientRect().width",
         ),
-        170,
+        150,
       );
       assert.equal(
         await evaluate(
