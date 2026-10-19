@@ -139,6 +139,57 @@ describe("SPACE cinematic tour", () => {
     expect(s.tour.active).toBe(true);
   });
 
+  test("overview traverses a full circle at a fixed radius, height and target", () => {
+    const s = setup(busy);
+    s.tour.start();
+    let arrival: T.Vector3 | undefined;
+    let target: T.Vector3 | undefined;
+    let previousAngle: number | undefined;
+    let swept = 0;
+    let radius = 0;
+    // With the fixed random source, travel is 10 and orbit is 16 tour seconds.
+    for (let i = 0; i <= 2600; i++) {
+      s.tour.update((i * 1000) / 140);
+      if (i < 1000) continue;
+      const offset = s.camera.position.clone().sub(s.controls.target);
+      const angle = Math.atan2(offset.y, offset.x);
+      if (previousAngle !== undefined) {
+        const delta = Math.atan2(
+          Math.sin(angle - previousAngle),
+          Math.cos(angle - previousAngle),
+        );
+        expect(delta).toBeGreaterThanOrEqual(-1e-10);
+        expect(delta).toBeLessThan(0.02);
+        swept += delta;
+      } else {
+        arrival = s.camera.position.clone();
+        target = s.controls.target.clone();
+        radius = Math.hypot(offset.x, offset.y);
+      }
+      expect(s.controls.target.distanceTo(target!)).toBeLessThan(1e-9);
+      expect(Math.hypot(offset.x, offset.y)).toBeCloseTo(radius, 8);
+      expect(s.camera.position.z).toBeCloseTo(arrival!.z, 8);
+      previousAngle = angle;
+    }
+    expect(swept).toBeCloseTo(Math.PI * 2, 8);
+    expect(s.camera.position.distanceTo(arrival!)).toBeLessThan(1e-8);
+  });
+
+  test("manual control can interrupt a full overview orbit without a jump", () => {
+    const s = setup(busy);
+    s.tour.start();
+    s.advance(12);
+    expect(s.tour.shotKind).toBe("overview");
+    const position = s.camera.position.clone();
+    const target = s.controls.target.clone();
+    s.controls.dispatchEvent({ type: "start" });
+    s.controls.update();
+    s.advance(20);
+    expect(s.tour.active).toBe(false);
+    expect(s.camera.position.distanceTo(position)).toBeLessThan(1e-9);
+    expect(s.controls.target.distanceTo(target)).toBeLessThan(1e-9);
+  });
+
   test("hero compositions favor connected activity, then avoid the previous subject", () => {
     const s = setup(busy);
     s.tour.start();
