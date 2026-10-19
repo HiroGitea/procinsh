@@ -12,9 +12,7 @@ import {
   cpuActivity,
 } from "./support/fixtures.js";
 
-function setup(
-  scene: TourScene = { subjects: [], flythroughSubjects: [], connections: [] },
-) {
+function setup(scene: TourScene = { subjects: [], connections: [] }) {
   const camera = new T.PerspectiveCamera(45, 1.6, 0.1, 1500);
   camera.up.set(0, 0, 1);
   camera.position.set(65, -85, 70);
@@ -58,7 +56,6 @@ function setup(
   };
 }
 const busy: TourScene = {
-  flythroughSubjects: [],
   subjects: [
     {
       id: "quiet",
@@ -194,19 +191,11 @@ describe("SPACE cinematic tour", () => {
     expect(s.controls.target.distanceTo(target)).toBeLessThan(1e-9);
   });
 
-  test("flythrough visits kernel subjects at constant speed for 15 seconds", () => {
+  test("flythrough visits userspace subjects at constant speed for 15 seconds", () => {
     const s = setup({
-      subjects: [
-        {
-          id: "systemd",
-          position: { x: -1000, y: 0, z: 4 },
-          activity: 0,
-          connections: 0,
-        },
-      ],
       connections: [],
-      flythroughSubjects: Array.from({ length: 6 }, (_, i) => ({
-        id: `kernel-${i}`,
+      subjects: Array.from({ length: 6 }, (_, i) => ({
+        id: `userspace-${i}`,
         position: { x: 100 + i * 6, y: (i % 3) * 5, z: 4 },
         activity: 0,
         connections: 0,
@@ -293,7 +282,6 @@ describe("SPACE cinematic tour", () => {
           connections: 0,
         })),
         connections: [],
-        flythroughSubjects: [],
       });
       s.camera.aspect = 0.5;
       s.tour.start();
@@ -440,7 +428,6 @@ test("tour favors the systemd tree and excludes kthreadd descendants and their c
   const sample = tourScene(view, new Map(), 1000);
   expect(sample.subjects.map((s) => s.id)).toEqual(["1:1", "5:1", "6:1"]);
   expect(sample.connections).toHaveLength(1);
-  expect(sample.flythroughSubjects.map((s) => s.id)).toEqual(["3:1", "4:1"]);
   expect(sample.subjects.find((s) => s.id === "6:1")?.connections).toBe(1);
   // Hidden ancestors still classify their descendants; filtered or non-systemd
   // recordings fall back to other visible userspace processes.
@@ -451,7 +438,6 @@ test("tour favors the systemd tree and excludes kthreadd descendants and their c
   view.hullIds = ["3:1", "4:1"];
   expect(tourScene(view, new Map(), 1000)).toEqual({
     subjects: [],
-    flythroughSubjects: sample.flythroughSubjects,
     connections: [],
   });
 });

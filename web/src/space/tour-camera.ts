@@ -227,13 +227,7 @@ export class TourCamera {
     distance = Math.min(distance, maxDistance / Math.hypot(1, elevation));
     const flight =
       kind === "flythrough"
-        ? createTourFlight(
-            scene.flythroughSubjects.length
-              ? scene.flythroughSubjects
-              : scene.subjects,
-            angle,
-            this.random,
-          )
+        ? createTourFlight(scene.subjects, angle, this.random)
         : undefined;
     const arrival: Pose = flight
       ? {
