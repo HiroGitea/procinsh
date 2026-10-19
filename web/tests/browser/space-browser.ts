@@ -256,8 +256,8 @@ try {
     [
       "search",
       "reset",
-      "rearrange",
       "tour",
+      "rearrange",
       "record",
       "download-recording",
       "recording-status",
