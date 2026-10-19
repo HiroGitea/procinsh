@@ -268,11 +268,11 @@ try {
   await checkSpaceTour(cdp, evaluate);
   await evaluate("document.querySelector('#tour').click()");
   const tourBefore = await evaluate<CameraView>(
-    `(await import('${spaceModule}')).cameraView()`,
+    `import('${spaceModule}').then(m => m.cameraView())`,
   );
   await delay(1200);
   const tourAfter = await evaluate<CameraView>(
-    `(await import('${spaceModule}')).cameraView()`,
+    `import('${spaceModule}').then(m => m.cameraView())`,
   );
   assert.notDeepEqual(
     tourAfter.position,
@@ -281,11 +281,13 @@ try {
   );
   await evaluate("document.querySelector('#tour').click()");
   const stopped = await evaluate<CameraView>(
-    `(await import('${spaceModule}')).cameraView()`,
+    `import('${spaceModule}').then(m => m.cameraView())`,
   );
   await delay(200);
   assert.deepEqual(
-    await evaluate<CameraView>(`(await import('${spaceModule}')).cameraView()`),
+    await evaluate<CameraView>(
+      `import('${spaceModule}').then(m => m.cameraView())`,
+    ),
     stopped,
     "exit preserves camera pose",
   );
