@@ -284,13 +284,19 @@ try {
     `import('${spaceModule}').then(m => m.cameraView())`,
   );
   await delay(200);
-  assert.deepEqual(
-    await evaluate<CameraView>(
-      `import('${spaceModule}').then(m => m.cameraView())`,
-    ),
-    stopped,
-    "exit preserves camera pose",
+  const afterStop = await evaluate<CameraView>(
+    `import('${spaceModule}').then(m => m.cameraView())`,
   );
+  for (const field of ["position", "target"] as const) {
+    assert.ok(
+      Math.hypot(
+        ...afterStop[field].map(
+          (value, index) => value - stopped[field][index],
+        ),
+      ) < 1e-8,
+      "exit preserves camera pose within floating-point precision",
+    );
+  }
   await delay(1000);
   assert.ok(snapshot.processes.length > 2);
   const n = snapshot.processes.find((n) => n.identity.pid === app.pid);

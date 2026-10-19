@@ -208,7 +208,8 @@ export class TourCamera {
         halfFov,
         Math.atan(Math.tan(halfFov) * this.camera.aspect),
       );
-      distance = (extent * 0.6) / Math.sin(halfAngle);
+      distance =
+        (extent * 0.52) / (Math.sin(halfAngle) * Math.hypot(1, elevation));
     }
     const maxDistance = this.controls.maxDistance * 0.95;
     distance = Math.min(distance, maxDistance / Math.hypot(1, elevation));
