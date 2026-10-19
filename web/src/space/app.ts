@@ -85,6 +85,7 @@ const tour = new TourCamera(
   (active) => {
     $("tour").textContent = active ? "Exit Tour" : "Tour Mode";
     $("tour").setAttribute("aria-pressed", String(active));
+    setTourUrl(active);
   },
   rearrangeScene,
 );
@@ -201,7 +202,7 @@ function updateDetails() {
 }
 
 function updateSelection() {
-  tour.stop();
+  stopTour();
   scene.updateSelection(selection);
   updateDetails();
 }
@@ -233,10 +234,11 @@ function updateSnapshot() {
   retainParticles();
   adaptCamera();
   if (firstView && data.nodes.size) {
-    if (!tour.active) fitScene();
+    if (!tour.active) camera.fit(worldPositions());
     firstView = false;
   }
   updateDetails();
+  syncTourFromUrl();
 }
 function renderSystemSnapshot(snapshot: SystemSnapshot, rearrange = false) {
   data.replaceSnapshot(snapshot, rearrange);
@@ -266,7 +268,7 @@ function pruneFiles(now = spaceNow()) {
   if (data.pruneFiles(now)) refreshFiles();
 }
 function fitScene() {
-  tour.stop();
+  stopTour();
   if (data.nodes.size) camera.fit(worldPositions());
 }
 
@@ -275,16 +277,38 @@ function rearrangeScene() {
   renderSystemSnapshot(data.snapshot, true);
 }
 $("rearrange").onclick = () => {
-  tour.stop();
+  stopTour();
   rearrangeScene();
   fitScene();
 };
+function setTourUrl(active: boolean) {
+  const url = new URL(location.href);
+  if (active) url.searchParams.set("tour", "1");
+  else url.searchParams.delete("tour");
+  if (url.href !== location.href) history.replaceState(history.state, "", url);
+}
+function stopTour() {
+  tour.stop();
+  setTourUrl(false);
+}
+function syncTourFromUrl() {
+  if (new URL(location.href).searchParams.get("tour") !== "1") {
+    tour.stop();
+  } else if (reducedMotion.matches) {
+    stopTour();
+  } else if (data.nodes.size && !document.hidden) {
+    tour.start();
+  }
+}
+addEventListener("popstate", syncTourFromUrl);
+$("world").addEventListener("pointerdown", stopTour);
+$("world").addEventListener("wheel", stopTour, { passive: true });
 $("tour").onclick = () => {
-  if (tour.active) tour.stop();
+  if (tour.active) stopTour();
   else tour.start(reducedMotion.matches);
 };
 function syncMotionPreference() {
-  if (reducedMotion.matches) tour.stop();
+  if (reducedMotion.matches) stopTour();
   $("tour").disabled = reducedMotion.matches;
   $("tour").title = reducedMotion.matches
     ? "Tour motion is disabled by your reduced-motion preference"
@@ -292,9 +316,9 @@ function syncMotionPreference() {
 }
 reducedMotion.addEventListener("change", syncMotionPreference);
 syncMotionPreference();
-$("search").addEventListener("input", () => tour.stop());
+$("search").addEventListener("input", stopTour);
 addEventListener("keydown", (event) => {
-  if (event.key === "Escape") tour.stop();
+  if (event.key === "Escape") stopTour();
 });
 $("close").onclick = clearSelection;
 $("reset").onclick = () => {
@@ -317,6 +341,7 @@ function start() {
   tour.suspend();
   renderer.resume();
   if (!replayMode) data.start();
+  syncTourFromUrl();
 }
 function stop() {
   tour.suspend();

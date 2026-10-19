@@ -22,7 +22,7 @@ import { checkNetworkSpace } from "./space-network.js";
 import { checkSocketVisibility } from "./space-socket-visibility.js";
 import { processEventRecording } from "./process-events.js";
 import { checkSpaceRecording } from "./space-recording.js";
-import { checkSpaceTour } from "./space-tour.js";
+import { checkSpaceTour, checkSpaceTourUrl } from "./space-tour.js";
 import { checkBuildHeader } from "./build-header.js";
 
 // The test build manifest locates the SPACE inspection module.
@@ -981,6 +981,7 @@ try {
     [],
   );
   await checkSpaceRecording(cdp, evaluate, waitFor, url);
+  await checkSpaceTourUrl(cdp, evaluate, waitFor, url + "/space");
   assert.deepEqual(
     errors.filter((e) => !/favicon.ico/.test(e)),
     [],

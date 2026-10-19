@@ -31,7 +31,9 @@ In SPACE (live or replay), **Tour Mode** moves through overview, flythrough,
 connection, and process close-up shots, favoring the systemd tree and excluding
 kthreadd descendants from shot targets. The tour includes occasional pauses and automatic
 Rearrange at wide-shot boundaries. **Exit Tour**, Esc, drag, or zoom returns
-camera control; search, Fit all, and Rearrange also stop the tour. The tour
+camera control; search, Fit all, and Rearrange also stop the tour. Share or bookmark
+`/space?tour=1` (or add `&tour=1` to a replay URL) to start touring automatically
+once the scene loads. Starting or stopping the tour updates the URL. The tour
 pauses while the tab is hidden and is disabled with reduced motion enabled.
 
 ### Install from crates.io
