@@ -176,7 +176,7 @@ export class TourCamera {
     if (kind === "hero" && !scene.subjects.length) kind = "overview";
     let target = center.clone();
     let distance = extent * 0.85;
-    let elevation = 0.85;
+    let elevation = 0.45;
     const angle = this.shotIndex * 2.399963 + this.random() * 0.7;
     const ranked = scene.subjects
       .filter(

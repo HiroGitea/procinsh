@@ -165,6 +165,7 @@ describe("SPACE cinematic tour", () => {
         arrival = s.camera.position.clone();
         target = s.controls.target.clone();
         radius = Math.hypot(offset.x, offset.y);
+        expect(Math.atan2(offset.z, radius)).toBeLessThan(Math.PI / 6);
       }
       expect(s.controls.target.distanceTo(target!)).toBeLessThan(1e-9);
       expect(Math.hypot(offset.x, offset.y)).toBeCloseTo(radius, 8);
