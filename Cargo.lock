@@ -1013,7 +1013,7 @@ dependencies = [
 
 [[package]]
 name = "procinsh"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "addr2line",
  "anyhow",
