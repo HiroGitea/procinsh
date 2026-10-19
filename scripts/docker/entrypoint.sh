@@ -24,6 +24,7 @@ case "$suite" in
     cargo test --locked
     npm --prefix web test
     python3 tests/listen-policy.py
+    python3 tests/release.py
     npm --prefix web run test:dev
     ;;
   checks)

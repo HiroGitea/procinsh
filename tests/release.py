@@ -63,6 +63,8 @@ class ReleaseTest(unittest.TestCase):
         self.registry = None
         self.uploads = 0
         self.fail_upload = False
+        self.fail_release = False
+        self.releases = []
         self.checks = [{"conclusion": "SUCCESS"}]
         self.views = 0
         self.merged = None
@@ -81,6 +83,19 @@ class ReleaseTest(unittest.TestCase):
         if args[:3] == ("gh", "pr", "create"):
             self.pr = "https://github.com/akawashiro/procinsh/pull/999"
             return self.pr
+        if args[:3] == ("gh", "release", "create"):
+            tag = args[3]
+            self.assertEqual(args[4:8], ("--verify-tag", "--title", tag, "--notes-file"))
+            self.assertEqual(Path(args[8]).read_text(), "")
+            self.assertEqual(args[9:], ("--repo", release.REPO))
+            self.assertEqual(self.uploads, 1)
+            self.assertEqual(self.git("rev-parse", f"{tag}^{{commit}}"), self.merged)
+            self.assertIn(self.merged, self.git(
+                "ls-remote", str(self.remote), f"refs/tags/{tag}^{{}}"))
+            if self.fail_release:
+                raise subprocess.CalledProcessError(1, args)
+            self.releases.append(tag)
+            return f"https://github.com/{release.REPO}/releases/tag/{tag}"
         if args[:3] == ("gh", "repo", "view"):
             self.assertNotIn("--repo", args)
             return '{"viewerDefaultMergeMethod":"SQUASH"}'
@@ -137,13 +152,28 @@ class ReleaseTest(unittest.TestCase):
 
     def test_end_to_end_pins_merge_commit_and_preserves_checkout(self):
         (self.root / "local-work").write_text("keep me")
-        self.runner.execute()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.runner.execute()
         self.assertEqual(self.git("rev-parse", "HEAD"), self.initial)
         self.assertEqual((self.root / "local-work").read_text(), "keep me")
         self.assertEqual(self.git("rev-parse", "v0.1.14^{commit}"), self.merged)
         self.assertNotEqual(self.merged, self.git("rev-parse", "origin/main"))
         self.assertEqual(self.uploads, 1)
+        self.assertEqual(self.releases, ["v0.1.14"])
+        self.assertIn("https://github.com/akawashiro/procinsh/releases/tag/v0.1.14", output.getvalue())
         self.assertFalse(self.runner.directory.exists())
+
+    def test_release_failure_preserves_publication_tag_and_worktree(self):
+        self.fail_release = True
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(subprocess.CalledProcessError):
+            self.runner.execute()
+        self.assertIsNotNone(self.registry)
+        self.assertEqual(self.git("rev-parse", "v0.1.14^{commit}"), self.merged)
+        self.assertTrue(self.runner.work.exists())
+        self.assertTrue((self.directory / "attempt.crate").exists())
+        self.assertNotIn("Released v", output.getvalue())
 
     def test_failed_checks_stop_and_leave_worktree_for_inspection(self):
         self.checks = [{"conclusion": "FAILURE"}]
@@ -170,6 +200,7 @@ class ReleaseTest(unittest.TestCase):
         self.assertTrue(self.runner.work.exists())
         self.assertTrue((self.directory / "attempt.crate").exists())
         self.assertFalse(self.git("tag", "--list", "v0.1.14"))
+        self.assertFalse(any(c[:3] == ("gh", "release", "create") for c in self.calls))
         self.assertFalse(list(self.directory.glob("*.json")))
 
     def test_changed_remote_archive_is_rejected(self):
@@ -190,6 +221,7 @@ class ReleaseTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "another commit"):
             self.runner.tag()
         self.assertEqual(self.git("rev-parse", "v0.1.14"), self.initial)
+        self.assertFalse(any(c[:3] == ("gh", "release", "create") for c in self.calls))
 
     def test_changed_pr_head_is_rejected(self):
         self.runner.prepare()

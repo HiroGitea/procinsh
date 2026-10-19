@@ -288,10 +288,15 @@ class Release:
             if not local:
                 self.git("tag", "-a", tag, commit, "-m", f"Release {tag}")
             self.git("push", REMOTE_URL, f"refs/tags/{tag}")
+        notes = self.directory / "release-notes.md"
+        notes.write_text("")
+        url = self.gh("release", "create", tag, "--verify-tag", "--title", tag,
+                      "--notes-file", str(notes))
         self.ensure_clean()
         self.git("worktree", "remove", str(self.work))
         shutil.rmtree(self.directory)
         print(f"Released {tag}: https://crates.io/crates/{PACKAGE}/{self.info['version']}", flush=True)
+        print(f"GitHub Release: {url}", flush=True)
 
     def execute(self):
         self.prepare()
