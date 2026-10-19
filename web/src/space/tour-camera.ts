@@ -15,6 +15,7 @@ interface Shot {
   drift: number;
   hold: number;
 }
+const TOUR_SPEED = 1.4;
 const ease = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const vector = (p: Position) => new T.Vector3(p.x, p.y, p.z);
 
@@ -81,7 +82,7 @@ export class TourCamera {
       this.lastTime === undefined ? 0 : (wallTime - this.lastTime) / 1000;
     const delta = gap >= 0 && gap < 0.25 ? gap : 0;
     this.lastTime = wallTime;
-    this.elapsed += delta;
+    this.elapsed += delta * TOUR_SPEED;
     this.untilRearrange -= delta;
     const shot = this.shot;
     if (this.elapsed < shot.travel) {
