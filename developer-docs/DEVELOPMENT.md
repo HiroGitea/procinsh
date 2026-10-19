@@ -74,6 +74,8 @@ From a checkout of this repository, run one of:
 ./scripts/release.sh major  # 0.1.13 -> 1.0.0
 ```
 
+The script verifies the crates.io publication, pushes the version tag, and creates a published GitHub Release titled `v<version>` with an empty body and no uploaded assets. If GitHub Release creation fails, the published crate, tag, and release worktree are retained for manual inspection.
+
 ## 実装構成
 
 | 場所 | 役割 |
