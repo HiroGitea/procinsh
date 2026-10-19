@@ -1,4 +1,4 @@
-// Sample visible geometry and activity only when a tour shot is chosen.
+// Sample userspace geometry and activity only when a tour shot is chosen.
 import type { RenderView } from "./contracts.js";
 import type { CpuGlow, TourScene } from "./types.js";
 import { key } from "./model.js";
@@ -8,8 +8,41 @@ export function tourScene(
   cpu: ReadonlyMap<string, CpuGlow>,
   now: number,
 ): TourScene {
+  const children = new Map<string, string[]>();
+  for (const [id, node] of view.nodes) {
+    if (!node.parent_id) continue;
+    const parent = key(node.parent_id);
+    const siblings = children.get(parent) ?? [];
+    siblings.push(id);
+    children.set(parent, siblings);
+  }
+  function tree(name: string) {
+    const pending = [...view.nodes]
+      .filter(([, node]) => node.name === name)
+      .map(([id]) => id);
+    const descendants = new Set<string>();
+    while (pending.length) {
+      const id = pending.pop()!;
+      if (descendants.has(id)) continue;
+      descendants.add(id);
+      for (const child of children.get(id) ?? []) pending.push(child);
+    }
+    return descendants;
+  }
+  const kernel = tree("kthreadd");
+  const systemd = tree("systemd");
+  const visible = view.hullIds.filter((id) => !kernel.has(id));
+  const preferSystemd = visible.some((id) => systemd.has(id));
+  const subjects = new Set(
+    visible.filter((id) => !preferSystemd || systemd.has(id)),
+  );
+  const edges = view.edgeViews.filter(
+    ({ e }) =>
+      subjects.has(key(e.endpoint.process_id)) &&
+      (!e.peer || subjects.has(key(e.peer.process_id))),
+  );
   const degrees = new Map<string, number>();
-  for (const { e } of view.edgeViews) {
+  for (const { e } of edges) {
     for (const endpoint of [e.endpoint, e.peer]) {
       if (!endpoint) continue;
       const id = key(endpoint.process_id);
@@ -17,13 +50,19 @@ export function tourScene(
     }
   }
   const curves = [
-    ...view.edgeViews,
-    ...view.networkViews,
-    ...view.fileViews.values(),
-    ...view.netlinkViews.values(),
+    ...edges,
+    ...view.networkViews.filter(({ group }) =>
+      subjects.has(key(group.endpoint.process_id)),
+    ),
+    ...[...view.fileViews.values()].filter(({ file }) =>
+      subjects.has(key(file.process_id)),
+    ),
+    ...[...view.netlinkViews.values()].filter(({ socket }) =>
+      subjects.has(key(socket.endpoint.process_id)),
+    ),
   ];
   return {
-    subjects: view.hullIds.flatMap((id) => {
+    subjects: [...subjects].flatMap((id) => {
       const node = view.nodes.get(id);
       if (!node) return [];
       const glow = cpu.get(id);
