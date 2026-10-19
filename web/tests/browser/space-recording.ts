@@ -107,6 +107,45 @@ export async function checkSpaceRecording(
     await evaluate("document.querySelector('#play').textContent"),
     "Play",
   );
+  await evaluate("document.querySelector('#tour').click()");
+  const readCamera = () =>
+    evaluate<{ position: number[]; target: number[] }>(
+      "import(window.spaceTestModule).then(m => m.cameraView())",
+    );
+  const pausedTime = await evaluate(
+    "import(window.spaceTestModule).then(m => m.replayTime)",
+  );
+  const cameraBefore = await readCamera();
+  await delay(1200);
+  const cameraAfter = await readCamera();
+  assert.notDeepEqual(
+    cameraAfter.position,
+    cameraBefore.position,
+    "camera advances while replay is paused",
+  );
+  assert.equal(
+    await evaluate("import(window.spaceTestModule).then(m => m.replayTime)"),
+    pausedTime,
+  );
+  await evaluate(
+    "document.querySelector('#timeline').value=0;document.querySelector('#timeline').dispatchEvent(new Event('input'))",
+  );
+  const cameraAfterSeek = await readCamera();
+  assert.ok(
+    Math.hypot(
+      ...cameraAfterSeek.position.map(
+        (value, index) => value - cameraAfter.position[index],
+      ),
+    ) < 3,
+    "replay seek does not jump the touring camera",
+  );
+  assert.equal(
+    await evaluate(
+      "document.querySelector('#tour').getAttribute('aria-pressed')",
+    ),
+    "true",
+  );
+  await evaluate("document.querySelector('#tour').click()");
   await evaluate("document.querySelector('#loop').click()");
   await evaluate(
     `document.dispatchEvent(new DragEvent('drop',{dataTransfer:(()=>{const t=new DataTransfer();t.items.add(new File(['{}'],'bad.json'));return t})()}))`,

@@ -27,6 +27,12 @@ zlib development files, and BTF information at `/sys/kernel/btf/vmlinux`.
 
 Support on WSL2 is very limited, I recommend building procinsh from source rather than installing it from crates.io.
 
+In SPACE (live or replay), **Tour Mode** moves through overview, flythrough,
+connection, and process close-up shots, with occasional pauses and automatic
+Rearrange at wide-shot boundaries. **Exit Tour**, Esc, drag, or zoom returns
+camera control; search, Fit all, and Rearrange also stop the tour. The tour
+pauses while the tab is hidden and is disabled with reduced motion enabled.
+
 ### Install from crates.io
 
 Install [procinsh from crates.io](https://crates.io/crates/procinsh) and run it:

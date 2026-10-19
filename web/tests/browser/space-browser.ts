@@ -22,6 +22,7 @@ import { checkNetworkSpace } from "./space-network.js";
 import { checkSocketVisibility } from "./space-socket-visibility.js";
 import { processEventRecording } from "./process-events.js";
 import { checkSpaceRecording } from "./space-recording.js";
+import { checkSpaceTour } from "./space-tour.js";
 import { checkBuildHeader } from "./build-header.js";
 
 // The test build manifest locates the SPACE inspection module.
@@ -256,12 +257,37 @@ try {
       "search",
       "reset",
       "rearrange",
+      "tour",
       "record",
       "download-recording",
       "recording-status",
       "open-recording",
       "demo-controls",
     ],
+  );
+  await checkSpaceTour(cdp, evaluate);
+  await evaluate("document.querySelector('#tour').click()");
+  const tourBefore = await evaluate<CameraView>(
+    `(await import('${spaceModule}')).cameraView()`,
+  );
+  await delay(1200);
+  const tourAfter = await evaluate<CameraView>(
+    `(await import('${spaceModule}')).cameraView()`,
+  );
+  assert.notDeepEqual(
+    tourAfter.position,
+    tourBefore.position,
+    "tour camera advances in live SPACE",
+  );
+  await evaluate("document.querySelector('#tour').click()");
+  const stopped = await evaluate<CameraView>(
+    `(await import('${spaceModule}')).cameraView()`,
+  );
+  await delay(200);
+  assert.deepEqual(
+    await evaluate<CameraView>(`(await import('${spaceModule}')).cameraView()`),
+    stopped,
+    "exit preserves camera pose",
   );
   await delay(1000);
   assert.ok(snapshot.processes.length > 2);

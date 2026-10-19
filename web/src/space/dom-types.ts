@@ -8,6 +8,7 @@ export interface SpaceElements {
   search: HTMLInputElement;
   reset: HTMLButtonElement;
   rearrange: HTMLButtonElement;
+  tour: HTMLButtonElement;
   details: HTMLElement;
   close: HTMLButtonElement;
   "process-details": HTMLElement;

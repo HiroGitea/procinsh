@@ -13,6 +13,8 @@ import type { SystemSnapshot, SpaceActivity } from "../shared/api-types.js";
 import { createSpaceScene } from "./scene.js";
 import { createSpaceRenderer } from "./renderer.js";
 import { createSpaceCamera } from "./camera.js";
+import { TourCamera } from "./tour-camera.js";
+import { tourScene } from "./tour-scene.js";
 import { createSpaceSearch } from "./search.js";
 import { SpaceSelection, bindSelection } from "./selection.js";
 import type {
@@ -75,6 +77,17 @@ const search = createSpaceSearch(
 );
 const scene = createSpaceScene();
 const camera = createSpaceCamera($("world"));
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const tour = new TourCamera(
+  camera.camera,
+  camera.controls,
+  () => tourScene(scene.renderView(), data.cpuGlows, spaceNow()),
+  (active) => {
+    $("tour").textContent = active ? "Exit Tour" : "Tour Mode";
+    $("tour").setAttribute("aria-pressed", String(active));
+  },
+  rearrangeScene,
+);
 const renderer = createSpaceRenderer({
   graphics: T,
   canvas: $("world"),
@@ -89,6 +102,7 @@ const renderer = createSpaceRenderer({
   beforeFrame(_now) {
     tickReplay?.();
     const now = spaceNow();
+    tour.update(performance.now());
     camera.controls.update();
     if (data.pruneRetention(now)) updateSnapshot();
     if (now - lastFilePrune >= 1000) {
@@ -179,7 +193,7 @@ function rebuildScene() {
 }
 function adaptCamera() {
   if (!data.nodes.size) return;
-  const density = camera.adaptWorld(worldPositions());
+  const density = camera.adaptWorld(worldPositions(), tour.active);
   if (density !== undefined) scene.setFogDensity(density);
 }
 function updateDetails() {
@@ -187,6 +201,7 @@ function updateDetails() {
 }
 
 function updateSelection() {
+  tour.stop();
   scene.updateSelection(selection);
   updateDetails();
 }
@@ -218,7 +233,7 @@ function updateSnapshot() {
   retainParticles();
   adaptCamera();
   if (firstView && data.nodes.size) {
-    fitScene();
+    if (!tour.active) fitScene();
     firstView = false;
   }
   updateDetails();
@@ -251,14 +266,36 @@ function pruneFiles(now = spaceNow()) {
   if (data.pruneFiles(now)) refreshFiles();
 }
 function fitScene() {
+  tour.stop();
   if (data.nodes.size) camera.fit(worldPositions());
 }
 
-$("rearrange").onclick = () => {
+function rearrangeScene() {
   renderer.clearParticles();
   renderSystemSnapshot(data.snapshot, true);
+}
+$("rearrange").onclick = () => {
+  tour.stop();
+  rearrangeScene();
   fitScene();
 };
+$("tour").onclick = () => {
+  if (tour.active) tour.stop();
+  else tour.start(reducedMotion.matches);
+};
+function syncMotionPreference() {
+  if (reducedMotion.matches) tour.stop();
+  $("tour").disabled = reducedMotion.matches;
+  $("tour").title = reducedMotion.matches
+    ? "Tour motion is disabled by your reduced-motion preference"
+    : "Cinematic camera tour · Esc or drag to exit · occasionally rearranges the layout";
+}
+reducedMotion.addEventListener("change", syncMotionPreference);
+syncMotionPreference();
+$("search").addEventListener("input", () => tour.stop());
+addEventListener("keydown", (event) => {
+  if (event.key === "Escape") tour.stop();
+});
 $("close").onclick = clearSelection;
 $("reset").onclick = () => {
   search.clear();
@@ -277,10 +314,12 @@ addEventListener("resize", () => {
 });
 function start() {
   if (document.hidden) return;
+  tour.suspend();
   renderer.resume();
   if (!replayMode) data.start();
 }
 function stop() {
+  tour.suspend();
   renderer.pause();
   recorder.stop("Tab hidden or page left; download the retained recording.");
   if (!replayMode) data.stop();

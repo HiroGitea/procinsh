@@ -6,6 +6,7 @@ import { join, resolve, extname } from "node:path";
 import { tmpdir } from "node:os";
 import { gzipSync } from "node:zlib";
 import { connectPage, pages } from "./harness.js";
+import { checkSpaceTour } from "./space-tour.js";
 import { checkReplaySliderTravel } from "./replay-slider.js";
 import { launch, until, delay } from "../support/runtime.js";
 
@@ -158,6 +159,7 @@ try {
       "bundled recording autoplays with looping enabled",
     );
     assert.equal(await evaluate("location.href"), url);
+    if (base === "/") await checkSpaceTour(cdp, evaluate);
     await checkReplaySliderTravel(cdp, evaluate);
     await evaluate("document.querySelector('#play').click()");
     await waitFor(
@@ -165,6 +167,7 @@ try {
       "virtual playback advances",
     );
     await evaluate("document.querySelector('#play').click()");
+    await evaluate("document.querySelector('#tour').click()");
     const paused = await evaluate<number>(
       "Number(document.querySelector('#timeline').value)",
     );
@@ -205,6 +208,14 @@ try {
       "Number(document.querySelector('#timeline').value)===1 && document.querySelector('#play').textContent==='Play'",
       "disabling loop stops at the end",
     );
+    assert.equal(
+      await evaluate(
+        "document.querySelector('#tour').getAttribute('aria-pressed')",
+      ),
+      "true",
+      "tour survives replay pause, seek, loop and end",
+    );
+    await evaluate("document.querySelector('#tour').click()");
     const timeOrigin = await evaluate<number>("performance.timeOrigin");
     await cdp("Page.reload");
     await waitFor(

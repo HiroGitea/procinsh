@@ -147,3 +147,17 @@ export interface NetlinkView {
   pos: T.Vector3;
   curve: T.QuadraticBezierCurve3;
 }
+
+/** Geometry and activity sampled at tour shot boundaries. */
+export interface TourSubject {
+  id: string;
+  position: Position;
+  activity: number;
+  connections: number;
+}
+export interface TourScene {
+  subjects: TourSubject[];
+  /** Points along visible connection curves, including their endpoints. */
+  connections: Position[][];
+}
+export type TourShot = "overview" | "flythrough" | "connections" | "hero";
