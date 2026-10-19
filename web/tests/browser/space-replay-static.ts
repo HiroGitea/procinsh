@@ -132,20 +132,49 @@ try {
     );
     await cdp("Page.navigate", { url: url.split("?")[0] });
     await waitFor(
-      "document.querySelector('#open-demo')",
+      "document.querySelector('#demo-recording')",
       "demo picker available without a recording",
     );
     assert.equal(
       await evaluate("document.querySelector('#demo-recording').value"),
-      "chrome-ubuntu26",
+      "",
     );
     assert.deepEqual(
       await evaluate(
         "Array.from(document.querySelectorAll('#demo-recording option'), option => option.textContent)",
       ),
-      ["Chrome", "Firefox"],
+      ["Open demo", "Chrome", "Firefox"],
     );
-    await evaluate("document.querySelector('#open-demo').click()");
+    assert.equal(await evaluate("location.search"), "");
+    for (const width of [1280, 390]) {
+      await cdp("Emulation.setDeviceMetricsOverride", {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      assert.equal(
+        await evaluate(
+          "document.querySelector('.left-hud').getBoundingClientRect().width",
+        ),
+        170,
+      );
+      assert.equal(
+        await evaluate(
+          "Array.from(document.querySelectorAll('.tools input, .tools button, .tools select')).filter(e => e.getBoundingClientRect().width > 0).every(e => { const r = e.getBoundingClientRect(); const p = document.querySelector('.left-hud').getBoundingClientRect(); return r.left >= p.left && r.right <= p.right; })",
+        ),
+        true,
+      );
+    }
+    await cdp("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await evaluate(
+      "document.querySelector('#demo-recording').value='chrome-ubuntu26';document.querySelector('#demo-recording').dispatchEvent(new Event('change'))",
+    );
     await waitFor(
       "document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause'",
       "demo loads at deployment base path",
@@ -232,7 +261,9 @@ try {
       "document.querySelector('#replay-status')?.textContent.includes('Unknown bundled recording')",
       "query ID is allowlisted",
     );
-    await evaluate("document.querySelector('#open-demo').click()");
+    await evaluate(
+      "document.querySelector('#demo-recording').value='chrome-ubuntu26';document.querySelector('#demo-recording').dispatchEvent(new Event('change'))",
+    );
     await waitFor(
       "document.querySelector('#replay-status')?.hidden && document.querySelector('#loop').checked && document.querySelector('#play').textContent==='Pause'",
       "demo picker recovers from an unknown recording ID",
@@ -248,12 +279,11 @@ try {
     }
     demoEncoding = "asset";
     for (const id of ["chrome-ubuntu26", "firefox-ubuntu26"]) {
-      const previousOrigin = await evaluate<number>("performance.timeOrigin");
-      await cdp("Page.navigate", {
-        url: url.replace("recording=chrome-ubuntu26", `recording=${id}`),
-      });
+      await evaluate(
+        `document.querySelector('#demo-recording').value=${JSON.stringify(id)};document.querySelector('#demo-recording').dispatchEvent(new Event('change'))`,
+      );
       await waitFor(
-        `performance.timeOrigin!==${previousOrigin} && document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0`,
+        `location.search==='?recording=${id}' && document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause' && Number(document.querySelector('#timeline').value)>0`,
         `real ${id} gzip plays without a backend`,
       );
       await evaluate(
