@@ -2,6 +2,12 @@
 import * as T from "three";
 import type { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Position, TourScene, TourShot } from "./types.js";
+import {
+  createTourFlight,
+  flythroughTarget,
+  FLYTHROUGH_SECONDS,
+  type TourFlight,
+} from "./tour-flight.js";
 
 interface Pose {
   target: T.Vector3;
@@ -15,6 +21,7 @@ interface Shot {
   drift: number;
   hold: number;
   orbitAngle: number;
+  flight?: TourFlight;
 }
 const TOUR_SPEED = 1.4;
 const ease = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -88,6 +95,15 @@ export class TourCamera {
     const shot = this.shot;
     if (this.elapsed < shot.travel) {
       this.move(this.origin!, shot.arrival, ease(this.elapsed / shot.travel));
+    } else if (shot.flight) {
+      const seconds = Math.min(
+        FLYTHROUGH_SECONDS,
+        (this.elapsed - shot.travel) / TOUR_SPEED,
+      );
+      flythroughTarget(shot.flight, seconds, this.controls.target);
+      this.camera.position.copy(this.controls.target).add(shot.flight.offset);
+      this.controls.update();
+      if (this.elapsed >= shot.travel + shot.drift) this.nextShot();
     } else if (this.elapsed < shot.travel + shot.drift) {
       this.move(
         shot.arrival,
@@ -196,10 +212,6 @@ export class TourCamera {
       target = vector(subject.position);
       distance = Math.max(16, Math.min(34, extent * 0.24));
       elevation = 0.5;
-    } else if (kind === "flythrough") {
-      if (subject) target.lerp(vector(subject.position), 0.55);
-      distance = Math.max(22, Math.min(80, extent * 0.4));
-      elevation = 0.28;
     }
     // Fit wide shots to the narrower field of view (portrait windows included).
     if (kind === "overview") {
@@ -213,14 +225,29 @@ export class TourCamera {
     }
     const maxDistance = this.controls.maxDistance * 0.95;
     distance = Math.min(distance, maxDistance / Math.hypot(1, elevation));
-    const arrival: Pose = {
-      target,
-      offset: new T.Vector3(
-        Math.cos(angle) * distance,
-        Math.sin(angle) * distance,
-        distance * elevation,
-      ),
-    };
+    const flight =
+      kind === "flythrough"
+        ? createTourFlight(
+            scene.flythroughSubjects.length
+              ? scene.flythroughSubjects
+              : scene.subjects,
+            angle,
+            this.random,
+          )
+        : undefined;
+    const arrival: Pose = flight
+      ? {
+          target: flight.path.getPointAt(0),
+          offset: flight.offset.clone(),
+        }
+      : {
+          target,
+          offset: new T.Vector3(
+            Math.cos(angle) * distance,
+            Math.sin(angle) * distance,
+            distance * elevation,
+          ),
+        };
     const orbitAngle =
       kind === "overview"
         ? Math.PI * 2
@@ -233,26 +260,18 @@ export class TourCamera {
         .clone()
         .applyAxisAngle(new T.Vector3(0, 0, 1), orbitAngle),
     };
-    if (kind === "flythrough") {
-      const lateral = new T.Vector3(
-        -Math.sin(angle),
-        Math.cos(angle),
-        0,
-      ).multiplyScalar(distance * 0.28);
-      arrival.target.addScaledVector(lateral, -0.5);
-      departure.target.addScaledVector(lateral, 0.5);
-      departure.offset.copy(arrival.offset);
-    }
+    if (flight) flythroughTarget(flight, FLYTHROUGH_SECONDS, departure.target);
     this.origin = this.pose();
     this.elapsed = 0;
     this.shot = {
       kind,
       orbitAngle,
+      flight,
       arrival,
       departure,
       travel: 8 + this.random() * 4,
-      drift: 12 + this.random() * 8,
-      hold: this.random() < 0.5 ? 3 + this.random() * 4 : 0,
+      drift: flight ? FLYTHROUGH_SECONDS * TOUR_SPEED : 12 + this.random() * 8,
+      hold: flight ? 0 : this.random() < 0.5 ? 3 + this.random() * 4 : 0,
     };
   }
 }

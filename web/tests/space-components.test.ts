@@ -560,6 +560,7 @@ test("space-components regression", async () => {
             "./dom-types.js",
           ].includes(path) ||
             (name === "data.ts" && path === "./process-layout.js") ||
+            (name === "tour-camera.ts" && path === "./tour-flight.js") ||
             ((name === "session-controls.ts" ||
               name === "recording-input.ts") &&
               path === "./recording.js") ||

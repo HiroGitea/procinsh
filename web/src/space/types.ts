@@ -157,6 +157,8 @@ export interface TourSubject {
 }
 export interface TourScene {
   subjects: TourSubject[];
+  /** Visible kthreadd descendants, used only by flythrough shots. */
+  flythroughSubjects: TourSubject[];
   /** Points along visible connection curves, including their endpoints. */
   connections: Position[][];
 }
