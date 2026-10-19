@@ -28,9 +28,9 @@ zlib development files, and BTF information at `/sys/kernel/btf/vmlinux`.
 Support on WSL2 is very limited, I recommend building procinsh from source rather than installing it from crates.io.
 
 In SPACE (live or replay), **Tour Mode** moves through overview, process close-up,
-and flythrough shots. Overviews and close-ups favor the systemd tree; flythroughs
-visit several kthreadd descendants at a constant speed for 15 seconds after entry,
-falling back to userspace processes when kernel subjects are unavailable. Each overview makes a full 360-degree orbit.
+and flythrough shots. All shots favor the systemd tree and exclude kthreadd
+and its descendants from their targets. Flythroughs visit several nearby processes
+at a constant speed for 15 seconds after entry. Each overview makes a full 360-degree orbit.
 The tour includes occasional pauses and automatic
 Rearrange at wide-shot boundaries. **Exit Tour**, Esc, drag, or zoom returns
 camera control; search, Fit all, and Rearrange also stop the tour. Share or bookmark
