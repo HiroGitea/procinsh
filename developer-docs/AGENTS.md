@@ -22,5 +22,7 @@
   - Rust テストを含む通常テストは `bash scripts/docker_test.sh ordinary`、実機 eBPF は `bash scripts/docker_test.sh kernel` を使うこと
   - 通常テストは `ordinary`、静的解析は `checks`、ブラウザは `browser` suite を使うこと
   - サーバーを起動するテストもコンテナ内のビルド済みバイナリを直接実行すること
+- `README.md` はユーザー向けの文書として簡潔に保ち、開発者向けの情報を書かないこと
+  - 開発者向けの情報は `developer-docs/` に記載すること
 - コメントやドキュメントでは変更履歴ではなく現在の振る舞いのみを説明すること
 - PR や issue は英語で記載すること
