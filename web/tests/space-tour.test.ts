@@ -106,12 +106,14 @@ describe("SPACE cinematic tour", () => {
     expect(changes).toEqual([true, false, true, false]);
   });
 
-  test("all four compositions recur, sampling only at transitions and periodically rearranging", () => {
+  test("three compositions recur in order, sampling only at transitions and periodically rearranging", () => {
     const s = setup(busy);
     s.tour.start();
     const kinds = new Set<string>();
+    const order: string[] = [];
     for (let i = 0; i < 480; i++) {
       kinds.add(s.tour.shotKind!);
+      if (order.at(-1) !== s.tour.shotKind) order.push(s.tour.shotKind!);
       s.advance(1);
       expect(
         [...s.camera.position, ...s.controls.target].every(Number.isFinite),
@@ -121,10 +123,14 @@ describe("SPACE cinematic tour", () => {
         s.camera.position.distanceTo(s.controls.target),
       ).toBeLessThanOrEqual(500.0001);
     }
-    expect([...kinds].sort()).toEqual([
-      "connections",
-      "flythrough",
+    expect([...kinds].sort()).toEqual(["flythrough", "hero", "overview"]);
+    expect(order.slice(0, 7)).toEqual([
+      "overview",
       "hero",
+      "flythrough",
+      "overview",
+      "hero",
+      "flythrough",
       "overview",
     ]);
     expect(s.samples()).toBeGreaterThan(12);
@@ -139,7 +145,7 @@ describe("SPACE cinematic tour", () => {
     s.advance(44 / 1.4);
     expect(s.tour.shotKind).toBe("hero");
     expect(s.controls.target.x).toBeCloseTo(12);
-    s.advance(104 / 1.4);
+    s.advance(78 / 1.4);
     expect(s.tour.shotKind).toBe("hero");
     expect(s.controls.target.x).toBeCloseTo(-12);
     // A frozen scene does not need activity updates to keep the tour running.
