@@ -57,7 +57,7 @@ export function mountRecordingControls(
   record.id = "record";
   const download = document.createElement("button");
   download.id = "download-recording";
-  download.textContent = "Stop & Download";
+  download.textContent = "Stop & save";
   download.hidden = true;
   const status = document.createElement("span");
   status.setAttribute("role", "status");
@@ -68,7 +68,7 @@ export function mountRecordingControls(
   open.onclick = () => {
     location.assign(`${import.meta.env.BASE_URL}replay/space/`);
   };
-  open.textContent = "Open recording";
+  open.textContent = "Load file";
   host.append(
     record,
     download,
@@ -84,8 +84,8 @@ export function mountRecordingControls(
     record.disabled = recorder.active || !!recorder.recording || !ready();
     download.hidden = !recorder.recording;
     download.textContent = recorder.active
-      ? "Stop & Download"
-      : "Download recording";
+      ? "Stop & save"
+      : "Save file";
     if (recorder.recording)
       status.textContent = recorder.active
         ? `● REC ${(recorder.elapsed() / 1000).toFixed(1)}s`
@@ -140,7 +140,7 @@ export function mountReplayControls(
   const open = document.createElement("button");
   open.id = "open-recording";
   open.type = "button";
-  open.textContent = "Open recording";
+  open.textContent = "Load file";
   open.onclick = () => file.click();
   const play = document.createElement("button");
   play.id = "play";
