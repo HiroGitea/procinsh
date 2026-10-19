@@ -83,9 +83,7 @@ export function mountRecordingControls(
   function refresh() {
     record.disabled = recorder.active || !!recorder.recording || !ready();
     download.hidden = !recorder.recording;
-    download.textContent = recorder.active
-      ? "Stop & save"
-      : "Save file";
+    download.textContent = recorder.active ? "Stop & save" : "Save file";
     if (recorder.recording)
       status.textContent = recorder.active
         ? `● REC ${(recorder.elapsed() / 1000).toFixed(1)}s`
