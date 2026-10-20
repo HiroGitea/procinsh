@@ -165,35 +165,22 @@ VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh run
   node --import tsx scripts/capture-vm-recording.ts)
 ```
 
-The build uses the exact Ubuntu source package corresponding to the running
-guest's `linux-modules-$(uname -r)` package. Preparation enables Ubuntu source
-repositories from the [Ubuntu Snapshot Service](https://snapshot.ubuntu.com/),
-reads the source name and version with `dpkg-query`, downloads that
-specific version through APT, and extracts its `.dsc` with `dpkg-source`. There is
-no fallback to another version if the matching source is unavailable.
-`KERNEL_SOURCE_SNAPSHOT` selects the source archive timestamp during `prepare`
-(default `20260927T000000Z`, matching the default cloud image). Set it to a date
-containing the guest kernel's source when using a different cloud image.
-
-Following the [reference article](https://akawashiro.com/articles/linux-build-script),
-compilation uses `CC=clang`, `defconfig` then `kvm_guest.config`, separate
-source and output trees, and `max(1, nproc - 2)` jobs. Source is in
-`/home/demo/linux`, downloaded archives are in `/home/demo/kernel-source`, and
-output is in `/home/demo/linux-build`. The source changelog must match the
-installed source package version. Following Ubuntu's packaging rules,
-`KERNELRELEASE=$(uname -r)` preserves the guest's ABI and flavor suffix; Ubuntu's
-stable patch level can differ from its release name. The upstream major/minor
-series and configured `kernelrelease` are checked against the guest; a mismatch
-stops preparation or build.
-The kernel is not installed and the guest is not rebooted into it.
+The build shallow-clones the fixed upstream Linux `v7.0` tag from
+`torvalds/linux`. Following the
+[reference article](https://akawashiro.com/articles/linux-build-script),
+compilation uses `CC=clang`, `defconfig` then `kvm_guest.config`, separate source
+and output trees, and `max(1, nproc - 2)` jobs. Source is in `/home/demo/linux`
+and output is in `/home/demo/linux-build`. The guest kernel version does not
+select or override the build version. The kernel is not installed and the guest
+is not rebooted into it.
 
 Defaults are 4 vCPUs, 8192 MiB RAM and a 40 GiB disk. Source download and
 configuration finish before the workload service starts. Inspect
 `journalctl -u kernel-build-demo`, `/home/demo/kernel-build.log`, and
 `/home/demo/kernel-build-info.txt` through the serial console. The info file
-records the guest and build releases, source package/version, compiler version,
-job count, source descriptor SHA256 and config SHA256; the
-complete configuration remains in `linux-build/.config`.
+records the source tag/commit, guest and build releases, compiler version, job
+count and config SHA256. The complete configuration remains in
+`linux-build/.config`.
 
 The capture command waits for an active clang process and a positive compiler
 CPU delta in the live stream, then records 30 seconds by default. It checks
@@ -213,23 +200,21 @@ recording using `VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh stop`.
 
 | Property | Value |
 | --- | --- |
-| Capture start (UTC) | `2026-10-20T04:25:40.568Z` |
-| Duration / last event | 30.852 s / 30.516 s |
+| Capture start (UTC) | `2026-10-20T04:34:19.319Z` |
+| Duration / last event | 31.160 s / 30.486 s |
 | Guest / resources | Ubuntu 26.04, `7.0.0-34-generic`, 4 vCPUs, 8192 MiB RAM, 40 GiB disk |
 | procinsh revision | `eaff2f3a6f7df7ac16d7160e1cba2acdd6439d5e` |
-| Ubuntu source package | `linux 7.0.0-34.34` |
-| Source archive snapshot | `20260927T000000Z` |
-| Source descriptor SHA256 | `03239d912d2204cee96216f4006d654ec3d9b4d8882488ca9200c26196c641fc` |
-| Upstream stable patch level | `7.0.14` |
-| Built kernel release | `7.0.0-34-generic` |
+| Source tag | `v7.0` |
+| Source commit | `028ef9c96e96197026887c0f092424679298aae8` |
+| Built kernel release | `7.0.0` |
 | Compiler / parallelism | Ubuntu clang 21.1.8 (`6ubuntu1`), `CC=clang`, 2 jobs |
-| Configuration | `defconfig` + `kvm_guest.config`, `KERNELRELEASE=7.0.0-34-generic` |
-| Config SHA256 | `1ce366d499bd18f8655672bdcf392e21ee72f5265c6122a6934eae3f024b1877` |
-| JSON / gzip bytes | 65,805,411 / 4,350,131 |
-| Gzip SHA256 | `e5569419a48b17b8885761d7ae65cb72bd1d1d13350bc319c250fec751e47ca2` |
+| Configuration | `defconfig` + `kvm_guest.config` |
+| Config SHA256 | `041f72c32d43dbaede7593bc23ab88171b75e27993f8df3c8f1d44c6d53a4601` |
+| JSON / gzip bytes | 62,609,361 / 4,183,214 |
+| Gzip SHA256 | `08436bb678162211ffac317dfaa8a5ef31bd88d6154fc074c9003f7a56f833af` |
 
-The recording contains 51 distinct compiler identities, 2 compiler CPU samples
-with positive runtime, and 28,853 compiler file-activity samples. It is an excerpt
+The recording contains 50 distinct compiler identities, 1 compiler CPU sample
+with positive runtime, and 28,332 compiler file-activity samples. It is an excerpt
 of compilation, not a recording of a completed build.
 
 ## Validation
