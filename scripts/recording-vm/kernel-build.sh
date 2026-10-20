@@ -9,7 +9,6 @@ source_package=$(dpkg-query -W -f='${source:Package}' "linux-modules-$guest_rele
 source_version=$(dpkg-query -W -f='${source:Version}' "linux-modules-$guest_release")
 cpus=$(nproc)
 jobs=$((cpus > 2 ? cpus - 2 : 1))
-export CCACHE_DIR=/home/demo/.cache/kernel-ccache
 case ${1:-} in
   prepare)
     mkdir -p "$archive_dir"
@@ -33,7 +32,7 @@ changelog_version=$(dpkg-parsechangelog -l "$source_dir/debian.master/changelog"
 }
 kernel_make() {
   # Ubuntu's packaging sets KERNELRELEASE independently of stable patch level.
-  make --no-print-directory -C "$source_dir" O="$build_dir" CC="ccache clang" KERNELRELEASE="$guest_release" "$@"
+  make --no-print-directory -C "$source_dir" O="$build_dir" CC=clang KERNELRELEASE="$guest_release" "$@"
 }
 if [[ $1 == prepare ]]; then
   mkdir -p "$build_dir"
@@ -48,7 +47,7 @@ built_release=$(kernel_make -s kernelrelease)
 if [[ $1 == prepare ]]; then
   {
     printf 'guest_release=%s\nsource_package=%s\nsource_version=%s\n' "$guest_release" "$source_package" "$source_version"
-    printf 'kernelversion=%s\nkernelrelease=%s\njobs=%s\nCC=ccache clang\n' "$kernel_version" "$built_release" "$jobs"
+    printf 'kernelversion=%s\nkernelrelease=%s\njobs=%s\nCC=clang\n' "$kernel_version" "$built_release" "$jobs"
     clang --version
     sha256sum "$archive_dir"/*.dsc "$build_dir/.config"
   } > /home/demo/kernel-build-info.txt

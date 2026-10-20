@@ -58,6 +58,24 @@ test("published kernel build contains 30 seconds of real compiler activity", asy
       ),
     ),
   ).toBe(true);
+  expect(
+    snapshots.every((snapshot) =>
+      snapshot.processes.every(
+        (process) =>
+          !process.name.includes("ccache") &&
+          !(process.command_line ?? []).some((argument) =>
+            argument.includes("ccache"),
+          ),
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    snapshots.some((snapshot) =>
+      snapshot.processes.some((process) =>
+        process.command_line?.includes("CC=clang"),
+      ),
+    ),
+  ).toBe(true);
   const compilers = new Set(
     snapshots
       .flatMap((snapshot) => snapshot.processes)

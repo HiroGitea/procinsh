@@ -37,7 +37,8 @@ class RecordingVmTests(unittest.TestCase):
         result, config = self.seed(WORKLOAD="kernel-build")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(config["runcmd"][0][-2:], ["kernel-build", "20260927T000000Z"])
-        for dependency in ("ccache", "flex", "bison", "libssl-dev", "bc", "dpkg-dev", "xz-utils"):
+        self.assertNotIn("ccache", config["packages"])
+        for dependency in ("flex", "bison", "libssl-dev", "bc", "dpkg-dev", "xz-utils"):
             self.assertIn(dependency, config["packages"])
         script = next(item for item in config["write_files"]
                       if item["path"] == "/opt/kernel-build.sh")
