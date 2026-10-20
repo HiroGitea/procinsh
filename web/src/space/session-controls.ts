@@ -16,6 +16,11 @@ const bundledRecordings = [
     label: "Firefox",
     path: "recordings/firefox-ubuntu26.json.gz",
   },
+  {
+    id: "linux-build-ubuntu26",
+    label: "Linux kernel build",
+    path: "recordings/linux-build-ubuntu26.json.gz",
+  },
 ];
 
 function demoControls(open: (id: string) => void) {

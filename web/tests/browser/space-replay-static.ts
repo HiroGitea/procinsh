@@ -113,8 +113,8 @@ try {
       url: `http://127.0.0.1:${address.port}${deploymentBase}`,
     });
     await waitFor(
-      "document.querySelectorAll('main a').length===2",
-      "demo landing page offers both recordings",
+      "document.querySelectorAll('main a').length===3",
+      "demo landing page offers all recordings",
     );
     assert.deepEqual(
       await evaluate(
@@ -123,6 +123,7 @@ try {
       [
         `${deploymentBase}replay/space/?recording=chrome-ubuntu26`,
         `${deploymentBase}replay/space/?recording=firefox-ubuntu26`,
+        `${deploymentBase}replay/space/?recording=linux-build-ubuntu26`,
       ],
     );
     await evaluate("document.querySelector('main a').click()");
@@ -143,7 +144,7 @@ try {
       await evaluate(
         "Array.from(document.querySelectorAll('#demo-recording option'), option => option.textContent)",
       ),
-      ["Open demo", "Chrome", "Firefox"],
+      ["Open demo", "Chrome", "Firefox", "Linux kernel build"],
     );
     assert.equal(await evaluate("location.search"), "");
     for (const width of [1280, 390]) {
@@ -278,7 +279,19 @@ try {
       );
     }
     demoEncoding = "asset";
-    for (const id of ["chrome-ubuntu26", "firefox-ubuntu26"]) {
+    for (const id of [
+      "chrome-ubuntu26",
+      "firefox-ubuntu26",
+      "linux-build-ubuntu26",
+    ]) {
+      const previousOrigin = await evaluate<number>("performance.timeOrigin");
+      await cdp("Page.navigate", {
+        url: `http://127.0.0.1:${address.port}${deploymentBase}replay/space/?recording=${id}`,
+      });
+      await waitFor(
+        `performance.timeOrigin!==${previousOrigin} && document.querySelector('#replay-status')?.hidden && document.querySelector('#play').textContent==='Pause' && document.querySelector('#loop').checked`,
+        `real ${id} opens directly with looping playback`,
+      );
       await evaluate(
         `document.querySelector('#demo-recording').value=${JSON.stringify(id)};document.querySelector('#demo-recording').dispatchEvent(new Event('change'))`,
       );
