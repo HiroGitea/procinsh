@@ -175,12 +175,9 @@ select or override the build version. The kernel is not installed and the guest
 is not rebooted into it.
 
 Defaults are 4 vCPUs, 8192 MiB RAM and a 40 GiB disk. Source download and
-configuration finish before the workload service starts. Inspect
-`journalctl -u kernel-build-demo`, `/home/demo/kernel-build.log`, and
-`/home/demo/kernel-build-info.txt` through the serial console. The info file
-records the source tag/commit, guest and build releases, compiler version, job
-count and config SHA256. The complete configuration remains in
-`linux-build/.config`.
+configuration finish before the workload service starts. Inspect the build with
+`journalctl -u kernel-build-demo` or `/home/demo/kernel-build.log` through the
+serial console.
 
 The capture command waits for an active clang process and a positive compiler
 CPU delta in the live stream, then records 30 seconds by default. It checks
@@ -196,26 +193,9 @@ is `linux-build-ubuntu26`, available through the demo menu, static landing page,
 and `/replay/space/?recording=linux-build-ubuntu26`. Stop the disposable VM after
 recording using `VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh stop`.
 
-### Bundled kernel recording provenance
-
-| Property | Value |
-| --- | --- |
-| Capture start (UTC) | `2026-10-20T04:34:19.319Z` |
-| Duration / last event | 31.160 s / 30.486 s |
-| Guest / resources | Ubuntu 26.04, `7.0.0-34-generic`, 4 vCPUs, 8192 MiB RAM, 40 GiB disk |
-| procinsh revision | `eaff2f3a6f7df7ac16d7160e1cba2acdd6439d5e` |
-| Source tag | `v7.0` |
-| Source commit | `028ef9c96e96197026887c0f092424679298aae8` |
-| Built kernel release | `7.0.0` |
-| Compiler / parallelism | Ubuntu clang 21.1.8 (`6ubuntu1`), `CC=clang`, 2 jobs |
-| Configuration | `defconfig` + `kvm_guest.config` |
-| Config SHA256 | `041f72c32d43dbaede7593bc23ab88171b75e27993f8df3c8f1d44c6d53a4601` |
-| JSON / gzip bytes | 62,609,361 / 4,183,214 |
-| Gzip SHA256 | `08436bb678162211ffac317dfaa8a5ef31bd88d6154fc074c9003f7a56f833af` |
-
-The recording contains 50 distinct compiler identities, 1 compiler CPU sample
-with positive runtime, and 28,332 compiler file-activity samples. It is an excerpt
-of compilation, not a recording of a completed build.
+The bundled recording captures upstream Linux `v7.0` compilation with Ubuntu
+clang 21.1.8 and two build jobs in an Ubuntu 26.04 guest. It contains 50 compiler
+identities with real CPU and file activity. The gzip asset is about 4 MiB.
 
 ## Validation
 
