@@ -165,23 +165,35 @@ VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh run
   node --import tsx scripts/capture-vm-recording.ts)
 ```
 
-The build follows the [reference article](https://akawashiro.com/articles/linux-build-script)
-and its [`build-install-linux.sh`](https://github.com/akawashiro/public-tools/blob/7bbbe8839010439e8fa184aa98696be8036f95cc/build-install-linux.sh)
-settings: shallow-clone upstream `torvalds/linux` at `v6.14`, use
-`CC="ccache clang"`, configure `defconfig` then `kvm_guest.config`, and run `make`
-with `max(1, nproc - 2)` jobs. Source is in
-`/home/demo/linux`, output is in `/home/demo/linux-build`, and
-`LOCALVERSION=-procinsh-demo`. A fresh VM has an empty ccache. The kernel is not
-installed and the guest is not rebooted into it. The Ubuntu clang 21 build uses
-`KCFLAGS="-Wno-error=default-const-init-field-unsafe -Wno-error=default-const-init-var-unsafe"`
-because Linux 6.14 predates those diagnostics; other warnings retain the kernel
-configuration's error policy.
+The build uses the exact Ubuntu source package corresponding to the running
+guest's `linux-modules-$(uname -r)` package. Preparation enables Ubuntu source
+repositories from the [Ubuntu Snapshot Service](https://snapshot.ubuntu.com/),
+reads the source name and version with `dpkg-query`, downloads that
+specific version through APT, and extracts its `.dsc` with `dpkg-source`. There is
+no fallback to another version if the matching source is unavailable.
+`KERNEL_SOURCE_SNAPSHOT` selects the source archive timestamp during `prepare`
+(default `20260927T000000Z`, matching the default cloud image). Set it to a date
+containing the guest kernel's source when using a different cloud image.
+
+Following the [reference article](https://akawashiro.com/articles/linux-build-script),
+compilation uses `CC="ccache clang"`, `defconfig` then `kvm_guest.config`, separate
+source and output trees, and `max(1, nproc - 2)` jobs. Source is in
+`/home/demo/linux`, downloaded archives are in `/home/demo/kernel-source`, and
+output is in `/home/demo/linux-build`. The source changelog must match the
+installed source package version. Following Ubuntu's packaging rules,
+`KERNELRELEASE=$(uname -r)` preserves the guest's ABI and flavor suffix; Ubuntu's
+stable patch level can differ from its release name. The upstream major/minor
+series and configured `kernelrelease` are checked against the guest; a mismatch
+stops preparation or build.
+A fresh VM has an empty ccache. The kernel is not installed and the guest is not
+rebooted into it.
 
 Defaults are 4 vCPUs, 8192 MiB RAM and a 40 GiB disk. Source download and
 configuration finish before the workload service starts. Inspect
 `journalctl -u kernel-build-demo`, `/home/demo/kernel-build.log`, and
 `/home/demo/kernel-build-info.txt` through the serial console. The info file
-records the source commit, compiler version, job count and config SHA256; the
+records the guest and build releases, source package/version, compiler version,
+job count, source descriptor SHA256 and config SHA256; the
 complete configuration remains in `linux-build/.config`.
 
 The capture command waits for an active clang process and a positive compiler
@@ -202,20 +214,23 @@ recording using `VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh stop`.
 
 | Property | Value |
 | --- | --- |
-| Capture start (UTC) | `2026-10-20T04:01:18.129Z` |
-| Duration / last event | 31.151 s / 30.379 s |
+| Capture start (UTC) | `2026-10-20T04:18:35.599Z` |
+| Duration / last event | 31.258 s / 30.979 s |
 | Guest / resources | Ubuntu 26.04, `7.0.0-34-generic`, 4 vCPUs, 8192 MiB RAM, 40 GiB disk |
 | procinsh revision | `eaff2f3a6f7df7ac16d7160e1cba2acdd6439d5e` |
-| Source commit | `38fec10eb60d687e30c8c6b5420d86e8149f7557` (`v6.14`) |
+| Ubuntu source package | `linux 7.0.0-34.34` |
+| Source archive snapshot | `20260927T000000Z` |
+| Source descriptor SHA256 | `03239d912d2204cee96216f4006d654ec3d9b4d8882488ca9200c26196c641fc` |
+| Upstream stable patch level | `7.0.14` |
+| Built kernel release | `7.0.0-34-generic` |
 | Compiler / parallelism | Ubuntu clang 21.1.8 (`6ubuntu1`), ccache, 2 jobs |
-| Configuration | `defconfig` + `kvm_guest.config`, `LOCALVERSION=-procinsh-demo` |
-| Config SHA256 | `b60f702cf1e699ba89c82c5d44978ea6b145f627a1656992e1ddabbbb81dd1af` |
-| Recorded KCFLAGS | `-Wno-error=default-const-init-field-unsafe` |
-| JSON / gzip bytes | 63,519,486 / 4,257,977 |
-| Gzip SHA256 | `1dc5dfc478575e1d937f1d47bd23db7e5ea4aa87eaafa908904b038b6231e84e` |
+| Configuration | `defconfig` + `kvm_guest.config`, `KERNELRELEASE=7.0.0-34-generic` |
+| Config SHA256 | `1ce366d499bd18f8655672bdcf392e21ee72f5265c6122a6934eae3f024b1877` |
+| JSON / gzip bytes | 64,927,455 / 4,395,524 |
+| Gzip SHA256 | `7ebfe60c689bd0f98330ceaae78f2286626fa4c79504f98ee82c3c0aad1a76f9` |
 
-The recording contains 42 distinct compiler identities, 4 compiler CPU samples
-with positive runtime, and 25,619 compiler file-activity samples. It is an excerpt
+The recording contains 48 distinct compiler identities, 2 compiler CPU samples
+with positive runtime, and 27,712 compiler file-activity samples. It is an excerpt
 of compilation, not a recording of a completed build.
 
 ## Validation

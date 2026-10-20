@@ -51,6 +51,13 @@ test("published kernel build contains 30 seconds of real compiler activity", asy
       .filter((event) => event.type === "snapshot")
       .map((event) => event.data),
   ];
+  expect(
+    snapshots.some((snapshot) =>
+      snapshot.processes.some((process) =>
+        process.command_line?.includes("KERNELRELEASE=7.0.0-34-generic"),
+      ),
+    ),
+  ).toBe(true);
   const compilers = new Set(
     snapshots
       .flatMap((snapshot) => snapshot.processes)
