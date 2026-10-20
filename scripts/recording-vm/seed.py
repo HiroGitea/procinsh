@@ -12,6 +12,9 @@ if not 1 <= port <= 65535:
     raise SystemExit("HOST_PORT must be between 1 and 65535")
 if not re.fullmatch(r"[0-9a-f]{40}", revision):
     raise SystemExit("PROCINSH_REF must be a full, published commit SHA")
+workload = os.environ.get("WORKLOAD", "browser")
+if workload not in ("browser", "kernel-build"):
+    raise SystemExit("WORKLOAD must be browser or kernel-build")
 browser = os.environ.get("BROWSER", "chrome")
 if browser not in ("chrome", "firefox"):
     raise SystemExit("BROWSER must be chrome or firefox")
@@ -28,8 +31,14 @@ config = {
     "write_files": [
         {"path": "/opt/setup-recording.sh", "permissions": "0755", "content": setup},
     ],
-    "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port), browser]],
+    "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port), browser, workload]],
 }
+if workload == "kernel-build":
+    config["packages"] += ["ccache", "flex", "bison", "libssl-dev", "libncurses-dev", "bc"]
+    config["write_files"].append({
+        "path": "/opt/kernel-build.sh", "permissions": "0755",
+        "content": Path(__file__).with_name("kernel-build.sh").read_text(),
+    })
 (state/"user-data").write_text("#cloud-config\n" + json.dumps(config, indent=2) + "\n")
 (state/"meta-data").write_text("instance-id: space-demo-" + revision + "\nlocal-hostname: space-demo\n")
 (state/"http-port").write_text(str(port) + "\n")

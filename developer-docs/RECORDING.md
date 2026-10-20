@@ -9,7 +9,8 @@ Recordings can contain process arguments, user names, paths and IP addresses.
 Review them before sharing. The bundled **Chrome** and **Firefox** demos show real
 browser activity captured in an Ubuntu 26.04 VM. Both open the same eight external
 sites from [`scripts/browser_sites.txt`](../scripts/browser_sites.txt), with a
-reload every ten seconds.
+reload every ten seconds. **Linux kernel build** shows 30 seconds of real clang
+compilation in a dedicated Ubuntu 26.04 QEMU/KVM guest.
 
 A stream gap, reconnect, hidden tab or page exit ends the recording. The retained
 recording stays available as **Download recording** when the page is visible
@@ -88,7 +89,7 @@ and URL allowlist share the `bundledRecordings` catalog in
 adding a recording to `web/replay-public/recordings/`.
 
 Open `/replay/space/?recording=chrome-ubuntu26` on the deployed site. `recording` is an
-allowlisted ID, never a user-supplied fetch URL. Both bundled recordings are shared by the normal embedded build and static build.
+allowlisted ID, never a user-supplied fetch URL. All bundled recordings are shared by the normal embedded build and static build.
 Use `?recording=firefox-ubuntu26` for the Firefox workload. Synthetic data is
 retained only as a private test fixture, outside the published asset directories. The build rejects
 any static asset larger than 25 MiB, including public demos, according to
@@ -146,6 +147,76 @@ Use `journalctl -u browser-demo` to inspect the workload. `TAB_COUNT`,
 `INTERVAL_SECONDS` and `SITE_LIST` can be set in the `browser-demo` systemd service.
 Stop the VM with `VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh stop` and wait
 for QEMU to exit before restarting it.
+
+## Capturing the Linux kernel build demo
+
+The kernel workload uses the same VM tools and browser recorder as the browser
+workloads. `WORKLOAD` accepts `browser` (default) or `kernel-build`; `BROWSER`
+continues to select Chrome or Firefox for the browser workload. Kernel guests
+install no browser and run no browser workload.
+
+```sh
+WORKLOAD=kernel-build VM_DIR=/tmp/kernel-demo HOST_PORT=10191 \
+  scripts/recording-vm/run.sh prepare
+VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh run
+# Wait for the ready message in /tmp/kernel-demo/console.log.
+(cd web && WORKLOAD=kernel-build HOST_PORT=10191 \
+  RECORD_OUTPUT=/tmp/linux-build-ubuntu26.json.gz \
+  node --import tsx scripts/capture-vm-recording.ts)
+```
+
+The build follows the [reference article](https://akawashiro.com/articles/linux-build-script)
+and its [`build-install-linux.sh`](https://github.com/akawashiro/public-tools/blob/7bbbe8839010439e8fa184aa98696be8036f95cc/build-install-linux.sh)
+settings: shallow-clone upstream `torvalds/linux` at `v6.14`, use
+`CC="ccache clang"`, configure `defconfig` then `kvm_guest.config`, and run `make`
+with `max(1, nproc - 2)` jobs. Source is in
+`/home/demo/linux`, output is in `/home/demo/linux-build`, and
+`LOCALVERSION=-procinsh-demo`. A fresh VM has an empty ccache. The kernel is not
+installed and the guest is not rebooted into it. The Ubuntu clang 21 build uses
+`KCFLAGS="-Wno-error=default-const-init-field-unsafe -Wno-error=default-const-init-var-unsafe"`
+because Linux 6.14 predates those diagnostics; other warnings retain the kernel
+configuration's error policy.
+
+Defaults are 4 vCPUs, 8192 MiB RAM and a 40 GiB disk. Source download and
+configuration finish before the workload service starts. Inspect
+`journalctl -u kernel-build-demo`, `/home/demo/kernel-build.log`, and
+`/home/demo/kernel-build-info.txt` through the serial console. The info file
+records the source commit, compiler version, job count and config SHA256; the
+complete configuration remains in `linux-build/.config`.
+
+The capture command waits for an active clang process and a positive compiler
+CPU delta in the live stream, then records 30 seconds by default. It checks
+compiler CPU and file activity across all recorded snapshots.
+It rejects interrupted recordings and validates gzip replay before saving.
+`RECORD_SECONDS` overrides duration; browser workloads still default to 15 seconds.
+Record during the initial build. For another clean recording, prepare a fresh VM
+so the output and compiler cache are empty. If a recording exceeds 128 MiB JSON
+or 25 MiB gzip, use fewer `VM_CPUS` in a fresh guest and capture 30 seconds again.
+
+Copy the validated gzip into `web/replay-public/recordings/`. The bundled demo ID
+is `linux-build-ubuntu26`, available through the demo menu, static landing page,
+and `/replay/space/?recording=linux-build-ubuntu26`. Stop the disposable VM after
+recording using `VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh stop`.
+
+### Bundled kernel recording provenance
+
+| Property | Value |
+| --- | --- |
+| Capture start (UTC) | `2026-10-20T04:01:18.129Z` |
+| Duration / last event | 31.151 s / 30.379 s |
+| Guest / resources | Ubuntu 26.04, `7.0.0-34-generic`, 4 vCPUs, 8192 MiB RAM, 40 GiB disk |
+| procinsh revision | `eaff2f3a6f7df7ac16d7160e1cba2acdd6439d5e` |
+| Source commit | `38fec10eb60d687e30c8c6b5420d86e8149f7557` (`v6.14`) |
+| Compiler / parallelism | Ubuntu clang 21.1.8 (`6ubuntu1`), ccache, 2 jobs |
+| Configuration | `defconfig` + `kvm_guest.config`, `LOCALVERSION=-procinsh-demo` |
+| Config SHA256 | `b60f702cf1e699ba89c82c5d44978ea6b145f627a1656992e1ddabbbb81dd1af` |
+| Recorded KCFLAGS | `-Wno-error=default-const-init-field-unsafe` |
+| JSON / gzip bytes | 63,519,486 / 4,257,977 |
+| Gzip SHA256 | `1dc5dfc478575e1d937f1d47bd23db7e5ea4aa87eaafa908904b038b6231e84e` |
+
+The recording contains 42 distinct compiler identities, 4 compiler CPU samples
+with positive runtime, and 25,619 compiler file-activity samples. It is an excerpt
+of compilation, not a recording of a completed build.
 
 ## Validation
 

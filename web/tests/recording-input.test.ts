@@ -34,6 +34,54 @@ test.each(["chrome", "firefox"])(
       ).toBe(true);
   },
 );
+test("published kernel build contains 30 seconds of real compiler activity", async () => {
+  const gzip = readFileSync(
+    new URL(
+      "../replay-public/recordings/linux-build-ubuntu26.json.gz",
+      import.meta.url,
+    ),
+  );
+  expect(gzip.length).toBeLessThanOrEqual(25 * 1024 * 1024);
+  const recording = parseRecording(await readRecording(chunks(gzip, 65536)));
+  expect(recording.end_reason).toBe("Stopped by user");
+  expect(recording.duration_ms).toBeGreaterThanOrEqual(30000);
+  const snapshots = [
+    recording.initial_snapshot,
+    ...recording.events
+      .filter((event) => event.type === "snapshot")
+      .map((event) => event.data),
+  ];
+  const compilers = new Set(
+    snapshots
+      .flatMap((snapshot) => snapshot.processes)
+      .filter((process) =>
+        /^clang(?:-\d+)?$/.test(
+          process.command_line?.[0]?.split("/").pop() ?? process.name,
+        ),
+      )
+      .map(
+        (process) =>
+          `${process.identity.pid}:${process.identity.start_time_ticks}`,
+      ),
+  );
+  expect(compilers.size).toBeGreaterThan(1);
+  const activity = recording.events.filter(
+    (event) => event.type === "activity",
+  );
+  for (const sensor of ["cpu", "files"] as const) {
+    expect(
+      activity.some((event) =>
+        event.data[sensor]?.some(
+          (sample) =>
+            compilers.has(
+              `${sample.process_id.pid}:${sample.process_id.start_time_ticks}`,
+            ) &&
+            ("runtime_ns" in sample ? sample.runtime_ns : sample.bytes) > 0,
+        ),
+      ),
+    ).toBe(true);
+  }
+});
 function chunks(bytes: Uint8Array, size = 1024) {
   let offset = 0;
   return new ReadableStream<Uint8Array<ArrayBuffer>>({

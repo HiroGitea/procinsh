@@ -3,6 +3,7 @@ set -euo pipefail
 exec > >(tee /var/log/recording-setup.log) 2>&1
 port=$2
 browser=$3
+workload=${4:-browser}
 test -r /sys/kernel/btf/vmlinux
 git clone https://github.com/akawashiro/procinsh.git /opt/procinsh
 cd /opt/procinsh
@@ -13,7 +14,9 @@ export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
 npm --prefix web ci
 npm --prefix web run build
 cargo build --locked
-if [[ $browser == firefox ]]; then
+if [[ $workload == kernel-build ]]; then
+  sudo -u demo /opt/kernel-build.sh prepare
+elif [[ $browser == firefox ]]; then
   apt-get install -y --no-install-recommends libgtk-3-0t64 libdbus-glib-1-2 libasound2t64 libx11-xcb1 libxt6t64 xz-utils
   firefox_version=158.0
   firefox_base="https://archive.mozilla.org/pub/firefox/releases/$firefox_version"
@@ -44,7 +47,22 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 UNIT
-cat >/etc/systemd/system/browser-demo.service <<UNIT
+if [[ $workload == kernel-build ]]; then
+  cat >/etc/systemd/system/kernel-build-demo.service <<UNIT
+[Unit]
+Description=Linux kernel compilation for SPACE recordings
+After=space-demo.service
+[Service]
+User=demo
+ExecStart=/opt/kernel-build.sh build
+StandardOutput=append:/home/demo/kernel-build.log
+StandardError=append:/home/demo/kernel-build.log
+[Install]
+WantedBy=multi-user.target
+UNIT
+  workload_service=kernel-build-demo
+else
+  cat >/etc/systemd/system/browser-demo.service <<UNIT
 [Unit]
 Description=External-site browser workload for SPACE recordings
 After=network.target
@@ -57,10 +75,12 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 UNIT
+  workload_service=browser-demo
+fi
 # The console is local to QEMU; there is no SSH forwarding or password login.
 mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d
 printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin demo --noclear %%I $TERM\n' >/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
 systemctl daemon-reload
 systemctl restart serial-getty@ttyS0
-systemctl enable --now space-demo browser-demo
+systemctl enable --now space-demo "$workload_service"
 echo "SPACE recording ready on guest port $port"
