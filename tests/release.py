@@ -85,9 +85,9 @@ class ReleaseTest(unittest.TestCase):
             return self.pr
         if args[:3] == ("gh", "release", "create"):
             tag = args[3]
-            self.assertEqual(args[4:8], ("--verify-tag", "--title", tag, "--notes-file"))
-            self.assertEqual(Path(args[8]).read_text(), "")
-            self.assertEqual(args[9:], ("--repo", release.REPO))
+            self.assertEqual(args[4:], ("--verify-tag", "--title", tag,
+                                        "--generate-notes", "--notes-start-tag", "v0.1.13",
+                                        "--repo", release.REPO))
             self.assertEqual(self.uploads, 1)
             self.assertEqual(self.git("rev-parse", f"{tag}^{{commit}}"), self.merged)
             self.assertIn(self.merged, self.git(
