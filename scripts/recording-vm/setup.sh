@@ -2,8 +2,7 @@
 set -euo pipefail
 exec > >(tee /var/log/recording-setup.log) 2>&1
 port=$2
-browser=$3
-workload=${4:-browser}
+workload=$3
 test -r /sys/kernel/btf/vmlinux
 git clone https://github.com/akawashiro/procinsh.git /opt/procinsh
 cd /opt/procinsh
@@ -16,7 +15,7 @@ npm --prefix web run build
 cargo build --locked
 if [[ $workload == kernel-build ]]; then
   sudo -u demo /opt/kernel-build.sh prepare
-elif [[ $browser == firefox ]]; then
+elif [[ $workload == firefox ]]; then
   apt-get install -y --no-install-recommends libgtk-3-0t64 libdbus-glib-1-2 libasound2t64 libx11-xcb1 libxt6t64 xz-utils
   firefox_version=158.0
   firefox_base="https://archive.mozilla.org/pub/firefox/releases/$firefox_version"
@@ -69,7 +68,7 @@ After=network.target
 [Service]
 User=demo
 WorkingDirectory=/opt/procinsh
-Environment=BROWSER=$browser TAB_COUNT=8 INTERVAL_SECONDS=10
+Environment=WORKLOAD=$workload TAB_COUNT=8 INTERVAL_SECONDS=10
 ExecStart=/usr/bin/node scripts/browser_workload.mjs
 Restart=on-failure
 [Install]

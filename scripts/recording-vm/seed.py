@@ -12,12 +12,9 @@ if not 1 <= port <= 65535:
     raise SystemExit("HOST_PORT must be between 1 and 65535")
 if not re.fullmatch(r"[0-9a-f]{40}", revision):
     raise SystemExit("PROCINSH_REF must be a full, published commit SHA")
-workload = os.environ.get("WORKLOAD", "browser")
-if workload not in ("browser", "kernel-build"):
-    raise SystemExit("WORKLOAD must be browser or kernel-build")
-browser = os.environ.get("BROWSER", "chrome")
-if browser not in ("chrome", "firefox"):
-    raise SystemExit("BROWSER must be chrome or firefox")
+workload = os.environ.get("WORKLOAD", "chrome")
+if workload not in ("chrome", "firefox", "kernel-build"):
+    raise SystemExit("WORKLOAD must be chrome, firefox or kernel-build")
 setup = Path(__file__).with_name("setup.sh").read_text()
 config = {
     "hostname": "space-demo",
@@ -31,7 +28,7 @@ config = {
     "write_files": [
         {"path": "/opt/setup-recording.sh", "permissions": "0755", "content": setup},
     ],
-    "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port), browser, workload]],
+    "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port), workload]],
 }
 if workload == "kernel-build":
     config["packages"] += ["flex", "bison", "libssl-dev", "libncurses-dev", "bc"]

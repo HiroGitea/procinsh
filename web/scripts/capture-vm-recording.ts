@@ -10,14 +10,12 @@ import { parseRecording, MAX_RECORDING_BYTES } from "../src/space/recording.js";
 import type { ProcessId } from "../src/shared/api-types.js";
 import { PAGES_MAX_ASSET_BYTES } from "../vite.replay.config.js";
 
-const workload = process.env.WORKLOAD ?? "browser";
-assert.ok(workload === "browser" || workload === "kernel-build");
+const workload = process.env.WORKLOAD ?? "chrome";
+assert.ok(["chrome", "firefox", "kernel-build"].includes(workload));
 const kernelBuild = workload === "kernel-build";
-const browser = process.env.BROWSER ?? "chrome";
-assert.ok(browser === "chrome" || browser === "firefox");
 const workloadName = kernelBuild
   ? "Linux kernel build"
-  : browser === "firefox"
+  : workload === "firefox"
     ? "Firefox"
     : "Chrome";
 function isWorkloadProcess(process: {
@@ -30,8 +28,8 @@ function isWorkloadProcess(process: {
     return /^clang(?:-\d+)?$/.test(executable);
   }
   return (
-    process.name.toLowerCase().includes(browser) ||
-    !!process.command_line?.[0]?.toLowerCase().includes(browser)
+    process.name.toLowerCase().includes(workload) ||
+    !!process.command_line?.[0]?.toLowerCase().includes(workload)
   );
 }
 function processKey(identity: ProcessId) {
@@ -79,9 +77,7 @@ const port = Number(process.env.HOST_PORT ?? 10090);
 const seconds = Number(process.env.RECORD_SECONDS ?? (kernelBuild ? 30 : 15));
 assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
 assert.ok(Number.isFinite(seconds) && seconds >= 1 && seconds <= 300);
-const output =
-  process.env.RECORD_OUTPUT ??
-  `/tmp/${kernelBuild ? workload : browser}-vm.json.gz`;
+const output = process.env.RECORD_OUTPUT ?? `/tmp/${workload}-vm.json.gz`;
 const base = `http://127.0.0.1:${port}`;
 const profile = await mkdtemp(join(tmpdir(), "space-vm-capture-"));
 const errors: string[] = [];
