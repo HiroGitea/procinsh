@@ -34,11 +34,7 @@ config = {
     "runcmd": [["bash", "/opt/setup-recording.sh", revision, str(port), browser, workload]],
 }
 if workload == "kernel-build":
-    snapshot = os.environ.get("KERNEL_SOURCE_SNAPSHOT", "20260927T000000Z")
-    if not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z", snapshot):
-        raise SystemExit("KERNEL_SOURCE_SNAPSHOT must use YYYYMMDDTHHMMSSZ")
-    config["runcmd"][0].append(snapshot)
-    config["packages"] += ["flex", "bison", "libssl-dev", "libncurses-dev", "bc", "dpkg-dev", "xz-utils"]
+    config["packages"] += ["flex", "bison", "libssl-dev", "libncurses-dev", "bc"]
     config["write_files"].append({
         "path": "/opt/kernel-build.sh", "permissions": "0755",
         "content": Path(__file__).with_name("kernel-build.sh").read_text(),

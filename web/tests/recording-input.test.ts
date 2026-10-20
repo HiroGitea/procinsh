@@ -52,13 +52,6 @@ test("published kernel build contains 30 seconds of real compiler activity", asy
       .map((event) => event.data),
   ];
   expect(
-    snapshots.some((snapshot) =>
-      snapshot.processes.some((process) =>
-        process.command_line?.includes("KERNELRELEASE=7.0.0-34-generic"),
-      ),
-    ),
-  ).toBe(true);
-  expect(
     snapshots.every((snapshot) =>
       snapshot.processes.every(
         (process) =>

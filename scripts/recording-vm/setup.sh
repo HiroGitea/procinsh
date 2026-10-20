@@ -15,12 +15,6 @@ npm --prefix web ci
 npm --prefix web run build
 cargo build --locked
 if [[ $workload == kernel-build ]]; then
-  snapshot=${5:-20260927T000000Z}
-  sed -e 's/^Types:.*/Types: deb-src/' \
-    -e "s|^URIs:.*|URIs: https://snapshot.ubuntu.com/ubuntu/$snapshot/|" \
-    -e '/^Signed-By:/a Check-Valid-Until: no' \
-    /etc/apt/sources.list.d/ubuntu.sources > /etc/apt/sources.list.d/kernel-source.sources
-  apt-get update -o APT::Update::Error-Mode=any
   sudo -u demo /opt/kernel-build.sh prepare
 elif [[ $browser == firefox ]]; then
   apt-get install -y --no-install-recommends libgtk-3-0t64 libdbus-glib-1-2 libasound2t64 libx11-xcb1 libxt6t64 xz-utils
