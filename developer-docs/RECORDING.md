@@ -112,8 +112,8 @@ and log out and back in.
 
 ```sh
 # The guest clones the published commit from the current checkout.
-# BROWSER accepts chrome (default) or firefox.
-BROWSER=firefox VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh prepare
+# WORKLOAD accepts chrome (default) or firefox.
+WORKLOAD=firefox VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh prepare
 VM_DIR=/tmp/space-demo scripts/recording-vm/run.sh run
 ```
 
@@ -131,7 +131,7 @@ Wait for `SPACE recording ready on guest port 10090` in
 To capture automatically through the same browser controls:
 
 ```sh
-(cd web && BROWSER=firefox HOST_PORT=10090 RECORD_SECONDS=15 \
+(cd web && WORKLOAD=firefox HOST_PORT=10090 RECORD_SECONDS=15 \
   RECORD_OUTPUT=/tmp/firefox-vm.json.gz node --import tsx scripts/capture-vm-recording.ts)
 ```
 
@@ -151,9 +151,8 @@ for QEMU to exit before restarting it.
 ## Capturing the Linux kernel build demo
 
 The kernel workload uses the same VM tools and browser recorder as the browser
-workloads. `WORKLOAD` accepts `browser` (default) or `kernel-build`; `BROWSER`
-continues to select Chrome or Firefox for the browser workload. Kernel guests
-install no browser and run no browser workload.
+workloads. `WORKLOAD` accepts `chrome` (default), `firefox` or `kernel-build`.
+Kernel guests install no browser and run no browser workload.
 
 ```sh
 WORKLOAD=kernel-build VM_DIR=/tmp/kernel-demo HOST_PORT=10191 \

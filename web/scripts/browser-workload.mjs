@@ -19,8 +19,8 @@ if (!Number.isInteger(tabCount) || tabCount < 1 || tabCount > 1000) throw new Er
 const tabUrls = Array.from({length: tabCount}, (_, index) => urls[index % urls.length]);
 const interval = Number(process.env.INTERVAL_SECONDS ?? 10) * 1000;
 if (!Number.isFinite(interval) || interval < 1000) throw new Error('INTERVAL_SECONDS must be at least 1');
-const browser = process.env.BROWSER ?? 'chrome';
-if (!['chrome', 'firefox'].includes(browser)) throw new Error('BROWSER must be chrome or firefox');
+const browser = process.env.WORKLOAD ?? 'chrome';
+if (!['chrome', 'firefox'].includes(browser)) throw new Error('WORKLOAD must be chrome or firefox');
 const profile = await mkdtemp(join(tmpdir(), `${browser}-reload-profile-`));
 const pidFile = process.env.PID_FILE;
 let ownsPidFile = false;

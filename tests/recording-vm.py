@@ -13,7 +13,7 @@ class RecordingVmTests(unittest.TestCase):
     def seed(self, **options):
         with tempfile.TemporaryDirectory() as directory:
             env = {key: value for key, value in os.environ.items()
-                   if key not in ("WORKLOAD", "BROWSER")}
+                   if key != "WORKLOAD"}
             env.update(options)
             result = subprocess.run(
                 ["python3", str(ROOT / "scripts/recording-vm/seed.py"),
@@ -24,12 +24,12 @@ class RecordingVmTests(unittest.TestCase):
             config = json.loads(path.read_text().split("\n", 1)[1]) if path.exists() else None
             return result, config
 
-    def test_browser_compatibility(self):
+    def test_browser_workloads(self):
         for browser in (None, "chrome", "firefox"):
             with self.subTest(browser=browser):
-                result, config = self.seed(**({"BROWSER": browser} if browser else {}))
+                result, config = self.seed(**({"WORKLOAD": browser} if browser else {}))
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(config["runcmd"][0][-2:], [browser or "chrome", "browser"])
+                self.assertEqual(config["runcmd"][0][2:], ["a" * 40, "10191", browser or "chrome"])
                 self.assertNotIn("ccache", config["packages"])
                 self.assertEqual(len(config["write_files"]), 1)
 
