@@ -288,10 +288,8 @@ class Release:
             if not local:
                 self.git("tag", "-a", tag, commit, "-m", f"Release {tag}")
             self.git("push", REMOTE_URL, f"refs/tags/{tag}")
-        notes = self.directory / "release-notes.md"
-        notes.write_text("")
         url = self.gh("release", "create", tag, "--verify-tag", "--title", tag,
-                      "--notes-file", str(notes))
+                      "--generate-notes", "--notes-start-tag", f"v{self.info['previous']}")
         self.ensure_clean()
         self.git("worktree", "remove", str(self.work))
         shutil.rmtree(self.directory)
