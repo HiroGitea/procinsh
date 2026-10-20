@@ -176,7 +176,7 @@ no fallback to another version if the matching source is unavailable.
 containing the guest kernel's source when using a different cloud image.
 
 Following the [reference article](https://akawashiro.com/articles/linux-build-script),
-compilation uses `CC="ccache clang"`, `defconfig` then `kvm_guest.config`, separate
+compilation uses `CC=clang`, `defconfig` then `kvm_guest.config`, separate
 source and output trees, and `max(1, nproc - 2)` jobs. Source is in
 `/home/demo/linux`, downloaded archives are in `/home/demo/kernel-source`, and
 output is in `/home/demo/linux-build`. The source changelog must match the
@@ -185,8 +185,7 @@ installed source package version. Following Ubuntu's packaging rules,
 stable patch level can differ from its release name. The upstream major/minor
 series and configured `kernelrelease` are checked against the guest; a mismatch
 stops preparation or build.
-A fresh VM has an empty ccache. The kernel is not installed and the guest is not
-rebooted into it.
+The kernel is not installed and the guest is not rebooted into it.
 
 Defaults are 4 vCPUs, 8192 MiB RAM and a 40 GiB disk. Source download and
 configuration finish before the workload service starts. Inspect
@@ -202,7 +201,7 @@ compiler CPU and file activity across all recorded snapshots.
 It rejects interrupted recordings and validates gzip replay before saving.
 `RECORD_SECONDS` overrides duration; browser workloads still default to 15 seconds.
 Record during the initial build. For another clean recording, prepare a fresh VM
-so the output and compiler cache are empty. If a recording exceeds 128 MiB JSON
+so the build output is empty. If a recording exceeds 128 MiB JSON
 or 25 MiB gzip, use fewer `VM_CPUS` in a fresh guest and capture 30 seconds again.
 
 Copy the validated gzip into `web/replay-public/recordings/`. The bundled demo ID
@@ -214,8 +213,8 @@ recording using `VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh stop`.
 
 | Property | Value |
 | --- | --- |
-| Capture start (UTC) | `2026-10-20T04:18:35.599Z` |
-| Duration / last event | 31.258 s / 30.979 s |
+| Capture start (UTC) | `2026-10-20T04:25:40.568Z` |
+| Duration / last event | 30.852 s / 30.516 s |
 | Guest / resources | Ubuntu 26.04, `7.0.0-34-generic`, 4 vCPUs, 8192 MiB RAM, 40 GiB disk |
 | procinsh revision | `eaff2f3a6f7df7ac16d7160e1cba2acdd6439d5e` |
 | Ubuntu source package | `linux 7.0.0-34.34` |
@@ -223,14 +222,14 @@ recording using `VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh stop`.
 | Source descriptor SHA256 | `03239d912d2204cee96216f4006d654ec3d9b4d8882488ca9200c26196c641fc` |
 | Upstream stable patch level | `7.0.14` |
 | Built kernel release | `7.0.0-34-generic` |
-| Compiler / parallelism | Ubuntu clang 21.1.8 (`6ubuntu1`), ccache, 2 jobs |
+| Compiler / parallelism | Ubuntu clang 21.1.8 (`6ubuntu1`), `CC=clang`, 2 jobs |
 | Configuration | `defconfig` + `kvm_guest.config`, `KERNELRELEASE=7.0.0-34-generic` |
 | Config SHA256 | `1ce366d499bd18f8655672bdcf392e21ee72f5265c6122a6934eae3f024b1877` |
-| JSON / gzip bytes | 64,927,455 / 4,395,524 |
-| Gzip SHA256 | `7ebfe60c689bd0f98330ceaae78f2286626fa4c79504f98ee82c3c0aad1a76f9` |
+| JSON / gzip bytes | 65,805,411 / 4,350,131 |
+| Gzip SHA256 | `e5569419a48b17b8885761d7ae65cb72bd1d1d13350bc319c250fec751e47ca2` |
 
-The recording contains 48 distinct compiler identities, 2 compiler CPU samples
-with positive runtime, and 27,712 compiler file-activity samples. It is an excerpt
+The recording contains 51 distinct compiler identities, 2 compiler CPU samples
+with positive runtime, and 28,853 compiler file-activity samples. It is an excerpt
 of compilation, not a recording of a completed build.
 
 ## Validation
