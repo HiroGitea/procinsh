@@ -58,7 +58,7 @@ sudo setcap \
 Without it, ProcInSh keeps available socket information and reports missing
 peer diagnostics as warnings; an unknown peer does not mean an unconnected socket.
 
-The space view also shows a hardware bay in front of the processes: GPUs, RDMA
+The space view also shows a hardware bay next to systemd: GPUs, RDMA
 NICs and accelerators with the PCIe bridges between them, their link speed and
 the PCIe path class between devices (like `nvidia-smi topo -m`). Select a device
 to see its paths and the processes holding it. This reads sysfs only and needs no
