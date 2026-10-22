@@ -831,18 +831,19 @@ export function createSpaceScene() {
       if (!parent) continue;
       const a = hardware.positions.get(device.address)!,
         b = hardware.positions.get(parent.address)!;
-      const middle = (a.y + b.y) / 2,
-        link = device.link?.current ?? null;
+      const link = device.link?.current ?? null;
       const color = downgraded(device, parent)
         ? DOWNGRADED_COLOR
         : link
           ? PCIE_COLORS[Math.min(5, Display.pcieGeneration(link.speed_gts) - 1)]
           : PCIE_COLORS[0];
       const width = 0.12 + (link?.width ?? 1) * 0.02;
+      // Levels run along x: turn halfway between a node and its parent.
+      const middle = (a.x + b.x) / 2;
       const points = [
         new T.Vector3(a.x, a.y, a.z + 0.05),
-        new T.Vector3(a.x, middle, a.z + 0.05),
-        new T.Vector3(b.x, middle, b.z + 0.05),
+        new T.Vector3(middle, a.y, a.z + 0.05),
+        new T.Vector3(middle, b.y, b.z + 0.05),
         new T.Vector3(b.x, b.y, b.z + 0.05),
       ];
       for (let i = 1; i < points.length; i++)

@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  HARDWARE_COLUMN,
   HARDWARE_GAP,
   HARDWARE_ROW,
   downgraded,
@@ -147,22 +148,49 @@ const snapshot: SystemSnapshot = {
 };
 
 describe("hardware bay", () => {
-  test("lays out PCIe trees in front of the processes", () => {
-    const positions = hardwareLayout(devices, [
-      { x: -10, y: 2 },
-      { x: 10, y: 20 },
-    ]);
+  test("lays out PCIe trees left of the init process", () => {
+    const init = { x: 1.1, y: 174 };
+    const processes = [init, { x: 40, y: 174 }, { x: -100, y: 0 }];
+    const positions = hardwareLayout(devices, processes, new Map(), init);
     const at = (address: string) => positions.get(address)!;
-    // Devices nearest the processes, then root ports, then host bridges.
-    expect(at("0000:01:00.0").y).toBe(2 - HARDWARE_GAP);
-    expect(at("0000:00:01.1").y).toBe(2 - HARDWARE_GAP - HARDWARE_ROW);
-    expect(at("pci0000:00").y).toBe(2 - HARDWARE_GAP - 2 * HARDWARE_ROW);
-    // Parents sit over their children; the bay is centered on the processes.
-    expect(at("pci0000:00").x).toBe(at("0000:01:00.0").x);
-    expect((at("0000:01:00.0").x + at("0000:85:00.0").x) / 2).toBe(0);
-    expect(at("0000:85:00.0").x - at("0000:01:00.0").x).toBeGreaterThan(0);
+    // Devices nearest systemd, then root ports, then host bridges farther left.
+    expect(at("0000:01:00.0").x).toBeCloseTo(init.x - HARDWARE_GAP);
+    expect(at("0000:00:01.1").x).toBeCloseTo(
+      init.x - HARDWARE_GAP - HARDWARE_ROW,
+    );
+    expect(at("pci0000:00").x).toBeCloseTo(
+      init.x - HARDWARE_GAP - 2 * HARDWARE_ROW,
+    );
+    // Devices spread along y around systemd; parents sit beside their children.
+    expect((at("0000:01:00.0").y + at("0000:85:00.0").y) / 2).toBe(init.y);
+    expect(at("pci0000:00").y).toBe(at("0000:01:00.0").y);
+    expect(at("0000:85:00.0").y - at("0000:01:00.0").y).toBeCloseTo(
+      HARDWARE_COLUMN,
+    );
+    // A process in the way pushes the whole bay farther left.
+    const crowded = hardwareLayout(
+      devices,
+      [...processes, { x: -9.4, y: 174 }],
+      new Map(),
+      init,
+    );
+    expect(crowded.get("pci0000:00")!.x).toBeLessThan(at("pci0000:00").x);
+    for (const p of crowded.values())
+      expect(Math.abs(p.x + 9.4) >= 2.7 || Math.abs(p.y - 174) >= 2.7).toBe(
+        true,
+      );
+    // Without an anchor the bay is left of every process.
+    const fallback = hardwareLayout(devices, processes);
+    expect(Math.max(...[...fallback.values()].map((p) => p.x))).toBeLessThan(
+      -100,
+    );
     // Positions are kept until a rearrangement.
-    const moved = hardwareLayout(devices, [{ x: 100, y: 100 }], positions);
+    const moved = hardwareLayout(
+      devices,
+      [{ x: 100, y: 100 }],
+      positions,
+      init,
+    );
     expect(moved.get("pci0000:80")).toEqual(at("pci0000:80"));
     expect(hardwareLayout([], []).size).toBe(0);
   });

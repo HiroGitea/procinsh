@@ -426,10 +426,17 @@ export class SpaceDataStore {
     this.recentFiles.prune(now, this.liveIds, retained.files);
     this.netlinkSockets.sync(currentRelations, this.liveIds, retained.netlink);
     this.network = networkGroups(relations);
+    // The bay sits left of the init process, the lowest PID shown.
+    const init = [...this.nodes.values()].reduce<PlacedProcess | undefined>(
+      (lowest, n) =>
+        !lowest || n.identity.pid < lowest.identity.pid ? n : lowest,
+      undefined,
+    );
     this.hardwarePositions = hardwareLayout(
       this.snapshot.hardware_devices ?? [],
       [...this.nodes.values()].map((n) => n.pos),
       rearrange ? new Map() : this.hardwarePositions,
+      init?.pos,
     );
     this.networkPositions = networkLayout(
       this.network,

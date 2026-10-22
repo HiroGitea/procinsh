@@ -103,6 +103,8 @@ type LabelCandidate = {
   width: number;
   depth: number;
   active: boolean;
+  /** Placed before ordinary labels, such as the few hardware devices. */
+  priority?: boolean;
   state: LabelState;
 };
 
@@ -118,6 +120,7 @@ function placeLabels<L extends LabelCandidate>(
   labels.sort(
     (a, b) =>
       Number(b.active) - Number(a.active) ||
+      Number(!!b.priority) - Number(!!a.priority) ||
       Number(b.state.shown) - Number(a.state.shown) ||
       a.depth - b.depth,
   );
@@ -336,6 +339,7 @@ export function createSpaceRenderer({
       active: boolean,
       external = false,
       color?: string,
+      priority = false,
     ) => {
       labelPoint.copy(pos).project(camera);
       if (labelPoint.z < -1 || labelPoint.z > 1) return;
@@ -360,6 +364,7 @@ export function createSpaceRenderer({
         active,
         external,
         color,
+        priority,
         state,
       });
     };
@@ -396,6 +401,7 @@ export function createSpaceRenderer({
         active,
         true,
         HARDWARE_LABEL_COLORS[v.device.kind ?? "bridge"],
+        true,
       );
     }
     for (const v of hardwarePathViews)
@@ -922,6 +928,14 @@ if (import.meta.vitest) {
       "active labels win and fadeStep 1 switches immediately",
     );
     assert.equal(near.state.alpha, 0);
+    const device = { ...label("device", 0.9), priority: true };
+    const ordinary = label("ordinary", 0.1);
+    drawn = placeLabels([ordinary, device], 1);
+    assert.deepEqual(
+      names(drawn),
+      ["device"],
+      "priority labels are placed before nearer ordinary ones",
+    );
   });
   test("IPC particle plan and CPU glow", async () => {
     const assert: typeof import("node:assert/strict") = (
