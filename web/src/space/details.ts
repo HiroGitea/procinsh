@@ -18,6 +18,7 @@ import type {
   SocketEndpoint,
 } from "../shared/api-types.js";
 import { spaceElement } from "./dom-types.js";
+import { deviceUsers, downgraded, pathLabel } from "./hardware.js";
 export function createSpaceDetails(
   actions: Pick<SelectionActions, "connection" | "network">,
   $ = spaceElement,
@@ -27,12 +28,14 @@ export function createSpaceDetails(
     network: DetailsInput["network"],
     edgeStats: DetailsInput["edgeStats"],
     recentFiles: DetailsInput["files"],
-    netlinkSockets: DetailsInput["netlink"];
+    netlinkSockets: DetailsInput["netlink"],
+    hardware: DetailsInput["hardware"];
   let selected: string | null = null,
     selectedEdge: string | null = null,
     selectedNetwork: string | null = null,
     selectedFile: string | null = null,
-    selectedNetlink: string | null = null;
+    selectedNetlink: string | null = null,
+    selectedHardware: string | null = null;
   const selectConnection = actions.connection,
     selectNetwork = actions.network;
   const replayMode = document.body.dataset.mode === "replay";
@@ -68,6 +71,11 @@ export function createSpaceDetails(
       ` · PID ${group.endpoint.process_id.pid} → ${remoteLabel(group.socket)}${remoteAddress} · ${group.members.length} connections`,
     );
     const content: HTMLElement[] = [heading];
+    if (group.socket.remote_gid) {
+      const gid = document.createElement("p");
+      gid.textContent = `InfiniBand GID ${group.socket.remote_gid} (IPoIB neighbor)`;
+      content.push(gid);
+    }
     for (const e of group.members) {
       const row = document.createElement("div");
       row.className = "endpoint";
@@ -85,6 +93,109 @@ export function createSpaceDetails(
       content.push(row);
     }
     updateConnectionEndpoints(content);
+  }
+  function line(text: string) {
+    const span = document.createElement("span");
+    span.textContent = text;
+    return span;
+  }
+  function card(title: string | HTMLElement, lines: string[]) {
+    const div = document.createElement("div");
+    div.className = "endpoint";
+    const heading = document.createElement("strong");
+    heading.append(title);
+    div.append(heading, ...lines.filter(Boolean).map(line));
+    return div;
+  }
+  const bytes = (n: number) =>
+    n >= 1 << 30
+      ? `${n / (1 << 30)} GiB`
+      : n >= 1 << 20
+        ? `${n / (1 << 20)} MiB`
+        : `${n / 1024} KiB`;
+  function hardwareDetails() {
+    const devices = hardware?.devices ?? [];
+    const device = devices.find((d) => d.address === selectedHardware);
+    if (!device) return;
+    const label = (address: string) =>
+      devices.find((d) => d.address === address)?.label ?? address;
+    $("process-details").hidden = true;
+    $("connection-details").hidden = false;
+    $("connection-label").textContent = device.label;
+    const role = {
+      host_bridge: "PCIe host bridge",
+      root_port: "PCIe root port",
+      switch_port: "PCIe switch port",
+      endpoint: {
+        gpu: "GPU",
+        rdma: "RDMA NIC",
+        accelerator: "Accelerator",
+        nv_switch: "NVSwitch",
+      }[device.kind ?? "gpu"],
+    }[device.role];
+    $("connection-state").textContent = `${role} · ${device.address}`;
+    const parent = devices.find((d) => d.address === device.parent);
+    $("connection-facts").textContent = device.link
+      ? `PCIe ${Display.pcieLink(device.link.current)} · max ${Display.pcieLink(device.link.max)}${downgraded(device, parent) ? " · running below the maximum of both ends" : ""}`
+      : device.role === "host_bridge"
+        ? "Root complex"
+        : `Link unavailable${device.runtime_status === "suspended" ? " · runtime suspended" : ""}`;
+    const cards: HTMLElement[] = [
+      card("Device", [
+        [device.vendor_id, device.device_id].filter(Boolean).join(":") &&
+          `ID ${device.vendor_id}:${device.device_id} · class ${device.class ?? "N/A"}`,
+        device.driver ? `Driver ${device.driver}` : "",
+        `NUMA ${device.numa_node ?? "N/A"}${device.iommu_group === null ? "" : ` · IOMMU group ${device.iommu_group}`}`,
+        device.power_state || device.runtime_status
+          ? `Power ${[device.power_state, device.runtime_status].filter(Boolean).join(" · ")}`
+          : "",
+        device.bars.length
+          ? `BAR ${device.bars.map((b) => `${b.index}: ${bytes(b.bytes)}${b.prefetchable ? " (prefetchable)" : ""}`).join(", ")}`
+          : "",
+        device.gpu
+          ? `GPU ${device.gpu.vendor}${device.gpu.uuid ? ` · ${device.gpu.uuid}` : ""}${device.gpu.drm.length ? ` · ${device.gpu.drm.join(", ")}` : ""}`
+          : "",
+        ...device.rdma.map(
+          (r) =>
+            `RDMA ${r.name}${r.hca_type ? ` · ${r.hca_type}` : ""}${r.fw_ver ? ` · firmware ${r.fw_ver}` : ""}`,
+        ),
+        device.netdevs.length ? `Network ${device.netdevs.join(", ")}` : "",
+      ]),
+    ];
+    const below = devices.filter((d) => d.parent === device.address);
+    if (below.length)
+      cards.push(
+        card(
+          "Downstream",
+          below.map((d) => `${d.label} · ${d.address}`),
+        ),
+      );
+    for (const path of hardware?.paths ?? []) {
+      if (path.a !== device.address && path.b !== device.address) continue;
+      const other = path.a === device.address ? path.b : path.a;
+      const via =
+        path.a === device.address ? path.via : [...path.via].reverse();
+      cards.push(
+        card(`Path to ${label(other)}`, [
+          pathLabel(path),
+          `via ${via.join(" → ")}`,
+        ]),
+      );
+    }
+    const users = deviceUsers(
+      (hardware?.handles ?? []).filter((h) => h.device === device.address),
+      (h) => key(h.process_id),
+    ).get(device.address);
+    for (const handles of users?.values() ?? []) {
+      const heading = document.createElement("span");
+      heading.append(processLink(handles[0].process_id));
+      cards.push(
+        card(heading, [
+          `PID ${handles[0].process_id.pid} · ${handles.map((h) => `${h.kind} ×${h.fd_count} (FD ${h.fd})`).join(", ")}`,
+        ]),
+      );
+    }
+    updateConnectionEndpoints(cards);
   }
   function fileDetails() {
     const f = recentFiles.get(selectedFile ?? "");
@@ -144,6 +255,11 @@ export function createSpaceDetails(
         ? `${Display.protocol(socket.protocol)} · ${Display.state(socket.state)}`
         : "The peer process could not be identified.";
       div.append(note);
+      if (socket?.remote_gid) {
+        const gid = document.createElement("span");
+        gid.textContent = `InfiniBand GID ${socket.remote_gid}`;
+        div.append(gid);
+      }
       return div;
     }
     const identity = document.createElement("span");
@@ -176,22 +292,29 @@ export function createSpaceDetails(
       edgeStats,
       files: recentFiles,
       netlink: netlinkSockets,
+      hardware,
     } = data);
     selected = selection.process;
     selectedEdge = selection.connection;
     selectedNetwork = selection.network;
     selectedFile = selection.file;
     selectedNetlink = selection.netlink;
+    selectedHardware = selection.hardware ?? null;
     const active = !!(
       selected ||
       selectedEdge ||
       selectedNetwork ||
       selectedFile ||
-      selectedNetlink
+      selectedNetlink ||
+      selectedHardware
     );
     $("details").hidden = !active;
     if (!active) return;
     $("connection-state").hidden = !!selectedNetlink;
+    if (selectedHardware) {
+      hardwareDetails();
+      return;
+    }
     if (selectedNetlink) {
       netlinkDetails();
       return;

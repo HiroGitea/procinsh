@@ -1,6 +1,11 @@
 // Inputs and callbacks for SPACE geometry, picking, details, and rendering.
 import type * as T from "three";
-import type { SystemSnapshot } from "../shared/api-types.js";
+import type {
+  DeviceHandle,
+  HardwareDevice,
+  HardwarePath,
+  SystemSnapshot,
+} from "../shared/api-types.js";
 import type {
   PlacedProcess,
   Position,
@@ -14,6 +19,8 @@ import type {
   NetworkView,
   FileView,
   HoverState,
+  HardwarePathView,
+  HardwareView,
 } from "./types.js";
 
 export interface SelectionActions {
@@ -22,6 +29,7 @@ export interface SelectionActions {
   network(id: string | null): void;
   file(id: string | null): void;
   netlink(id: string | null): void;
+  hardware?(id: string | null): void;
   clear(): void;
 }
 export interface SelectionTargets {
@@ -30,6 +38,13 @@ export interface SelectionTargets {
   networks: ReadonlySet<string>;
   files: ReadonlySet<string>;
   netlink: ReadonlySet<string>;
+  hardware?: ReadonlySet<string>;
+}
+/** Devices, paths and descriptor holders of the hardware bay. */
+export interface HardwareInput {
+  devices: readonly HardwareDevice[];
+  paths: readonly HardwarePath[];
+  handles: readonly DeviceHandle[];
 }
 export interface FileSceneInput {
   nodes: ReadonlyMap<string, PlacedProcess>;
@@ -43,6 +58,7 @@ export interface SceneInput extends FileSceneInput {
   snapshot: SystemSnapshot;
   network: ReadonlyMap<string, NetworkGroup>;
   networkPositions: ReadonlyMap<string, Position>;
+  hardware?: HardwareInput & { positions: ReadonlyMap<string, Position> };
 }
 export interface WorldPositions {
   processes: Iterable<Position>;
@@ -52,6 +68,7 @@ export interface WorldPositions {
 }
 export interface DetailsInput {
   nodes: ReadonlyMap<string, PlacedProcess>;
+  hardware?: HardwareInput;
   snapshot: SystemSnapshot;
   network: ReadonlyMap<string, NetworkGroup>;
   edgeStats: ReadonlyMap<string, EdgeStat>;
@@ -67,6 +84,7 @@ export interface PickingView {
 }
 export interface PickingInput {
   view: PickingView;
+  hardware?: HardwareInput;
   edgeStats: ReadonlyMap<string, EdgeStat>;
   files: ReadonlyMap<string, RecentFile>;
   netlink: ReadonlyMap<string, NetlinkSocketStats>;
@@ -84,6 +102,8 @@ export interface RenderView {
   networkViews: readonly NetworkView[];
   fileViews: ReadonlyMap<string, FileView>;
   netlinkViews: ReadonlyMap<string, NetlinkView>;
+  hardwareViews?: readonly HardwareView[];
+  hardwarePathViews?: readonly HardwarePathView[];
   edgeViews: readonly EdgeView[];
   baseGlow: T.InstancedMesh | null;
   haloGlow: T.InstancedMesh | null;

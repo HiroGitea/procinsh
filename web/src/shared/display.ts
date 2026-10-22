@@ -118,6 +118,17 @@ export namespace Display {
   export function access(a: import("./api-types.js").FdAccess): string {
     return a === "unknown" ? "N/A" : a === "read_write" ? "read/write" : a;
   }
+  /** PCIe generation from the per-lane rate: 2.5 GT/s is Gen1, 64 GT/s Gen6. */
+  export function pcieGeneration(speedGts: number): number {
+    return Math.max(1, Math.round(Math.log2(speedGts / 2.5)) + 1);
+  }
+  export function pcieLink(
+    link: import("./api-types.js").PcieLink | null | undefined,
+  ): string {
+    return link
+      ? `Gen${pcieGeneration(link.speed_gts)} x${link.width} (${link.speed_gts} GT/s)`
+      : "N/A";
+  }
 }
 
 export const num = (v: number | null | undefined, digits = 1) =>

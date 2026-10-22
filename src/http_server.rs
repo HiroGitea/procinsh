@@ -7,10 +7,11 @@
 //! | [`run`] | `pub(super)` | `async fn run(listen: &[`[`SocketAddr`](std::net::SocketAddr)`]) -> `[`anyhow::Result`]`<()>` |
 //!
 //! Shared resource identities live in [`resource`]; socket metadata and descriptor
-//! capabilities live in [`socket_types`].
+//! capabilities live in [`socket_types`]; bounded netlink dumps live in [`netlink`].
 //!
 mod api;
 mod middleware;
+mod netlink;
 mod process;
 mod resource;
 mod router;

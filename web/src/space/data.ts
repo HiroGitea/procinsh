@@ -14,6 +14,7 @@ import {
 } from "./model.js";
 export { layoutMaps };
 import { treeLayout, stableLayout } from "./process-layout.js";
+import { hardwareLayout } from "./hardware.js";
 import { emptyActivityRetention } from "./types.js";
 import type {
   Position,
@@ -63,7 +64,7 @@ function networkGroups(fd_relations: FdRelation[]) {
     group.members.sort(
       (a, b) => a.endpoint.fd - b.endpoint.fd || a.id.localeCompare(b.id),
     );
-    group.label = `${Display.protocol(group.socket.protocol)} ${remoteLabel(group.socket)} ×${group.members.length}`;
+    group.label = `${Display.protocol(group.socket.protocol)} ${remoteLabel(group.socket)}${group.socket.remote_gid ? " · IB" : ""} ×${group.members.length}`;
   }
   return groups;
 }
@@ -250,9 +251,24 @@ function mergeSnapshot(
     for (const id of update.fd_relations_delta.remove) relations.delete(id);
     for (const r of update.fd_relations_delta.upsert) relations.set(r.id, r);
   }
+  const handles = new Map(
+    (update.kind === "full" ? [] : (previous.device_handles ?? [])).map((h) => [
+      h.id,
+      h,
+    ]),
+  );
+  if (update.device_handles_delta) {
+    for (const id of update.device_handles_delta.remove) handles.delete(id);
+    for (const h of update.device_handles_delta.upsert) handles.set(h.id, h);
+  }
+  const { device_handles_delta: _handles, ...rest } = update;
   return {
-    ...update,
+    ...rest,
     fd_relations: update.fd_relations ?? [...relations.values()],
+    hardware_devices:
+      update.hardware_devices ?? previous.hardware_devices ?? [],
+    hardware_paths: update.hardware_paths ?? previous.hardware_paths ?? [],
+    device_handles: update.device_handles ?? [...handles.values()],
     processes: update.processes.map((p) => {
       const old =
         update.kind === "full" ? undefined : known.get(key(p.identity));
@@ -302,6 +318,8 @@ export class SpaceDataStore {
   readonly netlinkSockets = new NetlinkSocketStore();
   network = new Map<string, NetworkGroup>();
   networkPositions = new Map<string, Position>();
+  /** Hardware bay positions by PCI address, in front of the processes. */
+  hardwarePositions = new Map<string, Position>();
   filePositions = new Map<string, Position>();
   netlinkPositions = new Map<string, Position>();
   private source: EventSource | null = null;
@@ -408,6 +426,11 @@ export class SpaceDataStore {
     this.recentFiles.prune(now, this.liveIds, retained.files);
     this.netlinkSockets.sync(currentRelations, this.liveIds, retained.netlink);
     this.network = networkGroups(relations);
+    this.hardwarePositions = hardwareLayout(
+      this.snapshot.hardware_devices ?? [],
+      [...this.nodes.values()].map((n) => n.pos),
+      rearrange ? new Map() : this.hardwarePositions,
+    );
     this.networkPositions = networkLayout(
       this.network,
       this.positions(),

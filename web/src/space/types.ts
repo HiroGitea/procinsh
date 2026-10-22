@@ -10,6 +10,8 @@ import type {
   CpuActivity,
   MemoryMap,
   SignalEvent,
+  HardwareDevice,
+  HardwarePath,
 } from "../shared/api-types.js";
 export interface Position {
   x: number;
@@ -111,15 +113,21 @@ export interface SelectionState {
   readonly network: string | null;
   readonly file: string | null;
   readonly netlink: string | null;
+  /** A hardware bay device by PCI address. */
+  readonly hardware?: string | null;
 }
 export interface HoverState {
   readonly hoveredNetwork: string | null;
   readonly hoveredFile: string | null;
   readonly hoveredNetlink: string | null;
+  readonly hoveredHardware?: string | null;
 }
 export type ConnectionPick = FdRelation & { networkId?: string };
 export type PickResult =
-  ConnectionPick | { fileId: string } | { netlinkId: string };
+  | ConnectionPick
+  | { fileId: string }
+  | { netlinkId: string }
+  | { hardwareId: string };
 export interface RenderNode extends Process {
   pos: T.Vector3;
   regions: Region[];
@@ -135,6 +143,18 @@ export interface NetworkView {
   group: NetworkGroup;
   pos: T.Vector3;
   curve: T.CubicBezierCurve3;
+}
+/** A hardware bay device and the number of processes holding it. */
+export interface HardwareView {
+  device: HardwareDevice;
+  pos: T.Vector3;
+  users: number;
+}
+/** A highlighted PCIe path of the selected device, labeled at its far end. */
+export interface HardwarePathView {
+  path: HardwarePath;
+  label: string;
+  pos: T.Vector3;
 }
 export interface FileView {
   file: RecentFile;

@@ -89,6 +89,8 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 | `src/http_server/process/snapshot/symbol/` | ELF 取得・キャッシュ、アドレス変換、ELF/DWARF によるシンボル・ソース位置の解決 |
 | `src/http_server/process/snapshot/stack.rs` | サンプルとシンボル解決で共有するフレーム型 |
 | `src/http_server/system/` | 全プロセスの構造、subscription、BPF 収集、名前解決 |
+| `src/http_server/system/hardware/` | sysfs・procfs による GPU・RDMA NIC・アクセラレータ・NVSwitch と PCIe ブリッジ、デバイス間の経路、デバイスを開いているプロセス |
+| `src/http_server/netlink.rs` | UNIX socket diagnostic などで共有する、期限付き netlink dump と属性の解析 |
 | `web/src/` | TypeScript の通常画面・SPACE 画面・描画モデルと CSS（HTML 入口は `web/{list,process,space}/index.html`） |
 | `tests/` | Rust・ブラウザ・ログ・実機センサーのテストと C fixture |
 
@@ -173,9 +175,9 @@ SSE は `Content-Type: text/event-stream` で接続を維持し、`event:` に�
 | `activity` | 約1秒ごとの活動集計。`captured_at`、`window_ms`、`cpu`、`ipc`、`files`、`signals`、`status` |
 | `gap` | 購読遅延時の `{dropped_frames: 件数}`。続けて最新 `snapshot` を送り、失われた活動は再送しない |
 
-`system/snapshot.rs` の `SystemSnapshot` を、接続ごとの `SnapshotEncoder` で JSON に変換して配信します。`ProcessSnapshot` はプロセス、`FdEndpoint` はプロセスの FD 端点、`FdRelation` は socket・pipe・共有所有の関係を表します。
+`system/snapshot.rs` の `SystemSnapshot` を、接続ごとの `SnapshotEncoder` で JSON に変換して配信します。`ProcessSnapshot` はプロセス、`FdEndpoint` はプロセスの FD 端点、`FdRelation` は socket・pipe・共有所有の関係、`HardwareDevice`・`HardwarePath`・`DeviceHandle` はハードウェアを表します。
 
-`snapshot` のトップレベルは `kind`、`sequence`、`captured_at`、`processes`、`warnings`、`inspected_processes`、`inspected_fds` と、FD 関係のデータです。`kind` は `full` または `delta`、`sequence` は接続内で配信ごとに増加する番号です。`delta` は差分の基準となる直前の `sequence` を `base_sequence` に含みます。初回収集前は空の構造の場合があります。
+`snapshot` のトップレベルは `kind`、`sequence`、`captured_at`、`processes`、`warnings`、`inspected_processes`、`inspected_fds` と、FD 関係・ハードウェアのデータです。`kind` は `full` または `delta`、`sequence` は接続内で配信ごとに増加する番号です。`delta` は差分の基準となる直前の `sequence` を `base_sequence` に含みます。初回収集前は空の構造の場合があります。
 
 初回、`gap` 後の再同期、前回の `full` から60秒以上経過した構造更新では `full` を送り、全マップと FD 関係を含む構造全体を置き換えます。それ以外は `delta` を送ります。受信側は `base_sequence` を保持した構造の `sequence` と照合して差分を適用します。SPACE の実装は [mergeSnapshot](../web/src/space/data.ts) を参照してください。
 
@@ -183,8 +185,12 @@ SSE は `Content-Type: text/event-stream` で接続を維持し、`event:` に�
 - マップ：`maps` があればそのプロセスのマップを置き換え、`maps_delta` があれば開始アドレスをキーに `upsert` の追加・更新と `remove` の削除を適用します。`delta` で両方を省略した場合は、同じプロセス識別子のマップと `maps_epoch` を保持します。新しい識別子には `maps` を含めます。
 - FD 関係：`fd_relations` があれば関係全体を置き換え、`fd_relations_delta` があれば接続IDをキーに `upsert` と `remove` を適用します。マップ・FD 関係とも、差分より全体の JSON が小さい場合は置換形式を使います。
 - FD 関係の各要素：接続ID、端点 `endpoint`・`peer`、label、socket情報、`candidate`・`shared`。端点にはプロセス識別子、FD、FD数、resource、kind、accessがあります。`peer` はローカルの相手を持たなければ null です。`candidate` は接続候補、`shared` は同じリソースの共有で、一意な通信相手とは区別します。
-- `socket`：protocol、state、local/remoteアドレス、network_peer、remote_hostname。socket情報や未取得のアドレス・名前は null になり得ます。
+- `socket`：protocol、state、local/remoteアドレス、network_peer、remote_hostname、remote_gid。socket情報や未取得のアドレス・名前は null になり得ます。`remote_gid` は、接続先が収集スレッドと同じ network namespace の IPoIB 近傍である場合の相手 InfiniBand ポートの GID です（`sysfs` の `gids/N` と同じ書式）。IPoIB インターフェースがあり、接続先がある場合だけ rtnetlink の `RTM_GETNEIGH` で近傍表を読みます。IPoIB のハードウェアアドレスは20バイトで、後半16バイトが GID です。`/proc/net/arp` は途中で切り詰めるため使いません。近傍エントリが失効している場合や、ほかの network namespace のソケットでは null です。
 - `warnings` と探索件数：取得不能・打ち切りなどの警告と、走査したプロセス・FDの件数。
+- ハードウェア：`hardware_devices` と `hardware_paths` は小さいため毎回全体を送ります。`device_handles` は全体の `device_handles` か、ID をキーにした `device_handles_delta` です。旧サーバーはこれらを送らず、受信側は空として扱います。
+- `hardware_devices` の各要素：`address`（`0000:85:00.0` のような PCI アドレス、またはホストブリッジの `pci0000:80`）、`parent`、`role`（`host_bridge`・`root_port`・`switch_port`・`endpoint`）、`kind`（`gpu`・`rdma`・`accelerator`・`nv_switch`、ブリッジは null）、`label`、class・vendor_id・device_id（16進文字列）、driver、`numa_node`、`link`（`current`・`max` の `{speed_gts, width}`）、power_state・runtime_status、iommu_group、メモリ BAR の `bars`、GPU の `gpu`（vendor・model・uuid・NVIDIA の device minor・DRM ノード）、RDMA デバイスの `rdma`、`netdevs`。
+- `hardware_paths` の各要素：デバイスの組 `a`・`b`、`class`（`nvidia-smi topo -m` と同じ `pix`・`pxb`・`phb`・`node`・`sys`）、経由するノード `via`、最も遅いネゴシエーション済みリンク `bottleneck`。
+- `device_handles` の各要素：ID、`process_id`、`device`（PCI アドレス）、`kind`（`nvidia`・`drm_render`・`drm_card`・`uverbs`・`umad`・`accel`）、最小の FD 番号 `fd` と FD 数 `fd_count`。
 
 `activity` の各配列はその集計窓の情報で、履歴全体ではありません。
 
@@ -250,6 +256,16 @@ pidfd による種類取得と別 network namespace の Rust テストは `bash 
 UNIX の診断は、対象の PID と開始時刻を確認して開いた network namespace の FD を使います。別 namespace では短命の専用スレッドが `setns(CLONE_NEWNET)` を実行して診断用 Netlink ソケットを作成し、その FD を呼び元へ返して終了します。要求と応答の処理は作成先の namespace に属するソケットを通じて行い、HTTP・収集スレッドの namespace は変更しません。SPACE は走査で発見した namespace を device/inode でまとめ、一回の走査で各 namespace を一度診断します。全 namespace の診断予算は合計500ms、プロセス FD 一覧は750msと全体3秒の締切の短い方を使います。診断ができない場合は既存の procfs 情報を保持し、対象 PID と失敗理由を警告に含めます。
 
 別 network namespace への切り替えには `CAP_SYS_ADMIN` が必要です。[dev_run.sh](../scripts/dev_run.sh) はこの capability も付与します。sudoers が `setcap` の引数を固定している場合は、既存版の許可を維持したまま新しい一覧の許可を追加します。アプリケーションから sudoers やカーネル設定を変更しません。
+
+### ハードウェア
+
+system snapshot は [system/hardware](../src/http_server/system/hardware.rs) で、GPU・RDMA NIC・アクセラレータ・NVSwitch と、そこからホストブリッジまでの PCIe ブリッジを sysfs から読みます。特権は不要です。
+
+- 対象：`/sys/bus/pci/devices` の各デバイスの実パス（`/sys/devices/pci0000:80/0000:80:03.4/0000:85:00.0` など）から上流の連鎖を求めます。`infiniband/` を持つか class 0x0c06 のデバイスを RDMA NIC、class 0x0300・0x0302 を GPU（BMC の ASPEED・Matrox を除く）、class 0x12 をアクセラレータ、NVIDIA の class 0x0680 を NVSwitch とし、その上流のブリッジだけを含めます。
+- 属性：class・vendor・device・driver・numa_node・`current/max_link_speed`・`current/max_link_width`・power_state・`power/runtime_status`・iommu_group・`resource` の BAR を読みます。`config` や BAR の resize ファイルはデバイスを runtime resume させ得るため開きません。runtime suspended のデバイスはリンク速度も読みません。NVIDIA GPU のモデル・UUID・device minor は `/proc/driver/nvidia/gpus/<address>/information` から読みます。NVML などのベンダーライブラリは使いません。
+- 経路：デバイスの組ごとに、共通の上流ノードから `nvidia-smi topo -m` と同じ分類を求めます。ホストブリッジが異なれば同じ NUMA ノードで `node`、異なれば `sys`（オンラインの NUMA ノードが一つなら NUMA 不明も同じノード）、共通の祖先がホストブリッジなら `phb`、PCIe スイッチ（上流ポートとその下流ポート）を一つ以下しか経由しなければ `pix`、複数なら `pxb` です。各ホップのネゴシエーション済みリンクのうち、符号化後の帯域が最も小さいものを `bottleneck` とします。
+- プロセス：FD 走査で文字デバイスの rdev を記録し、`/sys/dev/char/<major>:<minor>` のリンク先から PCI アドレスと種類（`drm/renderD*`・`drm/card*`・`infiniband_verbs`・`infiniband_mad`・`accel`）を求めます。`/dev/nvidiaN` は sysfs のノードを持たないため、`/proc/devices` の `nvidia` のメジャー番号と device minor で GPU を対応付けます。`nvidiactl` などの制御デバイスは対象外です。同じプロセス・デバイス・種類の FD は一つにまとめます。
+- 通信量：GPU・NIC の DMA は観測しないため、PCIe リンクの粒子はありません。
 
 ### 環境変数・補助ベクトル
 
@@ -428,8 +444,9 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 | プロセスと親子関係 | 初期表示・Rearrange では葉の子を一つの領域にまとめ、その中で折り返す。子孫を持つ兄弟の枝の領域と横一列に並べ、異なるソケット通信相手が多いプロセスを含む領域を中央寄りに置く。葉の領域内も通信相手が多いプロセスから中央に近い位置を割り当てる。通信相手は現在の識別子で確認済みのローカル接続を数え、同じ相手への複数 FD は一つとし、共有 FD・接続候補・外部接続先・自己接続を除く。複数の通信相手を持つプロセスがない場合は PID・開始時刻順で最初の葉の位置に葉の領域を置く。枝の領域同士は縦に積まず、ルートが異なる木同士は木全体をまとめて折り返せる。折り返す行はプロセスの一辺分ずつ右へずらす。葉の折り返しにより同じ深さでも縦位置は異なり得る。通常更新は既存位置を保ち、新規プロセスを親の近くの空き位置に置くため、枝を横に分離する制約は適用しない | [`treeLayout`・`stableLayout`](../web/src/space/process-layout.ts) |
 | 仮想アドレス空間 | アドレス順にメモリ領域を積み上げ、アドレスの隙間を圧縮し、高さをプロセスごとに正規化。プロセス間の同じ高さは同じアドレスを意味しない | [`layoutMaps`](../web/src/space/data.ts)、[`regionColor`](../web/src/space/scene.ts#L81) |
 | ユーザーの識別 | 箱の上下の枠は実 UID、縦の枠は実効 UID に応じて色分け | [`userColor`・`processColors`](../web/src/space/model.ts) |
-| IPC・ネットワーク接続 | FD 関係を実線で表示。確認済みのプロセス間接続は緑系、接続候補は薄い黄土色、共有 FD は薄い青灰色。ネットワーク接続先はプロセス・プロトコル・相手 IP/port ごとにまとめ、プロセスの上方に配置 | [`buildScene`](../web/src/space/scene.ts#L99)、[`networkGroups`](../web/src/space/data.ts)、[`networkLayout`](../web/src/space/data.ts) |
+| IPC・ネットワーク接続 | FD 関係を実線で表示。確認済みのプロセス間接続は緑系、接続候補は薄い黄土色、共有 FD は薄い青灰色。ネットワーク接続先はプロセス・プロトコル・相手 IP/port ごとにまとめ、プロセスの上方に配置。IPoIB の接続先はラベルに「IB」を付け、詳細に相手の InfiniBand GID を表示 | [`buildScene`](../web/src/space/scene.ts#L99)、[`networkGroups`](../web/src/space/data.ts)、[`networkLayout`](../web/src/space/data.ts) |
 | 最近アクセスしたファイル | プロセスの下方にファイルのマーカーと接続線を配置。構造とは別のグループで更新 | [`fileLayout`](../web/src/space/data.ts)、[`refreshFileScene`](../web/src/space/scene.ts#L400) |
+| ハードウェア | プロセス配置の手前（−y）に PCIe の木を置く。デバイスをプロセスに最も近い列に並べ、ルートポート・スイッチ・ホストブリッジを奥へ、親は子の中央に配置。GPU は琥珀色、RDMA NIC は紫色の箱、ブリッジは小さな台。ブリッジへの PCIe リンクは床の帯で、幅はレーン数、色は世代、両端の上限より遅いリンクは橙色。デバイスを開いている各プロセスの手前の面からデバイスへ常に線を描き（プロセスとデバイスの組ごとに一本、GPU は琥珀色・RDMA NIC は紫色、検索で隠したプロセスは除く）、その線を選ぶとデバイスを選択する。デバイスまたはプロセスを選ぶと関係する線を強調する。デバイスを選ぶと他のデバイスへの経路を分類色で強調し、分類とボトルネックを表示する。詳細には ID・ドライバー・NUMA・IOMMU group・BAR・GPU・RDMA の情報、下流のデバイス、経路、プロセスを表示 | [`hardwareLayout`](../web/src/space/hardware.ts)、[`buildHardware`](../web/src/space/scene.ts) |
 
 #### 活動の表示と描画ループ
 

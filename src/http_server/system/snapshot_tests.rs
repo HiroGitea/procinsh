@@ -313,3 +313,51 @@ fn network_destination_survives_shared_socket_ownership() {
             })
     }));
 }
+
+#[test]
+fn hardware_matches_sysfs_devices_and_their_upstream_chains() {
+    use std::{fs, path::Path};
+    let snapshot = snapshot::collect(&mut Default::default());
+    let devices: std::collections::HashMap<_, _> = snapshot
+        .hardware_devices
+        .iter()
+        .map(|d| (d.address.clone(), serde_json::to_value(d).unwrap()))
+        .collect();
+    // Every RDMA NIC and GPU in sysfs is shown with its whole upstream chain.
+    let root = Path::new("/sys/bus/pci/devices");
+    for entry in fs::read_dir(root).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let class = fs::read_to_string(entry.path().join("class")).unwrap_or_default();
+        let display = class.starts_with("0x0300") || class.starts_with("0x0302");
+        let bmc = ["0x1a03", "0x102b"].contains(
+            &fs::read_to_string(entry.path().join("vendor"))
+                .unwrap_or_default()
+                .trim(),
+        );
+        let rdma = entry.path().join("infiniband").is_dir();
+        if !(rdma || display && !bmc) {
+            continue;
+        }
+        let device = devices
+            .get(&name)
+            .unwrap_or_else(|| panic!("{name} is missing from hardware_devices"));
+        assert_eq!(device["role"], "endpoint");
+        assert_eq!(device["kind"], if rdma { "rdma" } else { "gpu" });
+        let mut parent = device["parent"].as_str().map(str::to_owned);
+        let mut hops = 0;
+        while let Some(address) = parent {
+            let upstream = &devices[&address];
+            parent = upstream["parent"].as_str().map(str::to_owned);
+            hops += 1;
+            if parent.is_none() {
+                assert_eq!(upstream["role"], "host_bridge");
+            }
+        }
+        assert!(hops >= 1, "{name} has no host bridge");
+    }
+    let endpoints = devices.values().filter(|d| d["role"] == "endpoint").count();
+    assert_eq!(
+        snapshot.hardware_paths.len(),
+        endpoints * endpoints.saturating_sub(1) / 2
+    );
+}

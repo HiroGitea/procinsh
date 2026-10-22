@@ -557,6 +557,7 @@ test("space-components regression", async () => {
             "./contracts.js",
             "./model.js",
             "./netlink.js",
+            "./hardware.js",
             "./dom-types.js",
           ].includes(path) ||
             (name === "data.ts" && path === "./process-layout.js") ||
@@ -773,7 +774,12 @@ test("space-components regression", async () => {
     );
     assert.deepEqual(events.at(-1), [
       "hover",
-      { hoveredNetwork: null, hoveredFile: "file", hoveredNetlink: null },
+      {
+        hoveredNetwork: null,
+        hoveredFile: "file",
+        hoveredNetlink: null,
+        hoveredHardware: null,
+      },
     ]);
     assert.match(hover.textContent!, /READ 8 bytes · WRITE 12 bytes/);
     input = { ...input, view: { ...input.view, objects: [] } };
@@ -781,7 +787,12 @@ test("space-components regression", async () => {
     assert.equal(hover.hidden, true);
     assert.deepEqual(events.at(-1), [
       "hover",
-      { hoveredNetwork: null, hoveredFile: null, hoveredNetlink: null },
+      {
+        hoveredNetwork: null,
+        hoveredFile: null,
+        hoveredNetlink: null,
+        hoveredHardware: null,
+      },
     ]);
     unbind();
     const count = events.length;

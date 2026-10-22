@@ -1,4 +1,5 @@
-//! Collect process structure and descriptor relations, retaining kinds without peers.
+//! Collect process structure, descriptor relations and hardware, retaining kinds
+//! without peers.
 //!
 //! # Interface
 //!
@@ -11,7 +12,11 @@
 //! | [`SystemSnapshot`] | `pub(in crate::http_server)` | `struct SystemSnapshot` |
 //! | [`process_from_summary`] | `pub(super)` | `fn process_from_summary(summary: `[`ProcessSummary`]`, parent_id: `[`Option`]`<`[`ProcessId`]`>) -> `[`ProcessSnapshot`] |
 //! | [`collect`] | `pub(super)` | `fn collect(discovery: &mut `[`ProcessScanner`]`) -> `[`SystemSnapshot`] |
+//! | [`collect_from`] | `pub(super)` | `fn collect_from(discovery: &mut `[`ProcessScanner`]`, sources: &`[`HardwareSources`]`) -> `[`SystemSnapshot`] |
 
+use super::hardware::{
+    DeviceHandle, HardwareDevice, HardwareObservation, HardwarePath, HardwareSources,
+};
 use crate::http_server::process::{
     self, MemoryMap, ProcessId, ProcessScanner, ProcessSummary, SocketInfo,
 };
@@ -66,12 +71,15 @@ pub(super) struct SocketEndpoint {
     pub(super) path: Option<String>,
     pub(super) network_peer: bool,
     pub(super) remote_hostname: Option<String>,
+    /// The remote InfiniBand port GID when the destination is an IPoIB neighbor.
+    pub(super) remote_gid: Option<String>,
 }
 impl From<&SocketInfo> for SocketEndpoint {
     fn from(info: &SocketInfo) -> Self {
         Self {
             protocol: info.protocol,
             remote_hostname: None,
+            remote_gid: None,
             state: info.state,
             local: info.local.map(InetAddress::from),
             remote: info.remote.map(InetAddress::from),
@@ -103,9 +111,61 @@ pub(in crate::http_server) struct SystemSnapshot {
     pub(super) captured_at: u64,
     pub(super) processes: Vec<ProcessSnapshot>,
     pub(super) fd_relations: Vec<FdRelation>,
+    pub(super) hardware_devices: Vec<HardwareDevice>,
+    pub(super) hardware_paths: Vec<HardwarePath>,
+    pub(super) device_handles: Vec<DeviceHandle>,
     pub(super) warnings: Vec<String>,
     pub(super) inspected_processes: usize,
     pub(super) inspected_fds: usize,
+}
+
+/// Adds IPoIB remote GIDs to network destinations of the collector's own network
+/// namespace. Neighbors are read only when an IPoIB interface exists.
+fn add_remote_gids(
+    result: &mut SystemSnapshot,
+    inode_ns: &HashMap<u64, (u64, u64)>,
+    sources: &HardwareSources,
+) {
+    let wanted = |r: &FdRelation| r.socket.as_ref().is_some_and(|s| s.network_peer);
+    if !result.fd_relations.iter().any(wanted) || !super::ipoib::has_ipoib_interface(&sources.sys) {
+        return;
+    }
+    let Ok(own) = fs::metadata("/proc/thread-self/ns/net") else {
+        return;
+    };
+    let neighbors = match super::ipoib::ipoib_gids(Instant::now() + Duration::from_millis(200)) {
+        Ok(neighbors) => neighbors,
+        Err(error) => {
+            result
+                .warnings
+                .push(format!("IPoIB neighbors unavailable: {error:#}"));
+            return;
+        }
+    };
+    apply_remote_gids(
+        &mut result.fd_relations,
+        &neighbors,
+        inode_ns,
+        (own.dev(), own.ino()),
+    );
+}
+
+/// Sets `remote_gid` of network destinations whose socket is in namespace `own`.
+fn apply_remote_gids(
+    relations: &mut [FdRelation],
+    neighbors: &HashMap<std::net::IpAddr, String>,
+    inode_ns: &HashMap<u64, (u64, u64)>,
+    own: (u64, u64),
+) {
+    for relation in relations {
+        let same_namespace = inode_ns.get(&relation.endpoint.resource.inode) == Some(&own);
+        if let Some(socket) = &mut relation.socket
+            && socket.network_peer
+            && same_namespace
+        {
+            socket.remote_gid = socket.remote.and_then(|r| neighbors.get(&r.ip).cloned());
+        }
+    }
 }
 
 pub(super) fn process_from_summary(
@@ -128,10 +188,20 @@ pub(super) fn process_from_summary(
 }
 
 pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
+    collect_from(discovery, &HardwareSources::default())
+}
+
+/// Collects with hardware read from `sources`, which tests point at fixtures.
+pub(super) fn collect_from(
+    discovery: &mut ProcessScanner,
+    sources: &HardwareSources,
+) -> SystemSnapshot {
     let mut result = SystemSnapshot {
         captured_at: process::timestamp_ms(),
         ..Default::default()
     };
+    let hardware = HardwareObservation::observe(sources);
+    let mut handles = hardware.handles(sources);
     let summaries = match discovery.collect() {
         Ok(v) => v,
         Err(e) => {
@@ -259,6 +329,9 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
                     } else if meta.file_type().is_fifo() {
                         FdKind::Pipe
                     } else {
+                        if meta.file_type().is_char_device() {
+                            handles.observe(n.identity, number, meta.rdev());
+                        }
                         continue;
                     };
                     let resource = IpcIdentity {
@@ -539,6 +612,11 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
             break;
         }
     }
+    add_remote_gids(&mut result, &inode_ns, sources);
+    let live = result.processes.iter().map(|p| p.identity).collect();
+    result.device_handles = handles.finish(&live);
+    result.hardware_devices = hardware.devices;
+    result.hardware_paths = hardware.paths;
     if denied > 0 {
         result
             .warnings
@@ -565,6 +643,66 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_gids_apply_only_to_destinations_of_the_collector_namespace() {
+        use crate::http_server::process::SocketInfo;
+        let info = SocketInfo {
+            protocol: SocketProtocol::Tcp {
+                family: AddressFamily::Ipv4,
+            },
+            state: Some(SocketState::Established),
+            local: Some("10.10.10.2:5000".parse().unwrap()),
+            remote: Some("10.10.10.1:20049".parse().unwrap()),
+            path: None,
+            peer_inode: None,
+        };
+        let relation = |inode: u64| FdRelation {
+            id: inode.to_string(),
+            endpoint: FdEndpoint {
+                process_id: ProcessId {
+                    pid: 1,
+                    start_time_ticks: 1,
+                },
+                fd: 3,
+                fd_count: 1,
+                resource: IpcIdentity {
+                    kind: IpcKind::Socket,
+                    device: DeviceId::from_stat(0),
+                    inode,
+                },
+                kind: FdKind::Socket,
+                access: FdAccess::ReadWrite,
+                connection_status: None,
+            },
+            peer: None,
+            label: String::new(),
+            socket: Some(SocketEndpoint::from(&info)),
+            candidate: false,
+            shared: false,
+        };
+        let mut relations = [relation(1), relation(2)];
+        let neighbors = HashMap::from([(
+            "10.10.10.1".parse().unwrap(),
+            "fe80:0000:0000:0000:f452:1403:0080:de51".to_owned(),
+        )]);
+        let namespaces = HashMap::from([(1, (5, 100)), (2, (5, 200))]);
+        apply_remote_gids(&mut relations, &neighbors, &namespaces, (5, 100));
+        let gid = |r: &FdRelation| r.socket.as_ref().unwrap().remote_gid.clone();
+        assert_eq!(
+            gid(&relations[0]).as_deref(),
+            Some("fe80:0000:0000:0000:f452:1403:0080:de51")
+        );
+        assert_eq!(
+            gid(&relations[1]),
+            None,
+            "another namespace has its own neighbors"
+        );
+        assert_eq!(
+            serde_json::to_value(relations[1].socket.as_ref().unwrap()).unwrap()["remote_gid"],
+            serde_json::Value::Null
+        );
+    }
 
     #[test]
     fn socket_destination_classification() {

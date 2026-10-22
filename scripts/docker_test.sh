@@ -57,6 +57,13 @@ run_suite() {
   esac
   # The checkout is read-only. Generated files and root-owned caches live only
   # in the container and Docker volumes, never in the developer's checkout.
+  # A git worktree's .git file names the main repository's git directory; mount it
+  # at the same path so the copied checkout can still resolve its commit.
+  if [[ -f $root/.git ]]; then
+    local common
+    common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)
+    options+=(--mount "type=bind,src=$common,dst=$common,readonly")
+  fi
   docker run --rm --init --network "$network" "${options[@]}" \
     --mount "type=bind,src=$root,dst=/source,readonly" \
     --mount type=bind,src=/sys/kernel/btf,dst=/sys/kernel/btf,readonly \
