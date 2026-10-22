@@ -118,6 +118,7 @@ const actions: SelectionActions = {
   network: selectNetwork,
   file: selectFile,
   netlink: selectNetlink,
+  hardware: selectHardware,
   clear: clearSelection,
 };
 const details = createSpaceDetails(actions);
@@ -128,6 +129,7 @@ bindSelection($("world"), $("hover"), {
     edgeStats: data.edgeStats,
     files: data.recentFiles.entries,
     netlink: data.netlinkSockets.entries,
+    hardware: hardwareInput(),
   }),
   actions,
   hover(state) {
@@ -138,8 +140,16 @@ bindSelection($("world"), $("hover"), {
 let firstView = true;
 let lastFilePrune = 0;
 
+function hardwareInput() {
+  return {
+    devices: data.displaySnapshot.hardware_devices ?? [],
+    paths: data.displaySnapshot.hardware_paths ?? [],
+    handles: data.displaySnapshot.device_handles ?? [],
+  };
+}
 function sceneInput(): SceneInput {
   return {
+    hardware: { ...hardwareInput(), positions: data.hardwarePositions },
     snapshot: data.displaySnapshot,
     nodes: data.nodes,
     network: data.network,
@@ -153,6 +163,7 @@ function sceneInput(): SceneInput {
 }
 function detailsInput(): DetailsInput {
   return {
+    hardware: hardwareInput(),
     nodes: data.nodes,
     snapshot: data.displaySnapshot,
     network: data.network,
@@ -164,7 +175,10 @@ function detailsInput(): DetailsInput {
 function worldPositions(): WorldPositions {
   return {
     processes: [...data.nodes.values()].map((n) => n.pos),
-    networks: data.networkPositions.values(),
+    networks: [
+      ...data.networkPositions.values(),
+      ...data.hardwarePositions.values(),
+    ],
     files: data.filePositions.values(),
     netlink: data.netlinkPositions.values(),
   };
@@ -180,6 +194,7 @@ function retainSelection() {
     networks: new Set(data.network.keys()),
     files: new Set(data.recentFiles.entries.keys()),
     netlink: new Set(data.netlinkSockets.entries.keys()),
+    hardware: new Set(data.hardwarePositions.keys()),
   });
 }
 function retainParticles() {
@@ -254,6 +269,10 @@ function refreshFiles() {
 }
 function selectNetlink(id: string | null) {
   selection.choose("netlink", id);
+  updateSelection();
+}
+function selectHardware(id: string | null) {
+  selection.choose("hardware", id);
   updateSelection();
 }
 function updateActivity(update: ActivityUpdate) {
@@ -368,6 +387,7 @@ if (replayMode) {
       data.nodes.clear();
       data.displaySnapshot = { processes: [], fd_relations: [] };
       data.networkPositions.clear();
+      data.hardwarePositions.clear();
       data.filePositions.clear();
       data.netlinkPositions.clear();
       lastFilePrune = 0;

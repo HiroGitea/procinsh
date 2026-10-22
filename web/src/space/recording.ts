@@ -128,9 +128,64 @@ const protocol: Check = (v, p) => {
       socket_type: nullable(socketType),
     })(v, p);
 };
+const link = nullable(object({ speed_gts: number, width: number }));
+const hardwareDevice = object({
+  address: string,
+  parent: nullable(string),
+  role: choice("host_bridge", "root_port", "switch_port", "endpoint"),
+  kind: nullable(choice("gpu", "rdma", "accelerator", "nv_switch")),
+  label: string,
+  class: nullable(string),
+  vendor_id: nullable(string),
+  device_id: nullable(string),
+  driver: nullable(string),
+  numa_node: nullable(number),
+  link: nullable(object({ current: link, max: link })),
+  power_state: nullable(string),
+  runtime_status: nullable(string),
+  iommu_group: nullable(number),
+  bars: array(object({ index: number, bytes: number, prefetchable: boolean })),
+  gpu: nullable(
+    object({
+      vendor: string,
+      model: nullable(string),
+      uuid: nullable(string),
+      minor: nullable(number),
+      drm: array(string),
+    }),
+  ),
+  rdma: array(
+    object({
+      name: string,
+      hca_type: nullable(string),
+      fw_ver: nullable(string),
+    }),
+  ),
+  netdevs: array(string),
+});
+const hardwarePath = object({
+  id: string,
+  a: string,
+  b: string,
+  class: choice("pix", "pxb", "phb", "node", "sys"),
+  via: array(string),
+  bottleneck: link,
+});
+const deviceHandle = object({
+  id: string,
+  process_id: identity,
+  device: string,
+  kind: choice("nvidia", "drm_render", "drm_card", "uverbs", "umad", "accel"),
+  fd: number,
+  fd_count: number,
+});
 const snapshot = object({
   processes: array(process),
   sequence: optional(number),
+  // Absent in recordings made before hardware collection.
+  hardware_devices: optional(array(hardwareDevice)),
+  hardware_paths: optional(array(hardwarePath)),
+  device_handles: optional(array(deviceHandle)),
   fd_relations: array(
     object({
       id: string,
@@ -148,6 +203,7 @@ const snapshot = object({
           path: nullable(string),
           network_peer: boolean,
           remote_hostname: nullable(string),
+          remote_gid: optional(nullable(string)),
         }),
       ),
     }),

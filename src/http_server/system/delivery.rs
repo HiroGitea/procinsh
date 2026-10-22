@@ -1,3 +1,4 @@
+use super::hardware::{DeviceHandle, HardwareDevice, HardwarePath};
 use super::snapshot::{FdRelation, SystemSnapshot};
 use crate::http_server::process::{MemoryMap, ProcessId};
 use serde::Serialize;
@@ -45,6 +46,12 @@ struct SnapshotPayload<'a> {
     fd_relations: Option<&'a [FdRelation]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fd_relations_delta: Option<EntryDelta<'a, FdRelation, String>>,
+    hardware_devices: &'a [HardwareDevice],
+    hardware_paths: &'a [HardwarePath],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_handles: Option<&'a [DeviceHandle]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_handles_delta: Option<EntryDelta<'a, DeviceHandle, String>>,
     warnings: &'a [String],
     inspected_processes: usize,
     inspected_fds: usize,
@@ -69,9 +76,35 @@ fn map_delta<'a>(old: &[MemoryMap], current: &'a [MemoryMap]) -> EntryDelta<'a, 
             .collect(),
     }
 }
+/// An ID-keyed delta from the previous baseline, or None when replacing the whole
+/// collection is smaller.
+fn entry_delta<'a, T: Serialize + PartialEq>(
+    old: Option<&[T]>,
+    current: &'a [T],
+    id: impl Fn(&T) -> &String,
+) -> Option<EntryDelta<'a, T, String>> {
+    let old = old.unwrap_or_default();
+    let previous: HashMap<_, _> = old.iter().map(|r| (id(r), r)).collect();
+    let live: std::collections::HashSet<_> = current.iter().map(&id).collect();
+    Some(EntryDelta {
+        upsert: current
+            .iter()
+            .filter(|r| previous.get(id(r)).is_none_or(|p| *p != *r))
+            .collect(),
+        remove: old
+            .iter()
+            .filter(|r| !live.contains(id(r)))
+            .map(|r| id(r).clone())
+            .collect(),
+    })
+    .filter(|d| {
+        serde_json::to_vec(d).unwrap().len() + 6 < serde_json::to_vec(current).unwrap().len()
+    })
+}
 impl SnapshotEncoder {
     /// Encodes full or delta SSE snapshots with a sequence and, for deltas, base sequence.
-    /// Map deltas use start addresses; FD relation deltas use relation IDs. Collections
+    /// Map deltas use start addresses; FD relation and device handle deltas use IDs.
+    /// Hardware devices and paths are always sent in full. Collections
     /// use replacement when a delta is larger. Unchanged maps are omitted and retain
     /// their epoch. Initial, forced gap recovery and 60-second refresh snapshots
     /// include all maps. The baseline advances only after successful serialization.
@@ -137,31 +170,25 @@ impl SnapshotEncoder {
                 }
             })
             .collect();
-        let old_relations = self
-            .previous
-            .as_ref()
-            .map(|s| s.fd_relations.as_slice())
-            .unwrap_or_default();
-        let old: HashMap<_, _> = old_relations.iter().map(|r| (&r.id, r)).collect();
-        let live: std::collections::HashSet<_> =
-            snapshot.fd_relations.iter().map(|r| &r.id).collect();
+        let baseline = self.previous.as_deref();
         let relations_delta = (!full)
-            .then(|| EntryDelta {
-                upsert: snapshot
-                    .fd_relations
-                    .iter()
-                    .filter(|r| old.get(&r.id).is_none_or(|p| *p != *r))
-                    .collect(),
-                remove: old_relations
-                    .iter()
-                    .filter(|r| !live.contains(&r.id))
-                    .map(|r| r.id.clone())
-                    .collect(),
+            .then(|| {
+                entry_delta(
+                    baseline.map(|s| s.fd_relations.as_slice()),
+                    &snapshot.fd_relations,
+                    |r| &r.id,
+                )
             })
-            .filter(|d| {
-                serde_json::to_vec(d).unwrap().len() + 6
-                    < serde_json::to_vec(&snapshot.fd_relations).unwrap().len()
-            });
+            .flatten();
+        let handles_delta = (!full)
+            .then(|| {
+                entry_delta(
+                    baseline.map(|s| s.device_handles.as_slice()),
+                    &snapshot.device_handles,
+                    |h| &h.id,
+                )
+            })
+            .flatten();
         let data = serde_json::to_string(&SnapshotPayload {
             captured_at: snapshot.captured_at,
             processes,
@@ -172,6 +199,12 @@ impl SnapshotEncoder {
                 .is_none()
                 .then_some(snapshot.fd_relations.as_slice()),
             fd_relations_delta: relations_delta,
+            hardware_devices: &snapshot.hardware_devices,
+            hardware_paths: &snapshot.hardware_paths,
+            device_handles: handles_delta
+                .is_none()
+                .then_some(snapshot.device_handles.as_slice()),
+            device_handles_delta: handles_delta,
             warnings: &snapshot.warnings,
             inspected_processes: snapshot.inspected_processes,
             inspected_fds: snapshot.inspected_fds,

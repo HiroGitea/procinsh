@@ -315,6 +315,8 @@ export interface SocketEndpoint {
   path: string | null;
   network_peer: boolean;
   remote_hostname: string | null;
+  /** The remote InfiniBand port GID of an IPoIB destination; absent on older servers. */
+  remote_gid?: string | null;
 }
 export interface FdRelation {
   id: string;
@@ -325,9 +327,70 @@ export interface FdRelation {
   candidate: boolean;
   shared: boolean;
 }
+export type HardwareRole =
+  "host_bridge" | "root_port" | "switch_port" | "endpoint";
+export type HardwareKind = "gpu" | "rdma" | "accelerator" | "nv_switch";
+export interface PcieLink {
+  speed_gts: number;
+  width: number;
+}
+export interface HardwareDevice {
+  /** A PCI function address such as `0000:85:00.0`, or a host bridge such as `pci0000:80`. */
+  address: string;
+  parent: string | null;
+  role: HardwareRole;
+  kind: HardwareKind | null;
+  label: string;
+  class: string | null;
+  vendor_id: string | null;
+  device_id: string | null;
+  driver: string | null;
+  numa_node: number | null;
+  /** Null for host bridges and runtime-suspended devices. */
+  link: { current: PcieLink | null; max: PcieLink | null } | null;
+  power_state: string | null;
+  runtime_status: string | null;
+  iommu_group: number | null;
+  bars: { index: number; bytes: number; prefetchable: boolean }[];
+  gpu: {
+    vendor: string;
+    model: string | null;
+    uuid: string | null;
+    minor: number | null;
+    drm: string[];
+  } | null;
+  rdma: { name: string; hca_type: string | null; fw_ver: string | null }[];
+  netdevs: string[];
+}
+/** Like `nvidia-smi topo -m`, from the closest to the farthest. */
+export type PathClass = "pix" | "pxb" | "phb" | "node" | "sys";
+export interface HardwarePath {
+  id: string;
+  a: string;
+  b: string;
+  class: PathClass;
+  /** Nodes between the ends, in order from `a` to `b`. */
+  via: string[];
+  bottleneck: PcieLink | null;
+}
+export type DeviceHandleKind =
+  "nvidia" | "drm_render" | "drm_card" | "uverbs" | "umad" | "accel";
+/** A process's descriptors for one device and kind. */
+export interface DeviceHandle {
+  id: string;
+  process_id: ProcessId;
+  device: string;
+  kind: DeviceHandleKind;
+  fd: number;
+  fd_count: number;
+}
 export interface SystemSnapshot {
   processes: Process[];
   fd_relations: FdRelation[];
+  /** Absent on older servers and recordings. */
+  hardware_devices?: HardwareDevice[];
+  hardware_paths?: HardwarePath[];
+  device_handles?: DeviceHandle[];
   sequence?: number;
 }
 export interface EntryDelta<T> {
@@ -344,6 +407,10 @@ export interface SystemSnapshotUpdate {
   })[];
   fd_relations?: FdRelation[];
   fd_relations_delta?: EntryDelta<FdRelation>;
+  hardware_devices?: HardwareDevice[];
+  hardware_paths?: HardwarePath[];
+  device_handles?: DeviceHandle[];
+  device_handles_delta?: EntryDelta<DeviceHandle>;
 }
 export interface IoActivity {
   process_id: ProcessId;

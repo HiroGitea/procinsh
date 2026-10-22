@@ -30,16 +30,19 @@ export class SpaceSelection implements SelectionState, HoverState {
   network: string | null = null;
   file: string | null = null;
   netlink: string | null = null;
+  hardware: string | null = null;
   hoveredNetwork: string | null = null;
   hoveredFile: string | null = null;
   hoveredNetlink: string | null = null;
+  hoveredHardware: string | null = null;
   get active() {
     return !!(
       this.process ||
       this.connection ||
       this.network ||
       this.file ||
-      this.netlink
+      this.netlink ||
+      this.hardware
     );
   }
   clear() {
@@ -48,10 +51,12 @@ export class SpaceSelection implements SelectionState, HoverState {
       this.network =
       this.file =
       this.netlink =
+      this.hardware =
         null;
   }
   choose(
-    kind: "process" | "connection" | "network" | "file" | "netlink",
+    kind:
+      "process" | "connection" | "network" | "file" | "netlink" | "hardware",
     id: string | null,
   ) {
     this.clear();
@@ -63,7 +68,8 @@ export class SpaceSelection implements SelectionState, HoverState {
       (this.connection && !targets.connections.has(this.connection)) ||
       (this.network && !targets.networks.has(this.network)) ||
       (this.file && !targets.files.has(this.file)) ||
-      (this.netlink && !targets.netlink.has(this.netlink))
+      (this.netlink && !targets.netlink.has(this.netlink)) ||
+      (this.hardware && !targets.hardware?.has(this.hardware))
     )
       this.clear();
   }
@@ -77,6 +83,10 @@ interface PickData {
   filePaths?: string[];
   network?: NetworkGroup[];
   fd_relations?: (ConnectionPick | null)[];
+  /** PCI addresses of hardware devices and PCIe ribbons by instance. */
+  hardware?: string[];
+  /** The device of each process-to-device line segment. */
+  hardwareLinks?: string[];
 }
 function pickData(object: T.Object3D): PickData {
   return object.userData as PickData;
@@ -127,6 +137,13 @@ export function bindSelection(
           ? undefined
           : data.filePaths?.[Math.floor(result.index / 2)];
       if (fileId) return { fileId };
+      const hardwareId =
+        result.instanceId === undefined
+          ? result.index === undefined
+            ? undefined
+            : data.hardwareLinks?.[Math.floor(result.index / 2)]
+          : data.hardware?.[result.instanceId];
+      if (hardwareId) return { hardwareId };
       const group =
         result.instanceId === undefined
           ? undefined
@@ -160,6 +177,7 @@ export function bindSelection(
       const edge = edgeHit(e, view);
       if (edge) {
         if ("netlinkId" in edge) actions.netlink(edge.netlinkId);
+        else if ("hardwareId" in edge) actions.hardware?.(edge.hardwareId);
         else if ("fileId" in edge) actions.file(edge.fileId);
         else if (edge.networkId) actions.network(edge.networkId);
         else actions.connection(edge.id);
@@ -175,8 +193,9 @@ export function bindSelection(
   const pointermove = (e: PointerEvent) => {
     let hoveredNetwork: string | null = null,
       hoveredFile: string | null = null,
-      hoveredNetlink: string | null = null;
-    const { view, edgeStats, files, netlink } = read();
+      hoveredNetlink: string | null = null,
+      hoveredHardware: string | null = null;
+    const { view, edgeStats, files, netlink, hardware } = read();
     const hullIds = view.hullIds,
       nodes = view.nodes;
     const h = hit(e, view);
@@ -194,6 +213,13 @@ export function bindSelection(
         hoveredNetlink = edge.netlinkId;
         const socket = netlink.get(edge.netlinkId)!;
         text = `${socket.label}\nPID ${socket.endpoint.process_id.pid} · SEND ${socket.writeBytes} bytes · RECEIVE ${socket.readBytes} bytes`;
+      } else if (edge && "hardwareId" in edge) {
+        hoveredHardware = edge.hardwareId;
+        const device = hardware?.devices.find(
+          (d) => d.address === edge.hardwareId,
+        );
+        if (device)
+          text = `${device.label} · ${device.address}\nPCIe ${Display.pcieLink(device.link?.current)}${device.link?.max ? ` · max ${Display.pcieLink(device.link.max)}` : ""}`;
       } else if (edge && "fileId" in edge) {
         hoveredFile = edge.fileId;
         const f = files.get(edge.fileId)!;
@@ -204,7 +230,12 @@ export function bindSelection(
         text = `${edge.label}${edge.candidate ? " · Candidate peer" : ""}${edge.shared ? " · Shared FD" : ""}\nPID ${edge.endpoint.process_id.pid} / FD ${edge.endpoint.fd}${edge.endpoint.fd_count > 1 ? ` (+${edge.endpoint.fd_count - 1} shared FDs)` : ""} ↔ ${edge.peer ? `PID ${edge.peer.process_id.pid} / FD ${edge.peer.fd}` : edge.socket?.network_peer ? remoteLabel(edge.socket) : connectionState(edge)}${stat ? `\nLatest window: ${stat.bytes} bytes / ${stat.count} operations (${((spaceNow() - stat.time) / 1000).toFixed(1)}s ago)` : ""}`;
       }
     }
-    changedHover({ hoveredNetwork, hoveredFile, hoveredNetlink });
+    changedHover({
+      hoveredNetwork,
+      hoveredFile,
+      hoveredNetlink,
+      hoveredHardware,
+    });
     hover.hidden = !text;
     if (text) {
       hover.textContent = text;
@@ -218,6 +249,7 @@ export function bindSelection(
       hoveredNetwork: null,
       hoveredFile: null,
       hoveredNetlink: null,
+      hoveredHardware: null,
     });
   };
 

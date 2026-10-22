@@ -45,6 +45,13 @@ class AdaptiveRenderScale {
   }
 }
 
+const HARDWARE_LABEL_COLORS = {
+  gpu: "#ffd27a",
+  rdma: "#c9b0ff",
+  accelerator: "#8ff0e2",
+  nv_switch: "#c5d0d6",
+  bridge: "#a9bcc4",
+} as const;
 const IPC_PARTICLE_DURATION_MS = 2000;
 const IPC_PARTICLE_STAGGER_MS = 100;
 const REDUCED_MOTION_PARTICLE_DURATION_MS = 150;
@@ -287,17 +294,26 @@ export function createSpaceRenderer({
         ? 1
         : Math.min(1, Math.max(0, wallTime - labelTime) / LABEL_FADE_MS);
     labelTime = wallTime;
-    const { nodes, hullIds, networkViews, fileViews, netlinkViews } =
-      readView();
+    const {
+      nodes,
+      hullIds,
+      networkViews,
+      fileViews,
+      netlinkViews,
+      hardwareViews = [],
+      hardwarePathViews = [],
+    } = readView();
     const {
       process: selected,
       connection: selectedEdge,
       network: selectedNetwork,
       file: selectedFile,
       netlink: selectedNetlink,
+      hardware: selectedHardware,
       hoveredNetwork,
       hoveredFile,
       hoveredNetlink,
+      hoveredHardware,
     } = readSelection();
     labelContext.clearRect(0, 0, innerWidth, innerHeight);
     labelContext.font =
@@ -310,6 +326,7 @@ export function createSpaceRenderer({
       name: string;
       max: number;
       external: boolean;
+      color?: string;
     })[] = [];
     const seen = new Set<string>();
     const add = (
@@ -318,6 +335,7 @@ export function createSpaceRenderer({
       pos: T.Vector3,
       active: boolean,
       external = false,
+      color?: string,
     ) => {
       labelPoint.copy(pos).project(camera);
       if (labelPoint.z < -1 || labelPoint.z > 1) return;
@@ -341,6 +359,7 @@ export function createSpaceRenderer({
         depth: labelPoint.z,
         active,
         external,
+        color,
         state,
       });
     };
@@ -359,6 +378,28 @@ export function createSpaceRenderer({
           v.group.members.some((e) => e.id === selectedEdge),
         true,
       );
+    for (const v of hardwareViews) {
+      const active =
+        v.device.address === selectedHardware ||
+        v.device.address === hoveredHardware;
+      // Bridges are labeled only on demand; devices and host bridges always.
+      if (
+        v.device.role !== "endpoint" &&
+        v.device.role !== "host_bridge" &&
+        !active
+      )
+        continue;
+      add(
+        `hardware:${v.device.address}`,
+        v.users ? `${v.device.label} · ${v.users} proc` : v.device.label,
+        v.pos.clone().add(new graphics.Vector3(0, 0, 0.5)),
+        active,
+        true,
+        HARDWARE_LABEL_COLORS[v.device.kind ?? "bridge"],
+      );
+    }
+    for (const v of hardwarePathViews)
+      add(`hardware-path:${v.path.id}`, v.label, v.pos, true, true);
     for (const v of fileViews.values())
       add(
         `file:${v.file.id}`,
@@ -396,9 +437,8 @@ export function createSpaceRenderer({
       labelContext.strokeText(name, x, y, max);
       labelContext.fillStyle = label.active
         ? "#e0faff"
-        : label.external
-          ? "#84caff"
-          : "rgba(190,246,232,.88)";
+        : (label.color ??
+          (label.external ? "#84caff" : "rgba(190,246,232,.88)"));
       labelContext.fillText(name, x, y, max);
     }
     labelContext.globalAlpha = 1;
