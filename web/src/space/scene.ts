@@ -23,6 +23,10 @@ import type {
   NetlinkView,
   ConnectionPick,
   SelectionState,
+  RdmaView,
+  RdmaLinkView,
+  RdmaDeviceView,
+  HostLayerView,
 } from "./types.js";
 import type {
   SceneInput,
@@ -38,6 +42,9 @@ const PROCESS_HEIGHT = 8;
 const IPC_PORT_COLOR = 0x43c4d4;
 const SHARED_FD_COLOR = 0x54828b;
 const CANDIDATE_PEER_COLOR = 0xc69a50;
+const RDMA_COLOR = 0xb48cff;
+const CROSS_HOST_COLOR = 0xff7ad9;
+const RDMA_DEVICE_HEIGHT = 0.5;
 
 function ipcCurve(
   start: T.Vector3,
@@ -45,6 +52,7 @@ function ipcCurve(
   normal: T.Vector3,
   endNormal: T.Vector3,
   self: boolean,
+  base = 0,
 ): ConnectionCurve {
   const reach = Math.max(0.6, Math.min(3, start.distanceTo(end) * 0.3));
   if (self && Math.abs(normal.x) === 1 && endNormal.x === -normal.x) {
@@ -83,11 +91,11 @@ function ipcCurve(
   const highStart = start
     .clone()
     .addScaledVector(normal, reach)
-    .setZ(PROCESS_HEIGHT + 2.5);
+    .setZ(base + PROCESS_HEIGHT + 2.5);
   const highEnd = end
     .clone()
     .addScaledVector(endNormal, reach)
-    .setZ(PROCESS_HEIGHT + 2.5);
+    .setZ(base + PROCESS_HEIGHT + 2.5);
   if (highStart.equals(highEnd)) highEnd.y += 1;
   const up = new T.Vector3(0, 0, reach);
   const path = new T.CurvePath<T.Vector3>();
@@ -141,6 +149,8 @@ function parentSegments(paths: ParentPath[]): ParentSegment[] {
     {
       horizontal: boolean;
       fixed: number;
+      /** The floor height of the row's host layer. */
+      z: number;
       events: Map<number, { path: number; add: boolean }[]>;
     }
   >();
@@ -151,10 +161,10 @@ function parentSegments(paths: ParentPath[]): ParentSegment[] {
       if (a.equals(b)) continue;
       const horizontal = a.y === b.y;
       const fixed = horizontal ? a.y : a.x;
-      const id = `${horizontal ? "x" : "y"}:${fixed}`;
+      const id = `${horizontal ? "x" : "y"}:${fixed}:${a.z}`;
       let row = rows.get(id);
       if (!row) {
-        row = { horizontal, fixed, events: new Map() };
+        row = { horizontal, fixed, z: a.z, events: new Map() };
         rows.set(id, row);
       }
       const start = Math.min(horizontal ? a.x : a.y, horizontal ? b.x : b.y);
@@ -186,7 +196,7 @@ function parentSegments(paths: ParentPath[]): ParentSegment[] {
         new T.Vector3(
           row.horizontal ? value : row.fixed,
           row.horizontal ? row.fixed : value,
-          PARENT_LINE_Z,
+          row.z,
         );
       result.push({
         start: point(start),
@@ -239,7 +249,11 @@ export function createSpaceScene() {
   let edgeViews: EdgeView[] = [],
     networkViews: NetworkView[] = [],
     fileViews = new Map<string, FileView>(),
-    netlinkViews = new Map<string, NetlinkView>();
+    netlinkViews = new Map<string, NetlinkView>(),
+    rdmaViews: RdmaView[] = [],
+    rdmaLinkViews: RdmaLinkView[] = [],
+    rdmaDeviceViews: RdmaDeviceView[] = [],
+    layerViews: HostLayerView[] = [];
   let parentViews: ParentPath[] = [],
     parentSections: ParentSegment[] = [],
     parentCorners: ParentJoint[] = [],
@@ -364,16 +378,17 @@ export function createSpaceScene() {
         parentId = child.parent_id && key(child.parent_id),
         parent = parentId && nodes.get(parentId);
       if (!parent || parentId === childId || !visible.has(parentId)) continue;
-      const middleY = (parent.pos.y + child.pos.y) / 2;
+      const middleY = (parent.pos.y + child.pos.y) / 2,
+        floor = child.pos.z + PARENT_LINE_Z;
       parentViews.push({
         parent: parentId,
         child: childId,
         active: false,
         points: [
-          new T.Vector3(parent.pos.x, parent.pos.y, PARENT_LINE_Z),
-          new T.Vector3(parent.pos.x, middleY, PARENT_LINE_Z),
-          new T.Vector3(child.pos.x, middleY, PARENT_LINE_Z),
-          new T.Vector3(child.pos.x, child.pos.y, PARENT_LINE_Z),
+          new T.Vector3(parent.pos.x, parent.pos.y, floor),
+          new T.Vector3(parent.pos.x, middleY, floor),
+          new T.Vector3(child.pos.x, middleY, floor),
+          new T.Vector3(child.pos.x, child.pos.y, floor),
         ],
       });
     }
@@ -446,19 +461,19 @@ export function createSpaceScene() {
       const n = nodes.get(hullIds[i])!,
         p = n.pos,
         userColors = processColors(n);
-      dummy.position.set(p.x, p.y, PROCESS_HEIGHT / 2);
+      dummy.position.set(p.x, p.y, p.z + PROCESS_HEIGHT / 2);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       hull.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(p.x, p.y, -0.035);
+      dummy.position.set(p.x, p.y, p.z - 0.035);
       dummy.updateMatrix();
       baseGlow.setMatrixAt(i, dummy.matrix);
       baseGlow.setColorAt(i, new T.Color(0));
-      dummy.position.z = -0.075;
+      dummy.position.z = p.z - 0.075;
       dummy.updateMatrix();
       haloGlow.setMatrixAt(i, dummy.matrix);
       haloGlow.setColorAt(i, new T.Color(0));
-      for (const z of [0, 8])
+      for (const z of [p.z, p.z + PROCESS_HEIGHT])
         for (let j = 0; j < 4; j++) {
           const corners = [
               [-1.1, -1.1],
@@ -477,8 +492,8 @@ export function createSpaceScene() {
       for (const x of [-1.1, 1.1])
         for (const y of [-1.1, 1.1])
           addLine(
-            [p.x + x, p.y + y, 0],
-            [p.x + x, p.y + y, 8],
+            [p.x + x, p.y + y, p.z],
+            [p.x + x, p.y + y, p.z + PROCESS_HEIGHT],
             userColors.effective,
           );
       const stride =
@@ -504,7 +519,7 @@ export function createSpaceScene() {
     layers.count = layerList.length;
     for (let i = 0; i < layerList.length; i++) {
       const { n, r } = layerList[i];
-      dummy.position.set(n.pos.x, n.pos.y, r.z + r.h / 2);
+      dummy.position.set(n.pos.x, n.pos.y, n.pos.z + r.z + r.h / 2);
       dummy.scale.set(1, 1, Math.max(0.0001, r.h));
       dummy.updateMatrix();
       layers.setMatrixAt(i, dummy.matrix);
@@ -591,6 +606,9 @@ export function createSpaceScene() {
         networkViews.push({ group, pos, curve: representative });
     }
 
+    buildRdma(input);
+    buildLayers(input);
+
     const mutedPos = [],
       mutedColors = [],
       mutedEdges = [];
@@ -619,13 +637,23 @@ export function createSpaceScene() {
                 0,
               ),
             );
-      const curve = ipcCurve(
-        start,
-        end,
-        sourcePort.normal,
-        peerPort?.normal ?? sourcePort.normal.clone().negate(),
-        a === b,
-      );
+      // A peer on another host layer is joined directly between the layers.
+      const crossHost = !!b && b.pos.z !== a.pos.z;
+      const curve = crossHost
+        ? new T.CubicBezierCurve3(
+            start,
+            start.clone().addScaledVector(sourcePort.normal, 3),
+            end.clone().addScaledVector(peerPort!.normal, 3),
+            end,
+          )
+        : ipcCurve(
+            start,
+            end,
+            sourcePort.normal,
+            peerPort?.normal ?? sourcePort.normal.clone().negate(),
+            a === b,
+            a.pos.z,
+          );
       edgeViews.push({ e, curve });
       const pts = curve.getPoints(16);
       const mutedColor = new T.Color(
@@ -647,7 +675,7 @@ export function createSpaceScene() {
           addLine(
             pts[j].toArray(),
             pts[j + 1].toArray(),
-            e.peer ? 0x236857 : 0x24404c,
+            crossHost ? CROSS_HOST_COLOR : e.peer ? 0x236857 : 0x24404c,
             e,
           );
       }
@@ -710,6 +738,217 @@ export function createSpaceScene() {
     geometryGroup.add(mutedLines);
     refreshFileScene(input);
   }
+  /** Translucent floors under each host of the merged view, with label anchors. */
+  function buildLayers(input: SceneInput) {
+    layerViews = [];
+    const hosts = new Map<string, T.Vector3[]>();
+    for (const n of nodes.values())
+      if (n.identity.host !== undefined)
+        hosts.set(n.identity.host, [
+          ...(hosts.get(n.identity.host) ?? []),
+          n.pos,
+        ]);
+    for (const [id, p] of input.rdmaDevicePositions) {
+      const host = input.rdmaDevices.get(id)?.host;
+      if (host !== undefined && hosts.has(host))
+        hosts.get(host)!.push(new T.Vector3(p.x, p.y, p.z));
+    }
+    if (!hosts.size) return;
+    const floors = new T.InstancedMesh(
+      new T.PlaneGeometry(1, 1),
+      new T.MeshBasicMaterial({
+        color: 0x4bd6bf,
+        transparent: true,
+        opacity: 0.045,
+        side: T.DoubleSide,
+        depthWrite: false,
+      }),
+      hosts.size,
+    );
+    floors.name = "host-layers";
+    let index = 0;
+    for (const [host, points] of hosts) {
+      const box = new T.Box3().setFromPoints(points).expandByScalar(4);
+      const z = Math.min(...points.map((p) => p.z)) - 0.3;
+      dummy.position.set(
+        (box.min.x + box.max.x) / 2,
+        (box.min.y + box.max.y) / 2,
+        z,
+      );
+      dummy.scale.set(box.max.x - box.min.x, box.max.y - box.min.y, 1);
+      dummy.updateMatrix();
+      floors.setMatrixAt(index++, dummy.matrix);
+      layerViews.push({
+        host,
+        label: input.hostLabels?.get(host) ?? host,
+        pos: new T.Vector3(box.min.x, box.min.y, z),
+      });
+    }
+    dummy.scale.set(1, 1, 1);
+    geometryGroup.add(floors);
+  }
+  /** Device anchors, QP markers above their anchors, and links between local QPs. */
+  function buildRdma(input: SceneInput) {
+    rdmaViews = [];
+    rdmaLinkViews = [];
+    rdmaDeviceViews = [];
+    // The roof of a visible process or device plate; `floor` gives its base instead.
+    const top = (anchor: string, floor = false) => {
+      const n = nodes.get(anchor);
+      if (n)
+        return input.visible.has(anchor)
+          ? new T.Vector3(
+              n.pos.x,
+              n.pos.y,
+              n.pos.z + (floor ? 0 : PROCESS_HEIGHT),
+            )
+          : null;
+      const p = input.rdmaDevicePositions.get(anchor);
+      return p
+        ? new T.Vector3(p.x, p.y, p.z + (floor ? 0 : RDMA_DEVICE_HEIGHT))
+        : null;
+    };
+    const devices = [...input.rdmaDevices.values()].filter((d) =>
+      input.rdmaDevicePositions.has(d.id),
+    );
+    const plates = new T.InstancedMesh(
+      new T.BoxGeometry(PROCESS_SIDE, PROCESS_SIDE, RDMA_DEVICE_HEIGHT),
+      new T.MeshBasicMaterial({
+        color: RDMA_COLOR,
+        transparent: true,
+        opacity: 0.18,
+        depthWrite: false,
+      }),
+      Math.max(1, devices.length),
+    );
+    plates.count = devices.length;
+    plates.name = "rdma-devices";
+    plates.userData.rdmaDevices = devices.map((d) => d.id);
+    geometryGroup.add(plates);
+    devices.forEach((device, i) => {
+      const p = input.rdmaDevicePositions.get(device.id)!;
+      const pos = new T.Vector3(p.x, p.y, p.z + RDMA_DEVICE_HEIGHT / 2);
+      dummy.position.copy(pos);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      plates.setMatrixAt(i, dummy.matrix);
+      rdmaDeviceViews.push({ device, pos });
+    });
+    const plateEdges = new T.InstancedMesh(
+      new T.BoxGeometry(PROCESS_SIDE, PROCESS_SIDE, RDMA_DEVICE_HEIGHT),
+      new T.MeshBasicMaterial({
+        color: RDMA_COLOR,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.7,
+      }),
+      Math.max(1, devices.length),
+    );
+    plateEdges.count = plates.count;
+    plateEdges.instanceMatrix = plates.instanceMatrix;
+    geometryGroup.add(plateEdges);
+    const groups = [...input.rdma.values()].filter(
+      (g) => input.rdmaPositions.has(g.id) && top(g.anchor),
+    );
+    const markers = new T.InstancedMesh(
+      new T.IcosahedronGeometry(0.75),
+      new T.MeshBasicMaterial({
+        color: RDMA_COLOR,
+        transparent: true,
+        opacity: 0.2,
+      }),
+      Math.max(1, groups.length),
+    );
+    markers.count = groups.length;
+    markers.name = "rdma-markers";
+    markers.userData.rdma = groups.map((g) => g.id);
+    geometryGroup.add(markers);
+    const markerEdges = new T.InstancedMesh(
+      new T.IcosahedronGeometry(0.75),
+      new T.MeshBasicMaterial({
+        color: 0xd2bbff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.9,
+      }),
+      Math.max(1, groups.length),
+    );
+    markerEdges.count = markers.count;
+    markerEdges.instanceMatrix = markers.instanceMatrix;
+    geometryGroup.add(markerEdges);
+    const positions: number[] = [],
+      paths: string[] = [];
+    const addCurve = (curve: T.Curve<T.Vector3>, id: string) => {
+      const pts = curve.getPoints(24);
+      for (let j = 0; j < pts.length - 1; j++) {
+        positions.push(...pts[j].toArray(), ...pts[j + 1].toArray());
+        paths.push(id);
+      }
+    };
+    groups.forEach((group, i) => {
+      const p = input.rdmaPositions.get(group.id)!,
+        pos = new T.Vector3(p.x, p.y, p.z),
+        start = top(group.anchor)!;
+      dummy.position.copy(pos);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      markers.setMatrixAt(i, dummy.matrix);
+      const curve = new T.CubicBezierCurve3(
+        start,
+        start.clone().add(new T.Vector3(0, 0, 2)),
+        start
+          .clone()
+          .lerp(pos, 0.7)
+          .add(new T.Vector3(0, 0, 2)),
+        pos,
+      );
+      addCurve(curve, group.id);
+      rdmaViews.push({ group, pos, curve });
+    });
+    for (const link of input.rdmaLinks) {
+      let start = top(link.from),
+        end = top(link.to);
+      if (!start || !end) continue;
+      let curve: RdmaLinkView["curve"];
+      if (Math.abs(start.z - end.z) > PROCESS_HEIGHT) {
+        // Between host layers: from the upper anchor's base down to the lower roof.
+        if (start.z > end.z) start = top(link.from, true)!;
+        else end = top(link.to, true)!;
+        const down = new T.Vector3(0, 0, Math.sign(end.z - start.z) * 6);
+        curve = new T.CubicBezierCurve3(
+          start,
+          start.clone().add(down),
+          end.clone().sub(down),
+          end,
+        );
+      } else {
+        const mid = start.clone().lerp(end, 0.5);
+        mid.z += Math.min(8, 3 + start.distanceTo(end) * 0.15);
+        if (link.from === link.to) mid.x += 3;
+        curve = new T.QuadraticBezierCurve3(start, mid, end);
+      }
+      addCurve(curve, link.id);
+      rdmaLinkViews.push({ link, curve });
+    }
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new T.Float32BufferAttribute(positions, 3),
+    );
+    const lines = new T.LineSegments(
+      geometry,
+      new T.LineBasicMaterial({
+        color: RDMA_COLOR,
+        transparent: true,
+        opacity: 0.8,
+        depthWrite: false,
+        blending: T.AdditiveBlending,
+      }),
+    );
+    lines.name = "rdma-lines";
+    lines.userData.rdmaPaths = paths;
+    geometryGroup.add(lines);
+  }
   function refreshFileScene(input: FileSceneInput) {
     syncNodes(input);
     const {
@@ -750,7 +989,7 @@ export function createSpaceScene() {
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       markers.setMatrixAt(i, dummy.matrix);
-      const start = owner.pos.clone().setZ(0.5),
+      const start = owner.pos.clone().setZ(owner.pos.z + 0.5),
         mid = start.clone().lerp(pos, 0.5);
       mid.y -= 1.5;
       const curve = new T.QuadraticBezierCurve3(start, mid, pos);
@@ -812,7 +1051,7 @@ export function createSpaceScene() {
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       plates.setMatrixAt(i, dummy.matrix);
-      const start = owner.pos.clone().setZ(0.5),
+      const start = owner.pos.clone().setZ(owner.pos.z + 0.5),
         mid = start.clone().lerp(pos, 0.5);
       mid.y -= 1.5;
       const curve = new T.QuadraticBezierCurve3(start, mid, pos);
@@ -896,15 +1135,27 @@ export function createSpaceScene() {
   }
   function updateSelection(selectionState: SelectionState) {
     const n = nodes.get(selectionState.process ?? "");
-    selection.visible = !!n;
-    if (n) selection.position.set(n.pos.x, n.pos.y, 4);
+    const device = rdmaDeviceViews.find(
+      (v) => v.device.id === selectionState.rdma,
+    );
+    selection.visible = !!(n || device);
+    if (n) {
+      selection.position.set(n.pos.x, n.pos.y, n.pos.z + 4);
+      selection.scale.set(1, 1, 1);
+    } else if (device) {
+      selection.position.copy(device.pos);
+      selection.scale.set(1, 1, (RDMA_DEVICE_HEIGHT + 0.3) / 8.3);
+    }
     const view = selectionState.netlink
       ? netlinkViews.get(selectionState.netlink)
       : selectionState.file
         ? fileViews.get(selectionState.file)
         : selectionState.network
           ? networkViews.find((v) => v.group.id === selectionState.network)
-          : edgeViews.find((v) => v.e.id === selectionState.connection);
+          : selectionState.rdma
+            ? (rdmaViews.find((v) => v.group.id === selectionState.rdma) ??
+              rdmaLinkViews.find((v) => v.link.id === selectionState.rdma))
+            : edgeViews.find((v) => v.e.id === selectionState.connection);
     edgeSelection.visible = !!view;
     if (view) {
       const curves = selectionState.network
@@ -978,6 +1229,10 @@ export function createSpaceScene() {
         networkViews,
         fileViews,
         netlinkViews,
+        rdmaViews,
+        rdmaLinkViews,
+        rdmaDeviceViews,
+        layerViews,
         edgeViews,
         baseGlow,
         haloGlow,
@@ -993,7 +1248,8 @@ export function createSpaceScene() {
             (object) =>
               object !== parentLines &&
               object !== parentLineJoints &&
-              object !== portGroup,
+              object !== portGroup &&
+              object.name !== "host-layers",
           ),
           ...fileGroup.children,
         ],

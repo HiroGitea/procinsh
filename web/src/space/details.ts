@@ -15,31 +15,39 @@ import type { DetailsInput, SelectionActions } from "./contracts.js";
 import type {
   FdEndpoint,
   ProcessId,
+  RdmaEndpoint,
+  RdmaRelation,
   SocketEndpoint,
 } from "../shared/api-types.js";
+import { rdmaDeviceId, rdmaEndpointLabel, rdmaOwnerLabel } from "./rdma.js";
 import { spaceElement } from "./dom-types.js";
 export function createSpaceDetails(
   actions: Pick<SelectionActions, "connection" | "network">,
   $ = spaceElement,
 ) {
+  let linkable: NonNullable<DetailsInput["linkable"]> = () => true;
   let nodes: DetailsInput["nodes"],
     snapshot: DetailsInput["snapshot"],
     network: DetailsInput["network"],
     edgeStats: DetailsInput["edgeStats"],
     recentFiles: DetailsInput["files"],
-    netlinkSockets: DetailsInput["netlink"];
+    netlinkSockets: DetailsInput["netlink"],
+    rdma: DetailsInput["rdma"],
+    rdmaLinks: DetailsInput["rdmaLinks"],
+    rdmaDevices: DetailsInput["rdmaDevices"];
   let selected: string | null = null,
     selectedEdge: string | null = null,
     selectedNetwork: string | null = null,
     selectedFile: string | null = null,
-    selectedNetlink: string | null = null;
+    selectedNetlink: string | null = null,
+    selectedRdma: string | null = null;
   const selectConnection = actions.connection,
     selectNetwork = actions.network;
   const replayMode = document.body.dataset.mode === "replay";
   function processLink(id: ProcessId) {
     const link = document.createElement("a");
     link.className = "process-link";
-    if (!replayMode) link.href = processUrl(id);
+    if (!replayMode && linkable(id)) link.href = processUrl(id);
     link.textContent = nodes.get(key(id))?.name || "Unknown process";
     return link;
   }
@@ -85,6 +93,128 @@ export function createSpaceDetails(
       content.push(row);
     }
     updateConnectionEndpoints(content);
+  }
+  function line(text: string) {
+    const span = document.createElement("span");
+    span.textContent = text;
+    return span;
+  }
+  /** Local port addresses, so both ends of an IB path are visible together. */
+  function localPort(endpoint: RdmaEndpoint) {
+    const port = rdmaDevices
+      .get(rdmaDeviceId(endpoint.device))
+      ?.ports.find((p) => p.port === endpoint.port);
+    if (!port) return null;
+    return [
+      port.lid === null ? null : `LID ${port.lid}`,
+      port.gid && `GID ${port.gid}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  function rdmaOwner(endpoint: RdmaEndpoint) {
+    const heading = document.createElement("strong");
+    if (endpoint.owner.kind === "process")
+      heading.append(processLink(endpoint.owner.process_id));
+    else
+      heading.textContent =
+        endpoint.owner.kind === "kernel"
+          ? `Kernel · ${endpoint.owner.name}`
+          : rdmaOwnerLabel(endpoint.owner);
+    return heading;
+  }
+  function rdmaEndpointCard(endpoint: RdmaEndpoint, title: string) {
+    const div = document.createElement("div");
+    div.className = "endpoint";
+    div.append(
+      rdmaOwner(endpoint),
+      line(
+        `${title} · ${rdmaEndpointLabel(endpoint)} · ${Display.rdmaQpType(endpoint.qp_type)} · ${Display.rdmaState(endpoint.state)}`,
+      ),
+    );
+    const local = localPort(endpoint);
+    if (local) div.append(line(`Local ${local}`));
+    return div;
+  }
+  function rdmaQueuePair(relation: RdmaRelation) {
+    const div = rdmaEndpointCard(relation.endpoint, "QP");
+    const remote = [
+      relation.remote_qpn === null ? null : `Remote QP ${relation.remote_qpn}`,
+      relation.remote_gid && `GID ${relation.remote_gid}`,
+    ].filter(Boolean);
+    div.append(
+      line(remote.length ? remote.join(" · ") : "Remote QP unavailable"),
+    );
+    const cm = relation.cm;
+    if (cm) {
+      const owner =
+        cm.owner.kind === relation.endpoint.owner.kind &&
+        rdmaOwnerLabel(cm.owner) === rdmaOwnerLabel(relation.endpoint.owner)
+          ? ""
+          : ` · ${rdmaOwnerLabel(cm.owner)}`;
+      div.append(
+        line(
+          `CM ${Display.rdmaState(cm.state)} · ${Display.rdmaPortSpace(cm.port_space)}${owner} · ${Display.rdmaAddress(cm.source) || "—"} → ${Display.rdmaAddress(cm.destination) || "—"}${relation.remote_hostname ? ` (${relation.remote_hostname})` : ""}`,
+        ),
+      );
+    }
+    return div;
+  }
+  function rdmaDetails() {
+    const id = selectedRdma ?? "";
+    const group = rdma.get(id),
+      link = rdmaLinks.find((l) => l.id === id),
+      device = rdmaDevices.get(id);
+    if (!group && !link && !device) return;
+    $("process-details").hidden = true;
+    $("connection-details").hidden = false;
+    $("connection-facts").textContent =
+      "RDMA data transfers bypass the kernel; per-QP traffic is not observed.";
+    if (device) {
+      $("connection-label").textContent = device.label;
+      $("connection-state").textContent = "RDMA device";
+      updateConnectionEndpoints(
+        device.ports.map((port) => {
+          const div = document.createElement("div");
+          div.className = "endpoint";
+          const heading = document.createElement("strong");
+          heading.textContent = `Port ${port.port} · ${port.state ?? "state unavailable"}`;
+          div.append(
+            heading,
+            line(
+              [port.link_layer, port.rate].filter(Boolean).join(" · ") ||
+                "Link unavailable",
+            ),
+            line(
+              [
+                port.lid === null ? null : `LID ${port.lid}`,
+                port.gid && `GID ${port.gid}`,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "No address assigned",
+            ),
+          );
+          return div;
+        }),
+      );
+      return;
+    }
+    if (link) {
+      $("connection-label").textContent = link.relation.label;
+      $("connection-state").textContent = "Connected queue pairs on this host";
+      updateConnectionEndpoints([
+        rdmaEndpointCard(link.relation.endpoint, "ENDPOINT"),
+        ...(link.relation.peer
+          ? [rdmaEndpointCard(link.relation.peer, "PEER")]
+          : []),
+      ]);
+      return;
+    }
+    $("connection-label").textContent = group!.label;
+    $("connection-state").textContent = group!.remote
+      ? "RDMA queue pairs to a remote destination"
+      : "RDMA queue pairs";
+    updateConnectionEndpoints(group!.members.map(rdmaQueuePair));
   }
   function fileDetails() {
     const f = recentFiles.get(selectedFile ?? "");
@@ -147,7 +277,8 @@ export function createSpaceDetails(
       return div;
     }
     const identity = document.createElement("span");
-    identity.textContent = `${title} · PID ${fdEndpoint.process_id.pid} · ${n?.username ?? n?.uid ?? "unknown"}`;
+    const host = fdEndpoint.process_id.host;
+    identity.textContent = `${title} · ${host === undefined ? "" : `${host} · `}PID ${fdEndpoint.process_id.pid} · ${n?.username ?? n?.uid ?? "unknown"}`;
     const fd = document.createElement("span");
     fd.textContent = `FD ${fdEndpoint.fd}${fdEndpoint.fd_count > 1 ? ` (+${fdEndpoint.fd_count - 1} shared FDs)` : ""} · ${Display.access(fdEndpoint.access)}`;
     const resource = document.createElement("span");
@@ -169,6 +300,7 @@ export function createSpaceDetails(
     }
   }
   function details(data: DetailsInput, selection: SelectionState) {
+    linkable = data.linkable ?? (() => true);
     ({
       nodes,
       snapshot,
@@ -176,22 +308,31 @@ export function createSpaceDetails(
       edgeStats,
       files: recentFiles,
       netlink: netlinkSockets,
+      rdma,
+      rdmaLinks,
+      rdmaDevices,
     } = data);
     selected = selection.process;
     selectedEdge = selection.connection;
     selectedNetwork = selection.network;
     selectedFile = selection.file;
     selectedNetlink = selection.netlink;
+    selectedRdma = selection.rdma;
     const active = !!(
       selected ||
       selectedEdge ||
       selectedNetwork ||
       selectedFile ||
-      selectedNetlink
+      selectedNetlink ||
+      selectedRdma
     );
     $("details").hidden = !active;
     if (!active) return;
     $("connection-state").hidden = !!selectedNetlink;
+    if (selectedRdma) {
+      rdmaDetails();
+      return;
+    }
     if (selectedNetlink) {
       netlinkDetails();
       return;
@@ -212,11 +353,14 @@ export function createSpaceDetails(
       process.hidden = false;
       connection.hidden = true;
       $("name").textContent = n.name;
-      if (!replayMode) $("name").href = processUrl(n.identity);
+      if (!replayMode && linkable(n.identity))
+        $("name").href = processUrl(n.identity);
       else $("name").removeAttribute("href");
       $("cmdline").textContent = n.command_line?.join(" ") || "N/A";
       $("pid").replaceChildren(
-        document.createTextNode(`PID ${n.identity.pid} · `),
+        document.createTextNode(
+          `${n.identity.host === undefined ? "" : `${n.identity.host} · `}PID ${n.identity.pid} · `,
+        ),
       );
       for (const [role, uid, name, color] of [
         ["Real", n.uid, n.username, processColors(n).real],

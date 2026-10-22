@@ -8,6 +8,7 @@ import {
   processInfo,
   socketEndpoint,
   spaceActivity,
+  emptyRdmaScene,
 } from "./support/fixtures.js";
 import type {
   FdEndpoint,
@@ -272,6 +273,7 @@ test("the scene suppresses generic netlink relations and renders plates and sele
     filePositions: data.filePositions,
     netlink: data.netlinkSockets.entries,
     netlinkPositions: data.netlinkPositions,
+    ...emptyRdmaScene(),
     visible: new Set(data.nodes.keys()),
   });
   scene.rebuild(input(), null);

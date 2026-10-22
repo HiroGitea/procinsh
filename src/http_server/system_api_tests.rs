@@ -80,6 +80,8 @@ async fn sse_connections_own_viewer_lifetimes() {
     .unwrap();
     assert!(payload["processes"].is_array());
     assert!(payload["fd_relations"].is_array());
+    assert!(payload["rdma_ports"].is_array());
+    assert!(payload["rdma_relations"].is_array());
     assert!(payload.get("nodes").is_none());
     assert!(payload.get("edges").is_none());
     // Exercise the HTTP boundary as well as the payload serialization fixtures.

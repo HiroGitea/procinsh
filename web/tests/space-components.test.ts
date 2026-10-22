@@ -23,6 +23,8 @@ import {
   fdEndpoint,
   fdRelation,
   socketEndpoint,
+  emptyRdmaInput,
+  emptyRdmaScene,
 } from "./support/fixtures.js";
 
 afterEach(() => {
@@ -43,6 +45,7 @@ test("connection detail cards stay ordered when collected endpoints reverse", as
     connection: "connection",
     network: null,
     netlink: null,
+    rdma: null,
     file: null,
   };
   for (const [low, high] of [
@@ -95,6 +98,7 @@ test("connection detail cards stay ordered when collected endpoints reverse", as
             snapshot: { processes: [], fd_relations: [current] },
             network: new Map(),
             edgeStats: new Map(),
+            ...emptyRdmaInput(),
             files: new Map(),
             netlink: new Map(),
           },
@@ -176,6 +180,7 @@ test("socket attachment faces survive endpoint reversal across rebuilds", async 
       netlink: new Map(),
       files: new Map(),
       netlinkPositions: new Map(),
+      ...emptyRdmaScene(),
       filePositions: new Map(),
       visible: new Set(nodes.keys()),
     };
@@ -342,6 +347,7 @@ test("socket paths clear endpoint hulls and loop outside self-connections betwee
     netlink: new Map(),
     files: new Map(),
     netlinkPositions: new Map(),
+    ...emptyRdmaScene(),
     filePositions: new Map(),
     visible: new Set(nodes.keys()),
   };
@@ -498,6 +504,7 @@ test("pipes and dangling sockets terminate at face-aligned cylinders", async () 
       netlink: new Map(),
       files: new Map(),
       netlinkPositions: new Map(),
+      ...emptyRdmaScene(),
       filePositions: new Map(),
       visible: new Set(["10:1", "2:1"]),
     },
@@ -557,6 +564,8 @@ test("space-components regression", async () => {
             "./contracts.js",
             "./model.js",
             "./netlink.js",
+            "./rdma.js",
+            "./hosts.js",
             "./dom-types.js",
           ].includes(path) ||
             (name === "data.ts" && path === "./process-layout.js") ||
@@ -577,6 +586,7 @@ test("space-components regression", async () => {
     connection: null,
     network: null,
     netlink: null,
+    rdma: null,
     file: null,
   });
   const identity = { pid: 101, start_time_ticks: 1 };
@@ -612,6 +622,7 @@ test("space-components regression", async () => {
       netlink: new Map(),
       files: new Map([["file", file]]),
       netlinkPositions: new Map(),
+      ...emptyRdmaScene(),
       filePositions: new Map([["file", { x: 3, y: 0, z: -3 }]]),
       visible: new Set(nodes.keys()),
     };
@@ -646,6 +657,7 @@ test("space-components regression", async () => {
       netlink: new Map(),
       files: new Map(),
       netlinkPositions: new Map(),
+      ...emptyRdmaScene(),
       filePositions: new Map(),
     });
     scene.updateSelection(emptySelection());
@@ -670,6 +682,7 @@ test("space-components regression", async () => {
         connections: new Set<string>(),
         networks: new Set<string>(),
         netlink: new Set<string>(),
+        rdma: new Set<string>(),
         files: new Set<string>(),
       };
       selection.choose(kind, "id");
@@ -725,6 +738,7 @@ test("space-components regression", async () => {
       netlink: new Map(),
       files: new Map(),
       edgeStats: new Map(),
+      ...emptyRdmaInput(),
     };
     const events: [string, ...unknown[]][] = [];
     const unbind = bindSelection(canvas, hover, {
@@ -735,6 +749,7 @@ test("space-components regression", async () => {
         connection: (id) => events.push(["connection", id]),
         network: (id) => events.push(["network", id]),
         netlink: (id) => events.push(["netlink", id]),
+        rdma: (id) => events.push(["rdma", id]),
         file: (id) => events.push(["file", id]),
         clear: () => events.push(["clear"]),
       },
@@ -773,7 +788,12 @@ test("space-components regression", async () => {
     );
     assert.deepEqual(events.at(-1), [
       "hover",
-      { hoveredNetwork: null, hoveredFile: "file", hoveredNetlink: null },
+      {
+        hoveredNetwork: null,
+        hoveredFile: "file",
+        hoveredNetlink: null,
+        hoveredRdma: null,
+      },
     ]);
     assert.match(hover.textContent!, /READ 8 bytes · WRITE 12 bytes/);
     input = { ...input, view: { ...input.view, objects: [] } };
@@ -781,7 +801,12 @@ test("space-components regression", async () => {
     assert.equal(hover.hidden, true);
     assert.deepEqual(events.at(-1), [
       "hover",
-      { hoveredNetwork: null, hoveredFile: null, hoveredNetlink: null },
+      {
+        hoveredNetwork: null,
+        hoveredFile: null,
+        hoveredNetlink: null,
+        hoveredRdma: null,
+      },
     ]);
     unbind();
     const count = events.length;
@@ -860,6 +885,7 @@ test("space-components regression", async () => {
       snapshot: { processes: [], fd_relations: [] },
       network: new Map(),
       edgeStats: new Map(),
+      ...emptyRdmaInput(),
       netlink: new Map(),
       files: new Map([["file", file]]),
     };
@@ -1001,6 +1027,9 @@ test("space-components regression", async () => {
       hullIds: [],
       networkViews: [],
       netlinkViews: new Map(),
+      rdmaViews: [],
+      rdmaLinkViews: [],
+      rdmaDeviceViews: [],
       fileViews: new Map(),
       edgeViews: [],
       baseGlow: null,
@@ -1031,6 +1060,7 @@ test("space-components regression", async () => {
         hoveredNetwork: null,
         hoveredFile: null,
         hoveredNetlink: null,
+        hoveredRdma: null,
       }),
       cpuGlows: new Map(),
       beforeFrame: (now) => {
@@ -1040,6 +1070,9 @@ test("space-components regression", async () => {
     view = {
       ...view,
       netlinkViews: new Map(),
+      rdmaViews: [],
+      rdmaLinkViews: [],
+      rdmaDeviceViews: [],
       fileViews: new Map([["file", { file, pos: new T.Vector3(), curve }]]),
       edgeViews: [
         { e: fdRelation({ id: "connection" }), networkId: "network", curve },

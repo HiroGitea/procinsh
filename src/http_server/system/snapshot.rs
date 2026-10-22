@@ -1,4 +1,5 @@
-//! Collect process structure and descriptor relations, retaining kinds without peers.
+//! Collect process structure, descriptor relations and RDMA queue pairs, retaining
+//! kinds without peers.
 //!
 //! # Interface
 //!
@@ -8,10 +9,11 @@
 //! | [`FdEndpoint`] | `pub(super)` | `struct FdEndpoint` |
 //! | [`SocketEndpoint`] | `pub(super)` | `struct SocketEndpoint` |
 //! | [`FdRelation`] | `pub(super)` | `struct FdRelation` |
-//! | [`SystemSnapshot`] | `pub(in crate::http_server)` | `struct SystemSnapshot` |
+//! | [`SystemSnapshot`] | `pub(in crate::http_server)` | `struct SystemSnapshot`; [`SystemSnapshot::relations_json`] exports relations for cross-host correlation |
 //! | [`process_from_summary`] | `pub(super)` | `fn process_from_summary(summary: `[`ProcessSummary`]`, parent_id: `[`Option`]`<`[`ProcessId`]`>) -> `[`ProcessSnapshot`] |
 //! | [`collect`] | `pub(super)` | `fn collect(discovery: &mut `[`ProcessScanner`]`) -> `[`SystemSnapshot`] |
 
+use super::rdma::{self, RdmaPortInfo, RdmaRelation};
 use crate::http_server::process::{
     self, MemoryMap, ProcessId, ProcessScanner, ProcessSummary, SocketInfo,
 };
@@ -96,16 +98,36 @@ pub(super) struct FdRelation {
     pub(super) candidate: bool,
     pub(super) shared: bool,
 }
-/// A system-wide observation of processes and their file descriptor relations.
+/// A system-wide observation of processes, their file descriptor relations and
+/// RDMA queue pairs.
 #[derive(Clone, Default, Serialize)]
 // Re-exported by system for subscription consumers.
 pub(in crate::http_server) struct SystemSnapshot {
     pub(super) captured_at: u64,
     pub(super) processes: Vec<ProcessSnapshot>,
     pub(super) fd_relations: Vec<FdRelation>,
+    pub(super) rdma_ports: Vec<RdmaPortInfo>,
+    pub(super) rdma_relations: Vec<RdmaRelation>,
     pub(super) warnings: Vec<String>,
     pub(super) inspected_processes: usize,
     pub(super) inspected_fds: usize,
+}
+
+impl SystemSnapshot {
+    /// Relations and RDMA ports as JSON, shaped like a relayed snapshot object.
+    pub(in crate::http_server) fn relations_json(
+        &self,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        let mut result = serde_json::Map::new();
+        for (name, value) in [
+            ("fd_relations", serde_json::to_value(&self.fd_relations)),
+            ("rdma_relations", serde_json::to_value(&self.rdma_relations)),
+            ("rdma_ports", serde_json::to_value(&self.rdma_ports)),
+        ] {
+            result.insert(name.into(), value.unwrap_or_default());
+        }
+        result
+    }
 }
 
 pub(super) fn process_from_summary(
@@ -539,6 +561,15 @@ pub(super) fn collect(discovery: &mut ProcessScanner) -> SystemSnapshot {
             break;
         }
     }
+    let pids = result
+        .processes
+        .iter()
+        .map(|p| (p.identity.pid, p.identity))
+        .collect();
+    let observed = rdma::observe(&pids, Instant::now() + Duration::from_millis(300));
+    result.rdma_ports = observed.ports;
+    result.rdma_relations = observed.relations;
+    result.warnings.extend(observed.warnings);
     if denied > 0 {
         result
             .warnings

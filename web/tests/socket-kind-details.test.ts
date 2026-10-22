@@ -11,6 +11,7 @@ import {
   fdEndpoint,
   processInfo,
   socketEndpoint,
+  emptyRdmaInput,
 } from "./support/fixtures.js";
 import type { SocketProtocol } from "../src/shared/api-types.js";
 import type { DetailsInput } from "../src/space/contracts.js";
@@ -103,6 +104,7 @@ test.each([...cases, { value: null, label: "Socket · Type unavailable" }])(
       snapshot: { processes: [], fd_relations: [edge] },
       network: new Map(),
       edgeStats: new Map(),
+      ...emptyRdmaInput(),
       netlink: new Map(),
       files: new Map(),
     };
@@ -111,6 +113,7 @@ test.each([...cases, { value: null, label: "Socket · Type unavailable" }])(
       connection: edge.id,
       network: null,
       netlink: null,
+      rdma: null,
       file: null,
     };
     createSpaceDetails({ connection() {}, network() {} }, spaceElement).update(

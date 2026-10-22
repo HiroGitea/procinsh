@@ -36,7 +36,7 @@ export function createSpaceCamera(canvas: HTMLCanvasElement) {
     const box = new T.Box3();
     for (const pos of positions.processes) {
       box.expandByPoint(new T.Vector3(pos.x, pos.y, pos.z));
-      box.expandByPoint(new T.Vector3(pos.x, pos.y, 8));
+      box.expandByPoint(new T.Vector3(pos.x, pos.y, pos.z + 8));
     }
     for (const p of positions.networks)
       box.expandByPoint(new T.Vector3(p.x, p.y, p.z + 1));

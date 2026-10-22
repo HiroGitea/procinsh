@@ -19,6 +19,9 @@ import {
   spaceActivity,
   memoryMap,
   cpuActivity,
+  rdmaEndpoint,
+  rdmaPort,
+  rdmaRelation,
 } from "./support/fixtures.js";
 import {
   assertPagesAssets,
@@ -148,11 +151,53 @@ test("shared validator rejects invalid metadata, ordering, and nested payloads",
       (v: any) => (v.initial_snapshot.fd_relations[0].endpoint.resource = null),
       "resource",
     ],
+    [
+      (v: any) =>
+        (v.initial_snapshot.rdma_relations = [
+          rdmaRelation({
+            endpoint: rdmaEndpoint({ qp_type: { kind: "bogus" } as never }),
+          }),
+        ]),
+      "rdma_relations[0].endpoint.qp_type.kind",
+    ],
+    [
+      (v: any) =>
+        (v.initial_snapshot.rdma_ports = [rdmaPort({ lid: "2" as never })]),
+      "rdma_ports[0].lid",
+    ],
   ] as const) {
     const recording = sample();
     mutate(recording);
     expect(() => parseRecording(JSON.stringify(recording))).toThrow(message);
   }
+});
+
+test("validator accepts RDMA queue pairs and recordings without them", () => {
+  const recording = sample();
+  recording.initial_snapshot.rdma_ports = [rdmaPort()];
+  recording.initial_snapshot.rdma_relations = [
+    rdmaRelation({
+      peer: rdmaEndpoint({ qpn: 650, owner: { kind: "unknown", pid: null } }),
+      cm: {
+        id: 0,
+        owner: { kind: "kernel", name: "rpcrdma" },
+        state: { kind: "connect" },
+        port_space: { kind: "unknown", code: 0x1ff },
+        source: null,
+        destination: {
+          kind: "ib",
+          gid: "fe80:0000:0000:0000:0000:0000:0000:0051",
+          service_id: "0x0000000001064e51",
+          pkey: 65535,
+        },
+      },
+    }),
+  ];
+  expect(
+    parseRecording(JSON.stringify(recording)).initial_snapshot.rdma_relations,
+  ).toHaveLength(1);
+  expect(sample().initial_snapshot.rdma_relations).toBeUndefined();
+  expect(() => parseRecording(JSON.stringify(sample()))).not.toThrow();
 });
 
 test("recording fixture is self-contained and contains synthetic values only", () => {

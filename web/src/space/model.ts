@@ -15,7 +15,9 @@ export const remoteLabel = (socket: SocketEndpoint | null | undefined) =>
   socket?.remote_hostname && socket.remote
     ? `${socket.remote_hostname}:${socket.remote.port}`
     : Display.address(socket?.remote);
-export const key = (id: ProcessId) => `${id.pid}:${id.start_time_ticks}`;
+/** Process identity key; the merged multi-host view prefixes the host. */
+export const key = (id: ProcessId) =>
+  `${id.host === undefined ? "" : `${id.host}@`}${id.pid}:${id.start_time_ticks}`;
 
 export function connectionState(
   e: Pick<FdRelation, "shared" | "candidate" | "peer" | "socket">,

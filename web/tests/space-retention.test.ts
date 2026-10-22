@@ -16,6 +16,7 @@ import {
   memoryMap,
   socketEndpoint,
   spaceActivity,
+  emptyRdmaScene,
 } from "./support/fixtures.js";
 
 afterEach(() => {
@@ -88,6 +89,7 @@ function setup(reduced = false) {
       networks: new Set(data.network.keys()),
       files: new Set(data.recentFiles.entries.keys()),
       netlink: new Set(data.netlinkSockets.entries.keys()),
+      rdma: new Set<string>(),
     });
     scene.rebuild(
       {
@@ -99,6 +101,7 @@ function setup(reduced = false) {
         filePositions: data.filePositions,
         netlink: data.netlinkSockets.entries,
         netlinkPositions: data.netlinkPositions,
+        ...emptyRdmaScene(),
         visible: new Set(data.nodes.keys()),
       },
       selection.process,

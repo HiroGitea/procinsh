@@ -128,9 +128,97 @@ const protocol: Check = (v, p) => {
       socket_type: nullable(socketType),
     })(v, p);
 };
+const coded = (...kinds: string[]): Check =>
+  object({ kind: choice(...kinds, "unknown"), code: optional(number) });
+const rdmaOwner: Check = (v, p) => {
+  object({ kind: choice("process", "kernel", "unknown") })(v, p);
+  const kind = (v as { kind: string }).kind;
+  if (kind === "process") object({ process_id: identity })(v, p);
+  else if (kind === "kernel") object({ name: string })(v, p);
+  else object({ pid: nullable(number) })(v, p);
+};
+const rdmaAddress: Check = (v, p) => {
+  object({ kind: choice("inet", "ib", "unknown") })(v, p);
+  const kind = (v as { kind: string }).kind;
+  if (kind === "inet") object({ ip: string, port: number })(v, p);
+  else if (kind === "ib")
+    object({ gid: string, service_id: hex, pkey: number })(v, p);
+  else object({ family: number })(v, p);
+};
+const rdmaState = coded(
+  "reset",
+  "init",
+  "rtr",
+  "rts",
+  "sqd",
+  "sqe",
+  "err",
+  "idle",
+  "addr_query",
+  "addr_resolved",
+  "route_query",
+  "route_resolved",
+  "connect",
+  "disconnect",
+  "addr_bound",
+  "listen",
+  "device_removal",
+  "destroying",
+);
+const rdmaEndpoint = object({
+  owner: rdmaOwner,
+  device: string,
+  port: nullable(number),
+  qpn: number,
+  qp_type: coded(
+    "smi",
+    "gsi",
+    "rc",
+    "uc",
+    "ud",
+    "raw_ipv6",
+    "raw_ethertype",
+    "raw_packet",
+    "xrc_ini",
+    "xrc_tgt",
+    "driver",
+  ),
+  state: rdmaState,
+});
+const rdmaRelation = object({
+  id: string,
+  endpoint: rdmaEndpoint,
+  peer: nullable(rdmaEndpoint),
+  remote_qpn: nullable(number),
+  cm: nullable(
+    object({
+      id: nullable(number),
+      owner: rdmaOwner,
+      state: rdmaState,
+      port_space: coded("ipoib", "tcp", "udp", "ib"),
+      source: nullable(rdmaAddress),
+      destination: nullable(rdmaAddress),
+    }),
+  ),
+  remote_gid: nullable(string),
+  remote_hostname: nullable(string),
+  label: string,
+});
+const rdmaPort = object({
+  device: string,
+  port: number,
+  link_layer: nullable(string),
+  state: nullable(string),
+  lid: nullable(number),
+  gid: nullable(string),
+  rate: nullable(string),
+});
 const snapshot = object({
   processes: array(process),
   sequence: optional(number),
+  // Absent in recordings made before RDMA collection.
+  rdma_relations: optional(array(rdmaRelation)),
+  rdma_ports: optional(array(rdmaPort)),
   fd_relations: array(
     object({
       id: string,

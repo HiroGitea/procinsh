@@ -12,6 +12,7 @@
 //! | [`unix_diag`] | `pub(super)` | `fn unix_diag(namespace: &`[`NetworkNamespaceReader`]`, deadline: `[`Instant`]`) -> `[`Result`]`<`[`HashMap`]`<`[`u64`]`, `[`SocketInfo`]`>>` |
 
 use super::socket_namespace::NetworkNamespaceReader;
+use crate::http_server::netlink;
 use crate::http_server::socket_types::{
     SocketConnectionStatus, SocketProtocol, SocketState, SocketType,
 };
@@ -22,7 +23,7 @@ use std::{
     fs::File,
     io::Read,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    os::fd::{AsRawFd, FromRawFd, OwnedFd},
+    os::fd::OwnedFd,
     time::Instant,
 };
 
@@ -159,15 +160,6 @@ pub(super) fn parse_unix(text: &str) -> HashMap<u64, SocketInfo> {
         .collect()
 }
 
-fn u32_at(bytes: &[u8], offset: usize) -> Result<u32> {
-    Ok(u32::from_ne_bytes(
-        bytes
-            .get(offset..offset + 4)
-            .context("short netlink field")?
-            .try_into()?,
-    ))
-}
-
 fn parse_diag(bytes: &[u8]) -> Result<(u64, SocketInfo)> {
     ensure!(
         bytes.len() >= 16 && bytes[0] == libc::AF_UNIX as u8,
@@ -183,18 +175,9 @@ fn parse_diag(bytes: &[u8]) -> Result<(u64, SocketInfo)> {
         path: None,
         peer_inode: None,
     };
-    let mut offset = 16;
-    while offset < bytes.len() {
-        ensure!(offset + 4 <= bytes.len(), "short UNIX diag attribute");
-        let length = u16::from_ne_bytes(bytes[offset..offset + 2].try_into()?) as usize;
-        let kind = u16::from_ne_bytes(bytes[offset + 2..offset + 4].try_into()?) & 0x3fff;
-        ensure!(
-            length >= 4 && offset + length <= bytes.len(),
-            "invalid UNIX diag attribute length"
-        );
-        let data = &bytes[offset + 4..offset + length];
+    for (kind, data) in netlink::attributes(&bytes[16..])? {
         if kind == 2 {
-            let inode = u32_at(data, 0)? as u64;
+            let inode = netlink::u32_at(data, 0)? as u64;
             info.peer_inode = (inode != 0).then_some(inode);
         }
         if kind == 0 && !data.is_empty() {
@@ -207,25 +190,12 @@ fn parse_diag(bytes: &[u8]) -> Result<(u64, SocketInfo)> {
                 String::from_utf8_lossy(data.strip_suffix(&[0]).unwrap_or(data)).into_owned()
             });
         }
-        offset += (length + 3) & !3;
     }
-    Ok((u32_at(bytes, 4)? as u64, info))
+    Ok((netlink::u32_at(bytes, 4)? as u64, info))
 }
 
 pub(super) fn diagnostic_socket() -> Result<OwnedFd> {
-    let raw = unsafe {
-        libc::socket(
-            libc::AF_NETLINK,
-            libc::SOCK_RAW | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
-            libc::NETLINK_SOCK_DIAG,
-        )
-    };
-    ensure!(
-        raw >= 0,
-        "NETLINK_SOCK_DIAG: {}",
-        std::io::Error::last_os_error()
-    );
-    Ok(unsafe { OwnedFd::from_raw_fd(raw) })
+    netlink::open_socket(libc::NETLINK_SOCK_DIAG, "NETLINK_SOCK_DIAG")
 }
 
 // The socket keeps its creation namespace even when queried by another thread.
@@ -235,121 +205,25 @@ pub(super) fn unix_diag(
     deadline: Instant,
 ) -> Result<HashMap<u64, SocketInfo>> {
     let fd = namespace.diagnostic_socket(deadline)?;
-    ensure!(Instant::now() < deadline, "UNIX diag timed out");
-    let mut kernel: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
-    kernel.nl_family = libc::AF_NETLINK as u16;
-    let mut request = [0u8; 40];
-    request[0..4].copy_from_slice(&40u32.to_ne_bytes());
-    request[4..6].copy_from_slice(&20u16.to_ne_bytes()); // SOCK_DIAG_BY_FAMILY
-    request[6..8].copy_from_slice(&0x301u16.to_ne_bytes()); // REQUEST | DUMP
-    request[8..12].copy_from_slice(&1u32.to_ne_bytes());
-    request[16] = libc::AF_UNIX as u8;
-    request[20..24].copy_from_slice(&u32::MAX.to_ne_bytes());
-    request[28..32].copy_from_slice(&5u32.to_ne_bytes()); // SHOW_NAME | SHOW_PEER
-    let sent = unsafe {
-        libc::sendto(
-            fd.as_raw_fd(),
-            request.as_ptr().cast(),
-            request.len(),
-            0,
-            (&kernel as *const libc::sockaddr_nl).cast(),
-            std::mem::size_of_val(&kernel) as _,
-        )
-    };
-    ensure!(
-        sent == request.len() as isize,
-        "UNIX diag send: {}",
-        std::io::Error::last_os_error()
-    );
+    // struct unix_diag_req
+    let mut request = [0u8; 24];
+    request[0] = libc::AF_UNIX as u8;
+    request[4..8].copy_from_slice(&u32::MAX.to_ne_bytes());
+    request[12..16].copy_from_slice(&5u32.to_ne_bytes()); // SHOW_NAME | SHOW_PEER
     let mut result = HashMap::new();
-    let mut buffer = vec![0u8; 65536];
-    let mut total = 0;
-    loop {
-        ensure!(Instant::now() < deadline, "UNIX diag timed out");
-        let mut poll = libc::pollfd {
-            fd: fd.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let timeout = remaining.as_millis().clamp(1, 50) as i32;
-        let ready = unsafe { libc::poll(&mut poll, 1, timeout) };
-        if ready < 0 {
-            if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
-                continue;
-            }
-            bail!(std::io::Error::last_os_error());
-        }
-        if ready == 0 {
-            continue;
-        }
-        let mut sender: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
-        let mut sender_len = std::mem::size_of_val(&sender) as libc::socklen_t;
-        let count = unsafe {
-            libc::recvfrom(
-                fd.as_raw_fd(),
-                buffer.as_mut_ptr().cast(),
-                buffer.len(),
-                libc::MSG_TRUNC | libc::MSG_DONTWAIT,
-                (&mut sender as *mut libc::sockaddr_nl).cast(),
-                &mut sender_len,
-            )
-        };
-        if count < 0 {
-            let error = std::io::Error::last_os_error();
-            if matches!(error.raw_os_error(), Some(libc::EINTR) | Some(libc::EAGAIN)) {
-                continue;
-            }
-            return Err(error.into());
-        }
-        ensure!(
-            count > 0 && count as usize <= buffer.len(),
-            "truncated UNIX diag packet"
-        );
-        ensure!(sender.nl_pid == 0, "UNIX diag sender is not kernel");
-        total += count as usize;
-        ensure!(total <= 8 * 1024 * 1024, "UNIX diag exceeds 8 MiB limit");
-        let bytes = &buffer[..count as usize];
-        let mut offset = 0;
-        while offset < bytes.len() {
-            ensure!(offset + 16 <= bytes.len(), "short netlink header");
-            let length = u32_at(bytes, offset)? as usize;
-            ensure!(
-                length >= 16 && length <= bytes.len() - offset,
-                "invalid netlink length"
-            );
-            let kind = u16::from_ne_bytes(bytes[offset + 4..offset + 6].try_into()?);
-            let flags = u16::from_ne_bytes(bytes[offset + 6..offset + 8].try_into()?);
-            ensure!(
-                u32_at(bytes, offset + 8)? == 1 && flags & 0x10 == 0,
-                "UNIX diag dump interrupted"
-            );
-            let body = &bytes[offset + 16..offset + length];
-            match kind {
-                3 => {
-                    if body.len() >= 4 {
-                        ensure!(u32_at(body, 0)? == 0, "UNIX diag dump failed");
-                    }
-                    return Ok(result);
-                }
-                2 => {
-                    let code = u32_at(body, 0)? as i32;
-                    if code != 0 {
-                        bail!(
-                            "UNIX diag: {}",
-                            std::io::Error::from_raw_os_error(code.saturating_neg())
-                        );
-                    }
-                }
-                20 => {
-                    let (inode, info) = parse_diag(body)?;
-                    result.insert(inode, info);
-                }
-                _ => bail!("unexpected netlink message {kind}"),
-            }
-            offset += (length + 3) & !3;
-        }
+    netlink::NetlinkDumpRequest {
+        label: "UNIX diag",
+        message_type: 20, // SOCK_DIAG_BY_FAMILY
+        reply_type: 20,
+        sequence: 1,
+        payload: &request,
     }
+    .run(&fd, deadline, |body| {
+        let (inode, info) = parse_diag(body)?;
+        result.insert(inode, info);
+        Ok(())
+    })?;
+    Ok(result)
 }
 
 #[cfg(test)]

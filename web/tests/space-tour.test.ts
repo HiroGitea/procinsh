@@ -353,6 +353,9 @@ test("tour scene samples visible towers, real connection paths and recent CPU ac
     networkViews: [],
     fileViews: new Map(),
     netlinkViews: new Map(),
+    rdmaViews: [],
+    rdmaLinkViews: [],
+    rdmaDeviceViews: [],
     baseGlow: null,
     haloGlow: null,
   };
@@ -422,6 +425,9 @@ test("tour favors the systemd tree and excludes kthreadd descendants and their c
     networkViews: [],
     fileViews: new Map(),
     netlinkViews: new Map(),
+    rdmaViews: [],
+    rdmaLinkViews: [],
+    rdmaDeviceViews: [],
     baseGlow: null,
     haloGlow: null,
   };

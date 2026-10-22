@@ -9,6 +9,7 @@ import {
   fdEndpoint,
   fdRelation,
   socketEndpoint,
+  emptyRdmaScene,
 } from "./support/fixtures.js";
 
 function process(
@@ -36,6 +37,7 @@ function input(processes: PlacedProcess[]): SceneInput {
     netlink: new Map(),
     files: new Map(),
     netlinkPositions: new Map(),
+    ...emptyRdmaScene(),
     filePositions: new Map(),
   };
 }
@@ -45,6 +47,7 @@ function selection(pid: number | null): SelectionState {
     connection: null,
     network: null,
     netlink: null,
+    rdma: null,
     file: null,
   };
 }

@@ -1,4 +1,4 @@
-use super::{process, system};
+use super::{hosts, process, system};
 use anyhow::Result;
 use std::{
     sync::{Arc, Mutex},
@@ -9,11 +9,19 @@ pub(super) struct AppState {
     pub(super) system_monitor: Arc<system::SystemMonitor>,
     pub(super) discovery: Mutex<process::ProcessScanner>,
     pub(super) monitoring: Arc<process::ProcessMonitor>,
+    pub(super) hosts: Arc<hosts::HostRegistry>,
     pub(super) interval: Duration,
 }
 impl AppState {
+    /// State for this machine under its kernel host name.
+    #[cfg(test)]
     pub(super) fn new(interval: Duration) -> Self {
+        Self::with_host(interval, hosts::HostInfo::local(None))
+    }
+
+    pub(super) fn with_host(interval: Duration, local: hosts::HostInfo) -> Self {
         Self {
+            hosts: Arc::new(hosts::HostRegistry::new(local)),
             system_monitor: Arc::new(system::SystemMonitor::default()),
             discovery: Mutex::new(process::ProcessScanner::default()),
             monitoring: Arc::new(process::ProcessMonitor::new(interval)),

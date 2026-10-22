@@ -24,6 +24,9 @@ import type {
   WorldPositions,
 } from "./contracts.js";
 import { createSpaceDetails } from "./details.js";
+import { ALL_HOSTS } from "./hosts.js";
+import { hostUrl, mountHostControls, readHostParam } from "./host-controls.js";
+import type { ProcessId } from "../shared/api-types.js";
 import { spaceElement as $ } from "./dom-types.js";
 
 const replayMode = document.body.dataset.mode === "replay";
@@ -118,6 +121,7 @@ const actions: SelectionActions = {
   network: selectNetwork,
   file: selectFile,
   netlink: selectNetlink,
+  rdma: selectRdma,
   clear: clearSelection,
 };
 const details = createSpaceDetails(actions);
@@ -128,6 +132,7 @@ bindSelection($("world"), $("hover"), {
     edgeStats: data.edgeStats,
     files: data.recentFiles.entries,
     netlink: data.netlinkSockets.entries,
+    ...rdmaInput(),
   }),
   actions,
   hover(state) {
@@ -138,8 +143,33 @@ bindSelection($("world"), $("hover"), {
 let firstView = true;
 let lastFilePrune = 0;
 
+function rdmaInput() {
+  return {
+    rdma: data.rdma,
+    rdmaLinks: data.rdmaLinks,
+    rdmaDevices: data.rdmaDevices,
+  };
+}
+/** Host floor labels of the merged view. */
+function hostLabels() {
+  return new Map(
+    data.hosts.map((h) => [
+      h.name,
+      `${h.name}${h.local ? " · local" : ""}${h.status.state === "offline" ? " · offline" : ""}`,
+    ]),
+  );
+}
+/** Only this server's own processes have process pages. */
+function linkable(id: ProcessId) {
+  if (data.host === null) return true;
+  return data.host === ALL_HOSTS && id.host === data.localHost;
+}
 function sceneInput(): SceneInput {
   return {
+    hostLabels: hostLabels(),
+    ...rdmaInput(),
+    rdmaPositions: data.rdmaPositions,
+    rdmaDevicePositions: data.rdmaDevicePositions,
     snapshot: data.displaySnapshot,
     nodes: data.nodes,
     network: data.network,
@@ -153,6 +183,8 @@ function sceneInput(): SceneInput {
 }
 function detailsInput(): DetailsInput {
   return {
+    linkable,
+    ...rdmaInput(),
     nodes: data.nodes,
     snapshot: data.displaySnapshot,
     network: data.network,
@@ -164,7 +196,11 @@ function detailsInput(): DetailsInput {
 function worldPositions(): WorldPositions {
   return {
     processes: [...data.nodes.values()].map((n) => n.pos),
-    networks: data.networkPositions.values(),
+    networks: [
+      ...data.networkPositions.values(),
+      ...data.rdmaPositions.values(),
+      ...data.rdmaDevicePositions.values(),
+    ],
     files: data.filePositions.values(),
     netlink: data.netlinkPositions.values(),
   };
@@ -180,6 +216,11 @@ function retainSelection() {
     networks: new Set(data.network.keys()),
     files: new Set(data.recentFiles.entries.keys()),
     netlink: new Set(data.netlinkSockets.entries.keys()),
+    rdma: new Set([
+      ...data.rdma.keys(),
+      ...data.rdmaLinks.map((link) => link.id),
+      ...data.rdmaDevices.keys(),
+    ]),
   });
 }
 function retainParticles() {
@@ -254,6 +295,10 @@ function refreshFiles() {
 }
 function selectNetlink(id: string | null) {
   selection.choose("netlink", id);
+  updateSelection();
+}
+function selectRdma(id: string | null) {
+  selection.choose("rdma", id);
   updateSelection();
 }
 function updateActivity(update: ActivityUpdate) {
@@ -357,20 +402,41 @@ addEventListener("pagehide", stop);
 addEventListener("pageshow", (event) => {
   if (event.persisted) start();
 });
+/** Forgets displayed state before showing an unrelated snapshot source. */
+function resetView() {
+  renderer.clearParticles();
+  data.cpuGlows.clear();
+  data.edgeStats.clear();
+  data.recentFiles.clear();
+  data.netlinkSockets.clear();
+  data.nodes.clear();
+  data.displaySnapshot = { processes: [], fd_relations: [] };
+  data.networkPositions.clear();
+  data.rdmaPositions.clear();
+  data.rdmaDevicePositions.clear();
+  data.filePositions.clear();
+  data.netlinkPositions.clear();
+  lastFilePrune = 0;
+}
+/** Shows another host, or every host as layers, from the live server. */
+function switchHost(host: string | null) {
+  if (host === data.host) return;
+  stopTour();
+  data.stop();
+  clearSelection();
+  resetView();
+  data.host = host;
+  data.hosts = [];
+  data.localHost = null;
+  renderSystemSnapshot({ processes: [], fd_relations: [] }, true);
+  history.replaceState(history.state, "", hostUrl(host));
+  firstView = true;
+  if (!document.hidden) data.start();
+}
 if (replayMode) {
   tickReplay = mountReplayControls(
     (snapshot) => {
-      renderer.clearParticles();
-      data.cpuGlows.clear();
-      data.edgeStats.clear();
-      data.recentFiles.clear();
-      data.netlinkSockets.clear();
-      data.nodes.clear();
-      data.displaySnapshot = { processes: [], fd_relations: [] };
-      data.networkPositions.clear();
-      data.filePositions.clear();
-      data.netlinkPositions.clear();
-      lastFilePrune = 0;
+      resetView();
       renderSystemSnapshot(snapshot, true);
     },
     (event) => {
@@ -382,10 +448,16 @@ if (replayMode) {
     },
   );
 } else {
+  data.host = readHostParam();
   mountRecordingControls(
     recorder,
     () => data.snapshot,
     () => liveReady,
+  );
+  mountHostControls(
+    document.querySelector(".tools")!,
+    () => data.host,
+    switchHost,
   );
 }
 start();

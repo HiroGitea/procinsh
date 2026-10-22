@@ -47,6 +47,10 @@ Vite が表示する URL（通常 http://127.0.0.1:5173）を開きます。既�
 |---|---|
 | `--listen ADDRESS` | 待受アドレス。複数回指定すると各アドレスで待受。既定は `127.0.0.1:8080` |
 | `--allow-non-loopback` | 非 loopback での待受を明示的に許可。認証・TLS なしでプロセスメモリや環境変数を公開するため注意 |
+| `--accept-agents ADDRESS` | hub として agent の接続を待ち受ける（複数回指定可）。非 loopback では `--allow-non-loopback` と agent token の両方が必要 |
+| `--connect HOST:PORT` | agent として hub の agent 用アドレスへ接続し、hub に閲覧者がいる間だけこのホストの観測を送る |
+| `--host-name NAME` | hub に表示するホスト名。既定はカーネルのホスト名。英数字・`.`・`_`・`-` の1〜63文字で、`all` は不可 |
+| `--agent-token-file PATH` | hub と agent の共有 token を読むファイル。未指定なら環境変数 `PROCINSH_AGENT_TOKEN`。token 自体はコマンドラインに書かない（procinsh 自身が全プロセスのコマンドラインを表示するため） |
 | `--help` / `--version` | ヘルプ / バージョン表示 |
 
 SIGINT（Ctrl+C）または SIGTERM で収集停止と HTTP サーバーの終了処理を行います。起動・サーバーの致命的な失敗は非ゼロ終了です。
@@ -90,6 +94,9 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 | `src/http_server/process/snapshot/symbol/` | ELF 取得・キャッシュ、アドレス変換、ELF/DWARF によるシンボル・ソース位置の解決 |
 | `src/http_server/process/snapshot/stack.rs` | サンプルとシンボル解決で共有するフレーム型 |
 | `src/http_server/system/` | 全プロセスの構造、subscription、BPF 収集、名前解決 |
+| `src/http_server/system/rdma/` | RDMA netlink・IPoIB 近傍表・sysfs による RDMA キューペアとポートの観測 |
+| `src/http_server/hosts/` | 複数ホスト：agent との接続（フレーム・認証・再接続）、hub での中継と差分の統合、ホスト一覧、ホスト間の接続の対応付け |
+| `src/http_server/netlink.rs` | UNIX socket diagnostic・RDMA・neighbor で共有する、期限付き netlink dump と属性の解析 |
 | `web/src/` | TypeScript の通常画面・SPACE 画面・描画モデルと CSS（HTML 入口は `web/{list,process,space}/index.html`） |
 | `tests/` | Rust・ブラウザ・ログ・実機センサーのテストと C fixture |
 
@@ -126,6 +133,7 @@ JSON のプロセス識別子は `{ "pid": 123, "start_time_ticks": 456 }` で�
 | Method / path | 引数 | 返り値 |
 |---|---|---|
 | `GET /api/config` | なし | バージョン、更新間隔 `interval_ms`、履歴秒数 `history_seconds` |
+| `GET /api/hosts` | なし | `local`（このサーバーのホスト名）と `hosts`：名前、`local`、`status`（`{state: "online" \| "offline", since}`）、machine_id、version、kernel、最新の `captured_at`。ローカルホストが先頭 |
 | `GET /api/processes` | なし | プロセス識別子・名前・ユーザー・CPU/RSSなどの一覧 |
 | `GET /api/processes/observation` | 識別子クエリ | 要求時のプロセス観測。CPU使用率と毎秒増分は null |
 | `GET /api/processes/threads` | 識別子クエリ | 要求時のスレッド観測の配列。CPU使用率は null |
@@ -134,7 +142,7 @@ JSON のプロセス識別子は `{ "pid": 123, "start_time_ticks": 456 }` で�
 | `GET /api/processes/environment` | 識別子クエリ | 環境変数の名前・値の一覧と取得情報 |
 | `GET /api/processes/auxv` | 識別子クエリ | 補助ベクトルのタグ・値・参照先の解決結果 |
 | `GET /api/processes/events` | 識別子クエリ | SSE `observation`：指定プロセスの概要・最新観測・スレッド・履歴・マップ・終了状態 |
-| `GET /api/system/events` | なし | SSE `snapshot`・`activity`・`gap`：構造、CPU・IPC・ファイルI/O・シグナル活動、配信欠落 |
+| `GET /api/system/events` | 任意の `host` | SSE `snapshot`・`activity`・`gap`：構造、CPU・IPC・ファイルI/O・シグナル活動、配信欠落。`host` に agent 名を指定するとそのホスト（加えて `host` イベント）、`all` で全ホストの合成ストリーム。未知のホストは404 |
 
 識別子クエリの欠落・構文不正は400です。PIDは正の整数である必要があります。observation/threads/mapsを含め、単発GETで対象の終了・PID再利用を検出した場合は410で返します。その他の観測処理の失敗は原則422、ブロッキングタスクの失敗は500です。
 
@@ -174,9 +182,9 @@ SSE は `Content-Type: text/event-stream` で接続を維持し、`event:` に�
 | `activity` | 約1秒ごとの活動集計。`captured_at`、`window_ms`、`cpu`、`ipc`、`files`、`signals`、`status` |
 | `gap` | 購読遅延時の `{dropped_frames: 件数}`。続けて最新 `snapshot` を送り、失われた活動は再送しない |
 
-`system/snapshot.rs` の `SystemSnapshot` を、接続ごとの `SnapshotEncoder` で JSON に変換して配信します。`ProcessSnapshot` はプロセス、`FdEndpoint` はプロセスの FD 端点、`FdRelation` は socket・pipe・共有所有の関係を表します。
+`system/snapshot.rs` の `SystemSnapshot` を、接続ごとの `SnapshotEncoder` で JSON に変換して配信します。`ProcessSnapshot` はプロセス、`FdEndpoint` はプロセスの FD 端点、`FdRelation` は socket・pipe・共有所有の関係、`RdmaRelation` は RDMA キューペア（QP）を表します。
 
-`snapshot` のトップレベルは `kind`、`sequence`、`captured_at`、`processes`、`warnings`、`inspected_processes`、`inspected_fds` と、FD 関係のデータです。`kind` は `full` または `delta`、`sequence` は接続内で配信ごとに増加する番号です。`delta` は差分の基準となる直前の `sequence` を `base_sequence` に含みます。初回収集前は空の構造の場合があります。
+`snapshot` のトップレベルは `kind`、`sequence`、`captured_at`、`processes`、`warnings`、`inspected_processes`、`inspected_fds` と、FD 関係・RDMA のデータです。`kind` は `full` または `delta`、`sequence` は接続内で配信ごとに増加する番号です。`delta` は差分の基準となる直前の `sequence` を `base_sequence` に含みます。初回収集前は空の構造の場合があります。
 
 初回、`gap` 後の再同期、前回の `full` から60秒以上経過した構造更新では `full` を送り、全マップと FD 関係を含む構造全体を置き換えます。それ以外は `delta` を送ります。受信側は `base_sequence` を保持した構造の `sequence` と照合して差分を適用します。SPACE の実装は [mergeSnapshot](../web/src/space/data.ts) を参照してください。
 
@@ -185,6 +193,9 @@ SSE は `Content-Type: text/event-stream` で接続を維持し、`event:` に�
 - FD 関係：`fd_relations` があれば関係全体を置き換え、`fd_relations_delta` があれば接続IDをキーに `upsert` と `remove` を適用します。マップ・FD 関係とも、差分より全体の JSON が小さい場合は置換形式を使います。
 - FD 関係の各要素：接続ID、端点 `endpoint`・`peer`、label、socket情報、`candidate`・`shared`。端点にはプロセス識別子、FD、FD数、resource、kind、accessがあります。`peer` はローカルの相手を持たなければ null です。`candidate` は接続候補、`shared` は同じリソースの共有で、一意な通信相手とは区別します。
 - `socket`：protocol、state、local/remoteアドレス、network_peer、remote_hostname。socket情報や未取得のアドレス・名前は null になり得ます。
+- RDMA 関係：`rdma_relations` があれば全体を置き換え、`rdma_relations_delta` があれば ID をキーに `upsert` と `remove` を適用します。FD 関係と同じく、差分より全体の JSON が小さい場合は置換形式です。`rdma_ports` は小さいため毎回全体を送ります。旧サーバーは両フィールドを送らず、受信側は空として扱います。
+- RDMA 関係の各要素：ID（`rdma:<device>/<port>:<qpn>`、同一ホストの QP 対は両端の ID を `/` で連結）、端点 `endpoint`・`peer`、`remote_qpn`、`cm`、`remote_gid`、`remote_hostname`、label。端点は所有者 `owner`（`{kind: "process", process_id}`・`{kind: "kernel", name}`・`{kind: "unknown", pid}`）、device、port、qpn、`qp_type`・`state`（`{kind, code?}`、未知の値は `unknown` と番号を保持）です。`peer` は同一ホスト内で接続された QP があるときだけ設定します。`cm` は QP に結び付いた RDMA CM の ID・利用者 `owner`・state・`port_space`・`source`/`destination` アドレス（`{kind: "inet", ip, port}`・`{kind: "ib", gid, service_id, pkey}`・`{kind: "unknown", family}`）です。
+- `rdma_ports`：device、port、link_layer、state、LID、GID（`gids/0`）、rate。未割当の LID・GID は null です。
 - `warnings` と探索件数：取得不能・打ち切りなどの警告と、走査したプロセス・FDの件数。
 
 `activity` の各配列はその集計窓の情報で、履歴全体ではありません。
@@ -208,6 +219,19 @@ register の mapping は `{pathname, readable, writable, executable, private}` �
 センサー状態は `{state: "idle" | "observing"}` または `{state: "unavailable" | "error", message: "…"}` です。ログレベルの判定はセンサー状態の enum に基づきます。
 
 該当活動がない場合やセンサーが利用不能の場合、活動配列は空になります。空配列だけで「活動がなかった」とは判断せず、`status` の各センサーの `state`（observing・unavailable・error） なども確認します。
+
+### 複数ホスト（hub と agent）
+
+hub は `--accept-agents` のアドレスで agent の TCP 接続を受け付けます。agent は `--connect` で hub に接続し、このホストの system snapshot と activity を送ります。hub 自身もローカルホストとして観測し、ブラウザは hub だけに接続します。ブラウザの Origin・CSP の制約は変わりません。
+
+- フレーム：`u32` ビッグエンディアンの長さ、種類1バイト（1 制御・2 snapshot・3 activity）、ペイロード。最大64 MiB。制御メッセージは `type` で区別する JSON で、`hello`（protocol・host・machine_id・version・kernel・token）、`welcome`、`reject`、`watch`（`active`）、`resync`、`ping`・`pong` です。
+- 接続：agent は最初に `hello` を送り、hub は5秒以内に `welcome` か理由付きの `reject` を返します。token は定数時間で比較します。hub は10秒ごとに `ping` を送り、30秒間フレームがなければ切断します。agent は1秒から30秒の指数バックオフ（最大20%の揺らぎ）で再接続します。
+- 収集：hub はホストごとの閲覧者数が0と1以上の間で変わるたびに `watch` を送ります。agent は `active: true` を受けたときだけ自身の `SystemMonitor` を購読して `SnapshotEncoder` の `full` を送り、その後は `delta` と `activity` を送ります。閲覧者がいない agent は収集しません。
+- 中継：hub は agent の `full`・`delta` を SPACE と同じ規則で統合し（[merge.rs](../src/http_server/hosts/merge.rs)）、ホストごとの連番を振り直してブラウザへ中継します。新しい閲覧者は統合済みの状態を `full` で受け取り、続く差分をそのまま適用できます。統合済みの状態に続かない差分を受けた場合は `resync` で `full` を求めます。中継する JSON はすべて解析し直してから送ります。
+- ホスト名：名前はホストごとに一意です。同じ machine_id からの再接続は以前の接続を置き換えます。別の machine_id がオンラインの名前を使おうとした場合、hub 自身と同じ名前、64台を超える場合は拒否します。切断されたホストは offline として残り、閲覧者がいないまま10分経つと一覧から消えます。
+- 合成ストリーム（`host=all`）：最初に `hosts`（`/api/hosts` と同じ内容、ホストの増減・状態変化で再送）を送り、各ホストの `snapshot`・`activity`・`gap`・`host` に `"host"` を加えて送ります。ローカルホストは接続ごとの `SnapshotEncoder`、agent は中継を使い、ホストごとに独立した連番です。約1秒ごとにホスト間の接続を対応付け、変化したときだけ `links`（`sockets`・`rdma` の各要素は `a`・`b` の `{host, relation}`、RDMA は `evidence: {gid, cm}`）を送ります。
+- ホスト間の対応付け（[correlate.rs](../src/http_server/hosts/correlate.rs)）：TCP/UDP は相手のない外部接続のうち、`(local, remote)` と逆向きの組が別ホストに一つずつだけある場合に対応させます。loopback・未指定アドレス、NAT などで重複する組は対応させません。RDMA は接続型 QP の QPN と相手 QPN が入れ替わった組を候補とし、相手 GID が対向ポートの GID と一致するか、CM のアドレスが入れ替わっていることを証拠とします。矛盾するアドレスがあれば対応させず、証拠がない場合は全体で一意かつ同じリンク層の場合だけ対応させます。
+- 制限：TLS はありません。非 loopback の `--accept-agents` には `--allow-non-loopback` と token が必要です。Tailscale・WireGuard などの信頼できる経路で使ってください。agent のプロセス詳細 API（`/api/processes/*`）は中継しないため、リモートホストのプロセスの詳細画面へは移動できません。
 
 ## バックエンド側の処理
 
@@ -251,6 +275,17 @@ pidfd による種類取得と別 network namespace の Rust テストは `bash 
 UNIX の診断は、対象の PID と開始時刻を確認して開いた network namespace の FD を使います。別 namespace では短命の専用スレッドが `setns(CLONE_NEWNET)` を実行して診断用 Netlink ソケットを作成し、その FD を呼び元へ返して終了します。要求と応答の処理は作成先の namespace に属するソケットを通じて行い、HTTP・収集スレッドの namespace は変更しません。SPACE は走査で発見した namespace を device/inode でまとめ、一回の走査で各 namespace を一度診断します。全 namespace の診断予算は合計500ms、プロセス FD 一覧は750msと全体3秒の締切の短い方を使います。診断ができない場合は既存の procfs 情報を保持し、対象 PID と失敗理由を警告に含めます。
 
 別 network namespace への切り替えには `CAP_SYS_ADMIN` が必要です。開発・プレビュー用スクリプトはこの capability も付与します。sudoers が `setcap` の引数を固定している場合は、既存版の許可を維持したまま新しい一覧の許可を追加します。配置済みプレビューの権限更新は [PREVIEW.md](PREVIEW.md) の手順に従います。アプリケーションから sudoers やカーネル設定を変更しません。
+
+### RDMA キューペア
+
+system snapshot は [system/rdma](../src/http_server/system/rdma.rs) で RDMA の QP・CM ID・ポートを観測し、`rdma_relations`・`rdma_ports` に含めます。`/sys/class/infiniband` にデバイスがないホストでは何も照会しません。`NETLINK_RDMA` ソケットの作成はカーネルモジュール `ib_core` の自動ロードを引き起こし得るため、デバイスの存在を先に確認します。
+
+- ポート：sysfs の `ports/<n>/{link_layer,state,lid,gids/0,rate}` を読みます。
+- QP・CM ID：RDMA netlink（nldev）の `RDMA_NLDEV_CMD_GET` でデバイスを列挙し、デバイスごとに `RES_QP_GET`・`RES_CM_ID_GET` を dump します。応答はネストした表で、QPN・相手 QPN・型・状態・PID またはカーネル利用者名、CM の状態・port space・送信元/宛先アドレスを取り出します。追加の権限は不要です。カーネルは呼び出し側の PID 名前空間から見えないプロセスの資源を返さず、カーネル所有の資源は常に返します。RDMA netlink は共有モードの network namespace を前提とし、収集スレッドの namespace で照会します。
+- 相手の IB アドレス：nldev の QP 情報には相手の LID・GID が含まれません。CM の宛先が IB アドレス（`AF_IB`）なら GID をそのまま使い、IP アドレスなら rtnetlink の `RTM_GETNEIGH` で IPoIB の近傍表を引きます。IPoIB のハードウェアアドレスは20バイトで、後半16バイトが相手ポートの GID です。`/proc/net/arp` は途中で切り詰めるため使いません。近傍エントリが失効している場合や、CM を使わず QP 情報を独自に交換するアプリケーション（MPI・NCCL・`-R` なしの perftest など）では、相手 QPN だけを表示します。相手の LID は取得しません。
+- 同一ホストの QP 対：接続型（RC・UC・XRC）の QP で、QPN と相手 QPN が互いに一致し、その組が一意な場合に一つの関係にまとめます。QPN の一意性はデバイス内に限られるため、別デバイス間では相手 GID または CM アドレスの一致も必要とし、矛盾するアドレスがあれば対にしません。
+- 上限：RDMA の照会全体で300ms、QP は4096件です。失敗や打ち切りは `RDMA:` で始まる警告にします。近傍表の取得失敗は相手 GID を省くだけです。
+- 通信量：verbs のデータ転送はカーネルを経由しないため、QP ごとの送受信量・粒子は表示しません。
 
 ### 環境変数・補助ベクトル
 
@@ -431,6 +466,8 @@ SPACE はシステム全体のプロセス、仮想アドレス空間、親子�
 | ユーザーの識別 | 箱の上下の枠は実 UID、縦の枠は実効 UID に応じて色分け | [`userColor`・`processColors`](../web/src/space/model.ts) |
 | IPC・ネットワーク接続 | FD 関係を実線で表示。確認済みのプロセス間接続は緑系、接続候補は薄い黄土色、共有 FD は薄い青灰色。ネットワーク接続先はプロセス・プロトコル・相手 IP/port ごとにまとめ、プロセスの上方に配置 | [`buildScene`](../web/src/space/scene.ts#L99)、[`networkGroups`](../web/src/space/data.ts)、[`networkLayout`](../web/src/space/data.ts) |
 | 最近アクセスしたファイル | プロセスの下方にファイルのマーカーと接続線を配置。構造とは別のグループで更新 | [`fileLayout`](../web/src/space/data.ts)、[`refreshFileScene`](../web/src/space/scene.ts#L400) |
+| 複数ホスト | ホスト選択（`?host=`）でリモートホスト単体、または「All hosts (layers)」で全ホストを表示。全ホストではホストごとに配置した層を上から（ローカルホストが最上段）`HOST_LAYER_GAP`（48）ずつ下に重ね、各層の床にホスト名（offline を含む）を表示。識別子は `host@pid:start_time_ticks`、関係 ID は `host@id` で区別。ホスト間の TCP/UDP 接続は桃色の線、RDMA の QP 対は上の層の基点の底面から下の層の上面への紫色の線で結ぶ。リモートホストのプロセスはプロセス詳細へのリンクを持たない。検索はホスト名にも一致する | [hosts.ts](../web/src/space/hosts.ts)、[host-controls.ts](../web/src/space/host-controls.ts)、[`buildLayers`](../web/src/space/scene.ts) |
+| RDMA キューペア | 所有プロセスが表示中の QP はプロセスの上方、それ以外（カーネル利用者・スナップショット外の PID）は RDMA デバイスの紫色のプレートの上方に紫色の二十面体を置く。プレートはプロセス配置の右側に縦に並び、ポートの状態・LID・GID を詳細に表示する。マーカーは基点・利用者・QP 型・相手アドレスごとにまとめ、ネットワーク接続先と同じ格子で重ならないよう配置。同一ホストの QP 対は基点間の紫色の弧で結ぶ。SMI・GSI の管理用 QP は表示しない。検索はプロセスに基づく QP にだけ適用し、デバイスのプレートは常に表示 | [`rdmaModel`・`rdmaDeviceLayout`](../web/src/space/rdma.ts)、[`buildRdma`](../web/src/space/scene.ts) |
 
 #### 活動の表示と描画ループ
 

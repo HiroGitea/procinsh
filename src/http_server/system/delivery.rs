@@ -1,3 +1,4 @@
+use super::rdma::{RdmaPortInfo, RdmaRelation};
 use super::snapshot::{FdRelation, SystemSnapshot};
 use crate::http_server::process::{MemoryMap, ProcessId};
 use serde::Serialize;
@@ -45,6 +46,11 @@ struct SnapshotPayload<'a> {
     fd_relations: Option<&'a [FdRelation]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fd_relations_delta: Option<EntryDelta<'a, FdRelation, String>>,
+    rdma_ports: &'a [RdmaPortInfo],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rdma_relations: Option<&'a [RdmaRelation]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rdma_relations_delta: Option<EntryDelta<'a, RdmaRelation, String>>,
     warnings: &'a [String],
     inspected_processes: usize,
     inspected_fds: usize,
@@ -69,9 +75,35 @@ fn map_delta<'a>(old: &[MemoryMap], current: &'a [MemoryMap]) -> EntryDelta<'a, 
             .collect(),
     }
 }
+/// An ID-keyed delta from the previous baseline, or None when replacing the whole
+/// collection is smaller.
+fn relation_delta<'a, T: Serialize + PartialEq>(
+    old: Option<&[T]>,
+    current: &'a [T],
+    id: impl Fn(&T) -> &String,
+) -> Option<EntryDelta<'a, T, String>> {
+    let old = old.unwrap_or_default();
+    let previous: HashMap<_, _> = old.iter().map(|r| (id(r), r)).collect();
+    let live: std::collections::HashSet<_> = current.iter().map(&id).collect();
+    Some(EntryDelta {
+        upsert: current
+            .iter()
+            .filter(|r| previous.get(id(r)).is_none_or(|p| *p != *r))
+            .collect(),
+        remove: old
+            .iter()
+            .filter(|r| !live.contains(id(r)))
+            .map(|r| id(r).clone())
+            .collect(),
+    })
+    .filter(|d| {
+        serde_json::to_vec(d).unwrap().len() + 6 < serde_json::to_vec(current).unwrap().len()
+    })
+}
 impl SnapshotEncoder {
     /// Encodes full or delta SSE snapshots with a sequence and, for deltas, base sequence.
-    /// Map deltas use start addresses; FD relation deltas use relation IDs. Collections
+    /// Map deltas use start addresses; FD and RDMA relation deltas use relation IDs.
+    /// RDMA ports are always sent in full. Collections
     /// use replacement when a delta is larger. Unchanged maps are omitted and retain
     /// their epoch. Initial, forced gap recovery and 60-second refresh snapshots
     /// include all maps. The baseline advances only after successful serialization.
@@ -137,31 +169,25 @@ impl SnapshotEncoder {
                 }
             })
             .collect();
-        let old_relations = self
-            .previous
-            .as_ref()
-            .map(|s| s.fd_relations.as_slice())
-            .unwrap_or_default();
-        let old: HashMap<_, _> = old_relations.iter().map(|r| (&r.id, r)).collect();
-        let live: std::collections::HashSet<_> =
-            snapshot.fd_relations.iter().map(|r| &r.id).collect();
+        let baseline = self.previous.as_deref();
         let relations_delta = (!full)
-            .then(|| EntryDelta {
-                upsert: snapshot
-                    .fd_relations
-                    .iter()
-                    .filter(|r| old.get(&r.id).is_none_or(|p| *p != *r))
-                    .collect(),
-                remove: old_relations
-                    .iter()
-                    .filter(|r| !live.contains(&r.id))
-                    .map(|r| r.id.clone())
-                    .collect(),
+            .then(|| {
+                relation_delta(
+                    baseline.map(|s| s.fd_relations.as_slice()),
+                    &snapshot.fd_relations,
+                    |r| &r.id,
+                )
             })
-            .filter(|d| {
-                serde_json::to_vec(d).unwrap().len() + 6
-                    < serde_json::to_vec(&snapshot.fd_relations).unwrap().len()
-            });
+            .flatten();
+        let rdma_delta = (!full)
+            .then(|| {
+                relation_delta(
+                    baseline.map(|s| s.rdma_relations.as_slice()),
+                    &snapshot.rdma_relations,
+                    |r| &r.id,
+                )
+            })
+            .flatten();
         let data = serde_json::to_string(&SnapshotPayload {
             captured_at: snapshot.captured_at,
             processes,
@@ -172,6 +198,11 @@ impl SnapshotEncoder {
                 .is_none()
                 .then_some(snapshot.fd_relations.as_slice()),
             fd_relations_delta: relations_delta,
+            rdma_ports: &snapshot.rdma_ports,
+            rdma_relations: rdma_delta
+                .is_none()
+                .then_some(snapshot.rdma_relations.as_slice()),
+            rdma_relations_delta: rdma_delta,
             warnings: &snapshot.warnings,
             inspected_processes: snapshot.inspected_processes,
             inspected_fds: snapshot.inspected_fds,
@@ -441,5 +472,42 @@ mod tests {
         let forced = payload(&mut delivery, Arc::new(current), true, now);
         assert_eq!(forced["kind"], "full");
         assert!(forced.get("base_sequence").is_none());
+    }
+    #[test]
+    fn rdma_relations_use_id_deltas_and_ports_are_always_sent() {
+        let now = Instant::now();
+        let mut initial = (*fixture(1, false, 1)).clone();
+        initial.rdma_relations = (0..50).map(super::super::rdma::test_relation).collect();
+        initial.rdma_ports = vec![RdmaPortInfo {
+            device: "ib0".into(),
+            port: 1,
+            link_layer: Some("InfiniBand".into()),
+            state: Some("ACTIVE".into()),
+            lid: Some(2),
+            gid: None,
+            rate: None,
+        }];
+        let mut delivery = SnapshotEncoder::default();
+        let full = payload(&mut delivery, Arc::new(initial.clone()), false, now);
+        assert_eq!(full["rdma_relations"].as_array().unwrap().len(), 50);
+        assert!(full.get("rdma_relations_delta").is_none());
+        let mut current = initial.clone();
+        current.rdma_relations.remove(3);
+        current.rdma_relations[0].label = "changed".into();
+        let delta = payload(&mut delivery, Arc::new(current), false, now);
+        assert_eq!(delta["kind"], "delta");
+        assert!(delta.get("rdma_relations").is_none());
+        assert_eq!(
+            delta["rdma_relations_delta"],
+            serde_json::json!({
+                "upsert": [serde_json::to_value(&{
+                    let mut changed = super::super::rdma::test_relation(0);
+                    changed.label = "changed".into();
+                    changed
+                }).unwrap()],
+                "remove": ["rdma:ib0/1:3"],
+            })
+        );
+        assert_eq!(delta["rdma_ports"], full["rdma_ports"]);
     }
 }

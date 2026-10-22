@@ -99,6 +99,8 @@ export interface IpcIdentity {
 export interface ProcessId {
   pid: number;
   start_time_ticks: number;
+  /** Set by the browser in the merged multi-host view; the server never sends it. */
+  host?: string;
 }
 export interface ProcessSummary {
   identity: ProcessId;
@@ -325,9 +327,97 @@ export interface FdRelation {
   candidate: boolean;
   shared: boolean;
 }
+/** A kernel enumeration: a known `kind`, or `unknown` with its numeric code. */
+export type Coded<K extends string> =
+  { kind: K; code?: never } | { kind: "unknown"; code: number };
+/** `enum ib_qp_type`; unknown codes are preserved. */
+export type RdmaQpType = Coded<
+  | "smi"
+  | "gsi"
+  | "rc"
+  | "uc"
+  | "ud"
+  | "raw_ipv6"
+  | "raw_ethertype"
+  | "raw_packet"
+  | "xrc_ini"
+  | "xrc_tgt"
+  | "driver"
+>;
+export type RdmaQpState = Coded<
+  "reset" | "init" | "rtr" | "rts" | "sqd" | "sqe" | "err"
+>;
+export type RdmaCmState = Coded<
+  | "idle"
+  | "addr_query"
+  | "addr_resolved"
+  | "route_query"
+  | "route_resolved"
+  | "connect"
+  | "disconnect"
+  | "addr_bound"
+  | "listen"
+  | "device_removal"
+  | "destroying"
+>;
+export type RdmaPortSpace = Coded<"ipoib" | "tcp" | "udp" | "ib">;
+/** A connection manager address; the IB service ID is a 64-bit hex string. */
+export type RdmaAddress =
+  | { kind: "inet"; ip: string; port: number }
+  | { kind: "ib"; gid: string; service_id: string; pkey: number }
+  | { kind: "unknown"; family: number };
+export type RdmaEndpointOwner =
+  | { kind: "process"; process_id: ProcessId }
+  | { kind: "kernel"; name: string }
+  | { kind: "unknown"; pid: number | null };
+export interface RdmaEndpoint {
+  owner: RdmaEndpointOwner;
+  /** Set by the browser in the merged multi-host view. */
+  host?: string;
+  device: string;
+  port: number | null;
+  qpn: number;
+  qp_type: RdmaQpType;
+  state: RdmaQpState;
+}
+export interface RdmaCmInfo {
+  id: number | null;
+  /** The CM consumer, which can differ from the QP owner. */
+  owner: RdmaEndpointOwner;
+  state: RdmaCmState;
+  port_space: RdmaPortSpace;
+  source: RdmaAddress | null;
+  destination: RdmaAddress | null;
+}
+/** A queue pair; `peer` is set only for a connected QP on the same host. */
+export interface RdmaRelation {
+  id: string;
+  endpoint: RdmaEndpoint;
+  peer: RdmaEndpoint | null;
+  remote_qpn: number | null;
+  cm: RdmaCmInfo | null;
+  /** Remote port GID, from an IB CM address or the IPoIB neighbor table. */
+  remote_gid: string | null;
+  remote_hostname: string | null;
+  label: string;
+}
+export interface RdmaPortInfo {
+  /** Set by the browser in the merged multi-host view. */
+  host?: string;
+  device: string;
+  port: number;
+  link_layer: string | null;
+  state: string | null;
+  lid: number | null;
+  gid: string | null;
+  rate: string | null;
+}
 export interface SystemSnapshot {
   processes: Process[];
   fd_relations: FdRelation[];
+  /** Absent on older servers and recordings. */
+  rdma_relations?: RdmaRelation[];
+  rdma_ports?: RdmaPortInfo[];
   sequence?: number;
 }
 export interface EntryDelta<T> {
@@ -344,6 +434,9 @@ export interface SystemSnapshotUpdate {
   })[];
   fd_relations?: FdRelation[];
   fd_relations_delta?: EntryDelta<FdRelation>;
+  rdma_relations?: RdmaRelation[];
+  rdma_relations_delta?: EntryDelta<RdmaRelation>;
+  rdma_ports?: RdmaPortInfo[];
 }
 export interface IoActivity {
   process_id: ProcessId;
@@ -383,4 +476,33 @@ export interface SpaceActivity {
   cpu?: CpuActivity[];
   ipc?: IoActivity[];
   signals?: SignalEvent[];
+}
+export type HostStatus =
+  { state: "online"; since: number } | { state: "offline"; since: number };
+/** `GET /api/hosts` entries; the local host is first. */
+export interface HostSummary {
+  name: string;
+  local: boolean;
+  status: HostStatus;
+  machine_id: string;
+  version: string;
+  kernel: string | null;
+  captured_at: number | null;
+}
+export interface HostsResponse {
+  local: string;
+  hosts: HostSummary[];
+}
+export interface CrossHostLinkEnd {
+  host: string;
+  relation: string;
+}
+/** `links` events of the merged stream: connections observed on two hosts. */
+export interface CrossHostLinks {
+  sockets: { a: CrossHostLinkEnd; b: CrossHostLinkEnd }[];
+  rdma: {
+    a: CrossHostLinkEnd;
+    b: CrossHostLinkEnd;
+    evidence: { gid: boolean; cm: boolean };
+  }[];
 }

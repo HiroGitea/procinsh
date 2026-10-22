@@ -58,6 +58,34 @@ sudo setcap \
 Without it, ProcInSh keeps available socket information and reports missing
 peer diagnostics as warnings; an unknown peer does not mean an unconnected socket.
 
+On hosts with RDMA devices (InfiniBand, RoCE), the space view also shows RDMA
+queue pairs, their remote QP numbers and, when the connection manager or IPoIB
+neighbor table reveals it, the remote port GID. No extra privileges are needed.
+Per-QP traffic is not shown because RDMA data transfers bypass the kernel.
+
+### Multiple hosts
+
+One procinsh can show several machines. Run a hub that accepts agents, and run
+procinsh on each other machine with `--connect`. Agents collect only while
+someone views them on the hub. In the space view, pick a host, or
+"All hosts (layers)" to stack every host and draw connections between them.
+
+```sh
+# hub (its own web UI on 127.0.0.1:9090)
+echo "$SHARED_SECRET" > ~/procinsh-token
+sudo procinsh --listen 127.0.0.1:9090 \
+  --accept-agents 100.64.0.1:9190 --allow-non-loopback \
+  --agent-token-file ~/procinsh-token
+
+# each agent
+sudo procinsh --connect 100.64.0.1:9190 --host-name gpu-node-1 \
+  --agent-token-file ~/procinsh-token
+```
+
+The agent link has no TLS; use it only over a trusted network such as
+Tailscale or WireGuard. Process detail pages are available for the hub's own
+processes only.
+
 ### Self build on Linux
 
 #### Ubuntu

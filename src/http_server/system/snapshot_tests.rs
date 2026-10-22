@@ -313,3 +313,63 @@ fn network_destination_survives_shared_socket_ownership() {
             })
     }));
 }
+
+#[test]
+fn rdma_snapshot_matches_sysfs_ports_and_kernel_management_queue_pairs() {
+    let root = std::path::Path::new("/sys/class/infiniband");
+    let mut expected: Vec<(String, u32)> = std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .flat_map(|device| {
+            let name = device.file_name().to_string_lossy().into_owned();
+            std::fs::read_dir(device.path().join("ports"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter_map(move |port| {
+                    Some((name.clone(), port.file_name().to_str()?.parse().ok()?))
+                })
+        })
+        .collect();
+    expected.sort();
+    let snapshot = snapshot::collect(&mut Default::default());
+    let warnings: Vec<_> = snapshot
+        .warnings
+        .iter()
+        .filter(|warning| warning.starts_with("RDMA"))
+        .collect();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let ports: Vec<_> = snapshot
+        .rdma_ports
+        .iter()
+        .map(|port| (port.device.clone(), port.port))
+        .collect();
+    assert_eq!(ports, expected);
+    if expected.is_empty() {
+        assert!(snapshot.rdma_relations.is_empty());
+    }
+    // Encoder deltas are keyed by relation ID.
+    let ids: std::collections::HashSet<_> = snapshot.rdma_relations.iter().map(|r| &r.id).collect();
+    assert_eq!(ids.len(), snapshot.rdma_relations.len());
+    // ib_core owns the GSI QP (QPN 1) of every InfiniBand port.
+    for port in snapshot
+        .rdma_ports
+        .iter()
+        .filter(|port| port.link_layer.as_deref() == Some("InfiniBand"))
+    {
+        assert!(
+            snapshot.rdma_relations.iter().any(|relation| {
+                let endpoint = serde_json::to_value(&relation.endpoint).unwrap();
+                endpoint["device"] == port.device.as_str()
+                    && endpoint["port"] == port.port
+                    && endpoint["qpn"] == 1
+                    && endpoint["qp_type"]["kind"] == "gsi"
+                    && endpoint["owner"]["kind"] == "kernel"
+            }),
+            "missing GSI QP for {}/{}",
+            port.device,
+            port.port
+        );
+    }
+}

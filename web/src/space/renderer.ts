@@ -45,6 +45,8 @@ class AdaptiveRenderScale {
   }
 }
 
+const RDMA_LABEL_COLOR = "#c9b0ff";
+const HOST_LABEL_COLOR = "#ffd98a";
 const IPC_PARTICLE_DURATION_MS = 2000;
 const IPC_PARTICLE_STAGGER_MS = 100;
 const REDUCED_MOTION_PARTICLE_DURATION_MS = 150;
@@ -220,17 +222,28 @@ export function createSpaceRenderer({
     labelContext.setTransform(ratio, 0, 0, ratio, 0, 0);
   }
   function drawLabels(now: number) {
-    const { nodes, hullIds, networkViews, fileViews, netlinkViews } =
-      readView();
+    const {
+      nodes,
+      hullIds,
+      networkViews,
+      fileViews,
+      netlinkViews,
+      rdmaViews,
+      rdmaLinkViews,
+      rdmaDeviceViews,
+      layerViews = [],
+    } = readView();
     const {
       process: selected,
       connection: selectedEdge,
       network: selectedNetwork,
       file: selectedFile,
       netlink: selectedNetlink,
+      rdma: selectedRdma,
       hoveredNetwork,
       hoveredFile,
       hoveredNetlink,
+      hoveredRdma,
     } = readSelection();
     labelContext.clearRect(0, 0, innerWidth, innerHeight);
     labelContext.font =
@@ -246,12 +259,14 @@ export function createSpaceRenderer({
       depth: number;
       active: boolean;
       external: boolean;
+      color?: string;
     }[] = [];
     const add = (
       name: string,
       pos: T.Vector3,
       active: boolean,
       external = false,
+      color?: string,
     ) => {
       labelPoint.copy(pos).project(camera);
       if (labelPoint.z < -1 || labelPoint.z > 1) return;
@@ -259,11 +274,11 @@ export function createSpaceRenderer({
         y = (-labelPoint.y * 0.5 + 0.5) * innerHeight - 3;
       if (x < -200 || x > innerWidth + 200 || y < 0 || y > innerHeight + 12)
         return;
-      labels.push({ name, x, y, depth: labelPoint.z, active, external });
+      labels.push({ name, x, y, depth: labelPoint.z, active, external, color });
     };
     for (const id of hullIds) {
       const n = nodes.get(id);
-      if (n) add(n.name, n.pos.clone().setZ(8.55), id === selected);
+      if (n) add(n.name, n.pos.clone().setZ(n.pos.z + 8.55), id === selected);
     }
     for (const v of networkViews)
       add(
@@ -273,6 +288,34 @@ export function createSpaceRenderer({
           v.group.id === hoveredNetwork ||
           v.group.members.some((e) => e.id === selectedEdge),
         true,
+      );
+    for (const v of layerViews)
+      add(v.label, v.pos, false, true, HOST_LABEL_COLOR);
+    const rdmaActive = (id: string) =>
+      id === selectedRdma || id === hoveredRdma;
+    for (const v of rdmaViews)
+      add(
+        v.group.label,
+        v.pos.clone().add(new graphics.Vector3(0, 0, 1)),
+        rdmaActive(v.group.id),
+        true,
+        RDMA_LABEL_COLOR,
+      );
+    for (const v of rdmaLinkViews)
+      add(
+        v.link.relation.label,
+        v.curve.getPoint(0.5).add(new graphics.Vector3(0, 0, 0.6)),
+        rdmaActive(v.link.id),
+        true,
+        RDMA_LABEL_COLOR,
+      );
+    for (const v of rdmaDeviceViews)
+      add(
+        v.device.label,
+        v.pos.clone().add(new graphics.Vector3(0, 0, 0.8)),
+        rdmaActive(v.device.id),
+        true,
+        RDMA_LABEL_COLOR,
       );
     for (const v of fileViews.values())
       add(
@@ -333,9 +376,8 @@ export function createSpaceRenderer({
       labelContext.strokeText(label.name, label.x, label.y, max);
       labelContext.fillStyle = label.active
         ? "#e0faff"
-        : label.external
-          ? "#84caff"
-          : "rgba(190,246,232,.88)";
+        : (label.color ??
+          (label.external ? "#84caff" : "rgba(190,246,232,.88)"));
       labelContext.fillText(label.name, label.x, label.y, max);
     }
   }
@@ -405,8 +447,8 @@ export function createSpaceRenderer({
         !view.hullIds.includes(destination)
       )
         continue;
-      const start = src.pos.clone().setZ(6),
-        end = dst.pos.clone().setZ(6);
+      const start = src.pos.clone().setZ(src.pos.z + 6),
+        end = dst.pos.clone().setZ(dst.pos.z + 6);
       const mid = start.clone().lerp(end, 0.5);
       mid.z += Math.min(8, 2 + start.distanceTo(end) * 0.12);
       if (source === destination) mid.x += 3;

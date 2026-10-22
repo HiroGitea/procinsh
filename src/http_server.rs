@@ -4,13 +4,17 @@
 //!
 //! | Definition | Visibility | Signature |
 //! | --- | --- | --- |
-//! | [`run`] | `pub(super)` | `async fn run(listen: &[`[`SocketAddr`](std::net::SocketAddr)`]) -> `[`anyhow::Result`]`<()>` |
+//! | [`run`] | `pub(super)` | `async fn run(config: `[`ServerConfig`]`) -> `[`anyhow::Result`]`<()>` |
+//! | [`ServerConfig`] | `pub(super)` | `struct ServerConfig` |
+//! | [`valid_host_name`] | `pub(super)` | `fn valid_host_name(name: &`[`str`]`) -> `[`bool`] |
 //!
 //! Shared resource identities live in [`resource`]; socket metadata and descriptor
-//! capabilities live in [`socket_types`].
+//! capabilities live in [`socket_types`]; bounded netlink dumps live in [`netlink`].
 //!
 mod api;
+mod hosts;
 mod middleware;
+mod netlink;
 mod process;
 mod resource;
 mod router;
@@ -19,8 +23,11 @@ mod socket_types;
 mod state;
 mod system;
 mod web;
-pub(super) use server::run;
+pub(super) use hosts::valid_host_name;
+pub(super) use server::{ServerConfig, run};
 use state::AppState;
+#[cfg(test)]
+mod hosts_link_tests;
 #[cfg(test)]
 mod process_api_tests;
 #[cfg(test)]

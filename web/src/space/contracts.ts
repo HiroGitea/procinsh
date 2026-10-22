@@ -1,6 +1,6 @@
 // Inputs and callbacks for SPACE geometry, picking, details, and rendering.
 import type * as T from "three";
-import type { SystemSnapshot } from "../shared/api-types.js";
+import type { ProcessId, SystemSnapshot } from "../shared/api-types.js";
 import type {
   PlacedProcess,
   Position,
@@ -14,6 +14,13 @@ import type {
   NetworkView,
   FileView,
   HoverState,
+  RdmaDevice,
+  RdmaDeviceView,
+  RdmaGroup,
+  RdmaLink,
+  RdmaLinkView,
+  RdmaView,
+  HostLayerView,
 } from "./types.js";
 
 export interface SelectionActions {
@@ -22,6 +29,7 @@ export interface SelectionActions {
   network(id: string | null): void;
   file(id: string | null): void;
   netlink(id: string | null): void;
+  rdma(id: string | null): void;
   clear(): void;
 }
 export interface SelectionTargets {
@@ -30,6 +38,7 @@ export interface SelectionTargets {
   networks: ReadonlySet<string>;
   files: ReadonlySet<string>;
   netlink: ReadonlySet<string>;
+  rdma: ReadonlySet<string>;
 }
 export interface FileSceneInput {
   nodes: ReadonlyMap<string, PlacedProcess>;
@@ -39,10 +48,20 @@ export interface FileSceneInput {
   netlinkPositions: ReadonlyMap<string, Position>;
   visible: ReadonlySet<string>;
 }
-export interface SceneInput extends FileSceneInput {
+/** RDMA groups, local QP links and device anchors with their positions. */
+export interface RdmaInput {
+  rdma: ReadonlyMap<string, RdmaGroup>;
+  rdmaLinks: readonly RdmaLink[];
+  rdmaDevices: ReadonlyMap<string, RdmaDevice>;
+}
+export interface SceneInput extends FileSceneInput, RdmaInput {
   snapshot: SystemSnapshot;
   network: ReadonlyMap<string, NetworkGroup>;
   networkPositions: ReadonlyMap<string, Position>;
+  rdmaPositions: ReadonlyMap<string, Position>;
+  rdmaDevicePositions: ReadonlyMap<string, Position>;
+  /** Floor labels of the merged multi-host view, by host. */
+  hostLabels?: ReadonlyMap<string, string>;
 }
 export interface WorldPositions {
   processes: Iterable<Position>;
@@ -50,8 +69,10 @@ export interface WorldPositions {
   files: Iterable<Position>;
   netlink: Iterable<Position>;
 }
-export interface DetailsInput {
+export interface DetailsInput extends RdmaInput {
   nodes: ReadonlyMap<string, PlacedProcess>;
+  /** Whether this server can show the process page; false for remote hosts. */
+  linkable?: (id: ProcessId) => boolean;
   snapshot: SystemSnapshot;
   network: ReadonlyMap<string, NetworkGroup>;
   edgeStats: ReadonlyMap<string, EdgeStat>;
@@ -65,7 +86,7 @@ export interface PickingView {
   nodes: ReadonlyMap<string, RenderNode>;
   objects: T.Object3D[];
 }
-export interface PickingInput {
+export interface PickingInput extends RdmaInput {
   view: PickingView;
   edgeStats: ReadonlyMap<string, EdgeStat>;
   files: ReadonlyMap<string, RecentFile>;
@@ -84,6 +105,11 @@ export interface RenderView {
   networkViews: readonly NetworkView[];
   fileViews: ReadonlyMap<string, FileView>;
   netlinkViews: ReadonlyMap<string, NetlinkView>;
+  rdmaViews: readonly RdmaView[];
+  rdmaLinkViews: readonly RdmaLinkView[];
+  rdmaDeviceViews: readonly RdmaDeviceView[];
+  /** Host floors of the merged view; absent or empty for a single host. */
+  layerViews?: readonly HostLayerView[];
   edgeViews: readonly EdgeView[];
   baseGlow: T.InstancedMesh | null;
   haloGlow: T.InstancedMesh | null;

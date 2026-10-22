@@ -22,24 +22,29 @@ import type {
 import type {
   SelectionTargets,
   SelectionBindings,
+  PickingInput,
   PickingView,
 } from "./contracts.js";
+import { rdmaEndpointLabel } from "./rdma.js";
 export class SpaceSelection implements SelectionState, HoverState {
   process: string | null = null;
   connection: string | null = null;
   network: string | null = null;
   file: string | null = null;
   netlink: string | null = null;
+  rdma: string | null = null;
   hoveredNetwork: string | null = null;
   hoveredFile: string | null = null;
   hoveredNetlink: string | null = null;
+  hoveredRdma: string | null = null;
   get active() {
     return !!(
       this.process ||
       this.connection ||
       this.network ||
       this.file ||
-      this.netlink
+      this.netlink ||
+      this.rdma
     );
   }
   clear() {
@@ -48,10 +53,11 @@ export class SpaceSelection implements SelectionState, HoverState {
       this.network =
       this.file =
       this.netlink =
+      this.rdma =
         null;
   }
   choose(
-    kind: "process" | "connection" | "network" | "file" | "netlink",
+    kind: "process" | "connection" | "network" | "file" | "netlink" | "rdma",
     id: string | null,
   ) {
     this.clear();
@@ -63,7 +69,8 @@ export class SpaceSelection implements SelectionState, HoverState {
       (this.connection && !targets.connections.has(this.connection)) ||
       (this.network && !targets.networks.has(this.network)) ||
       (this.file && !targets.files.has(this.file)) ||
-      (this.netlink && !targets.netlink.has(this.netlink))
+      (this.netlink && !targets.netlink.has(this.netlink)) ||
+      (this.rdma && !targets.rdma.has(this.rdma))
     )
       this.clear();
   }
@@ -77,9 +84,35 @@ interface PickData {
   filePaths?: string[];
   network?: NetworkGroup[];
   fd_relations?: (ConnectionPick | null)[];
+  rdma?: string[];
+  rdmaDevices?: string[];
+  rdmaPaths?: string[];
 }
 function pickData(object: T.Object3D): PickData {
   return object.userData as PickData;
+}
+
+function rdmaHover(
+  id: string,
+  groups: PickingInput["rdma"],
+  links: PickingInput["rdmaLinks"],
+  devices: PickingInput["rdmaDevices"],
+) {
+  const group = groups.get(id);
+  if (group)
+    return `${group.label}\n${group.members.map((r) => rdmaEndpointLabel(r.endpoint)).join(" · ")}`;
+  const link = links.find((l) => l.id === id);
+  if (link)
+    return `${link.relation.label}\n${rdmaEndpointLabel(link.relation.endpoint)} ↔ ${link.relation.peer ? rdmaEndpointLabel(link.relation.peer) : ""}`;
+  const device = devices.get(id);
+  if (device)
+    return `${device.label} · RDMA device\n${device.ports
+      .map(
+        (p) =>
+          `Port ${p.port} ${p.state ?? ""}${p.lid === null ? "" : ` · LID ${p.lid}`}`,
+      )
+      .join("\n")}`;
+  return "";
 }
 
 export function bindSelection(
@@ -127,6 +160,14 @@ export function bindSelection(
           ? undefined
           : data.filePaths?.[Math.floor(result.index / 2)];
       if (fileId) return { fileId };
+      const rdmaId =
+        result.instanceId === undefined
+          ? result.index === undefined
+            ? undefined
+            : data.rdmaPaths?.[Math.floor(result.index / 2)]
+          : (data.rdma?.[result.instanceId] ??
+            data.rdmaDevices?.[result.instanceId]);
+      if (rdmaId) return { rdmaId };
       const group =
         result.instanceId === undefined
           ? undefined
@@ -161,6 +202,7 @@ export function bindSelection(
       if (edge) {
         if ("netlinkId" in edge) actions.netlink(edge.netlinkId);
         else if ("fileId" in edge) actions.file(edge.fileId);
+        else if ("rdmaId" in edge) actions.rdma(edge.rdmaId);
         else if (edge.networkId) actions.network(edge.networkId);
         else actions.connection(edge.id);
       } else actions.clear();
@@ -175,8 +217,10 @@ export function bindSelection(
   const pointermove = (e: PointerEvent) => {
     let hoveredNetwork: string | null = null,
       hoveredFile: string | null = null,
-      hoveredNetlink: string | null = null;
-    const { view, edgeStats, files, netlink } = read();
+      hoveredNetlink: string | null = null,
+      hoveredRdma: string | null = null;
+    const { view, edgeStats, files, netlink, rdma, rdmaLinks, rdmaDevices } =
+      read();
     const hullIds = view.hullIds,
       nodes = view.nodes;
     const h = hit(e, view);
@@ -194,6 +238,9 @@ export function bindSelection(
         hoveredNetlink = edge.netlinkId;
         const socket = netlink.get(edge.netlinkId)!;
         text = `${socket.label}\nPID ${socket.endpoint.process_id.pid} · SEND ${socket.writeBytes} bytes · RECEIVE ${socket.readBytes} bytes`;
+      } else if (edge && "rdmaId" in edge) {
+        hoveredRdma = edge.rdmaId;
+        text = rdmaHover(edge.rdmaId, rdma, rdmaLinks, rdmaDevices);
       } else if (edge && "fileId" in edge) {
         hoveredFile = edge.fileId;
         const f = files.get(edge.fileId)!;
@@ -204,7 +251,7 @@ export function bindSelection(
         text = `${edge.label}${edge.candidate ? " · Candidate peer" : ""}${edge.shared ? " · Shared FD" : ""}\nPID ${edge.endpoint.process_id.pid} / FD ${edge.endpoint.fd}${edge.endpoint.fd_count > 1 ? ` (+${edge.endpoint.fd_count - 1} shared FDs)` : ""} ↔ ${edge.peer ? `PID ${edge.peer.process_id.pid} / FD ${edge.peer.fd}` : edge.socket?.network_peer ? remoteLabel(edge.socket) : connectionState(edge)}${stat ? `\nLatest window: ${stat.bytes} bytes / ${stat.count} operations (${((spaceNow() - stat.time) / 1000).toFixed(1)}s ago)` : ""}`;
       }
     }
-    changedHover({ hoveredNetwork, hoveredFile, hoveredNetlink });
+    changedHover({ hoveredNetwork, hoveredFile, hoveredNetlink, hoveredRdma });
     hover.hidden = !text;
     if (text) {
       hover.textContent = text;
@@ -218,6 +265,7 @@ export function bindSelection(
       hoveredNetwork: null,
       hoveredFile: null,
       hoveredNetlink: null,
+      hoveredRdma: null,
     });
   };
 

@@ -105,6 +105,11 @@ impl SystemMonitor {
         self.snapshot.read().unwrap().clone()
     }
 
+    /// Capture time of the latest snapshot; None before the first collection.
+    pub(in crate::http_server) fn captured_at(&self) -> Option<u64> {
+        Some(self.snapshot.read().unwrap().captured_at).filter(|t| *t != 0)
+    }
+
     fn run_activity(&self) {
         let mut collector: Option<activity::ActivityCollector> = None;
         let mut last = Instant::now();
@@ -177,9 +182,10 @@ impl SystemMonitor {
                         previous_warnings = data.warnings.clone();
                     }
                     log::debug!(
-                        "System snapshot collected processes={} fd_relations={}",
+                        "System snapshot collected processes={} fd_relations={} rdma_relations={}",
                         data.processes.len(),
-                        data.fd_relations.len()
+                        data.fd_relations.len(),
+                        data.rdma_relations.len()
                     );
                     for relation in &mut data.fd_relations {
                         if let Some(socket) = &mut relation.socket
@@ -187,6 +193,15 @@ impl SystemMonitor {
                         {
                             socket.remote_hostname =
                                 socket.remote.and_then(|a| resolver.lookup(a.ip));
+                        }
+                    }
+                    for relation in &mut data.rdma_relations {
+                        if relation.peer.is_none() {
+                            relation.remote_hostname = relation
+                                .cm
+                                .as_ref()
+                                .and_then(|cm| cm.destination?.ip())
+                                .and_then(|ip| resolver.lookup(ip));
                         }
                     }
                     let data = Arc::new(data);

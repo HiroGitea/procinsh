@@ -11,6 +11,7 @@ import {
   fdEndpoint,
   fdRelation,
   socketEndpoint,
+  emptyRdmaScene,
 } from "./support/fixtures.js";
 
 function endpoint(
@@ -47,6 +48,7 @@ function input(relations: FdRelation[]): SceneInput {
     filePositions: new Map(),
     netlink: new Map(),
     netlinkPositions: new Map(),
+    ...emptyRdmaScene(),
   };
 }
 function cylinderTips(scene: ReturnType<typeof createSpaceScene>) {
@@ -269,6 +271,7 @@ test("network groups retain per-socket cylinders and paths, and select every mem
       network: "destination",
       file: null,
       netlink: null,
+      rdma: null,
     });
     const selected = scene.root.getObjectByName(
       "selected-connection",
@@ -284,6 +287,7 @@ test("network groups retain per-socket cylinders and paths, and select every mem
       network: null,
       file: null,
       netlink: null,
+      rdma: null,
     });
     assert.equal(selected.geometry.getAttribute("position").count, 64);
   } finally {
