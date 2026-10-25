@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn kinds_keep_codes_and_match_shared_display_contract() {
         let cases: serde_json::Value = serde_json::from_str(include_str!(
-            "../../helper/test_support/socket-protocols.json"
+            "../../privileged_helper/test_support/socket-protocols.json"
         ))
         .unwrap();
         for case in cases.as_array().unwrap() {

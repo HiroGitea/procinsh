@@ -20,7 +20,7 @@ const cases = JSON.parse(
   readFileSync(
     resolve(
       import.meta.dirname,
-      "../../src/helper/test_support/socket-protocols.json",
+      "../../src/privileged_helper/test_support/socket-protocols.json",
     ),
     "utf8",
   ),

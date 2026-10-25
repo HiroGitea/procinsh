@@ -84,24 +84,24 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 |---|---|
 | `src/main/entry.rs` | CLI, logger initialization, startup configuration validation |
 | `src/main/http_server/` | Unprivileged HTTP, helper supervision, IPC client and SSE formatting |
-| `src/helper/` | Privileged acquisition, collectors and IPC request dispatch |
+| `src/privileged_helper/` | Privileged acquisition, collectors and IPC request dispatch |
 | `src/ipc/` | Message schema and bounded transport shared by both executables |
 | `src/main/http_server/api/` | HTTP input/responses, domain error to status conversion, JSON and SSE (Server-Sent Events) |
 | `src/main/http_server/web.rs` | Static web UI serving |
-| `src/helper/process/monitoring/` | Independent acquisition per connection, latest-state delivery |
-| `src/helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
-| `src/helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, instruction-byte capture |
-| `src/helper/process/elf.rs` | Identity-verified acquisition of mapped ELF bytes |
+| `src/privileged_helper/process/monitoring/` | Independent acquisition per connection, latest-state delivery |
+| `src/privileged_helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
+| `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, instruction-byte capture |
+| `src/privileged_helper/process/elf.rs` | Identity-verified acquisition of mapped ELF bytes |
 | `src/main/analysis/snapshot/` | ELF/DWARF parsing, caching, framehop unwinding, register classification and symbol/source resolution in main |
 | `src/main/http_server/processing.rs` | Main-side interpretation of raw IPC responses before HTTP output |
 | `src/ipc/model/` | Native data values shared through IPC, without serde |
 | `src/main/model/`, `src/main/json/` | Main-only JSON representations of shared values |
 | `src/ipc/stack.rs` | Stack frame values |
-| `src/helper/system/` | Protected system snapshots, subscriptions and BPF collection |
+| `src/privileged_helper/system/` | Protected system snapshots, subscriptions and BPF collection |
 | `src/main/analysis/hardware/` | GPUs, RDMA NICs, accelerators, NVSwitches, PCIe bridges, inter-device paths, and processes holding devices open, using sysfs/procfs |
-| `src/helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
+| `src/privileged_helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
 | `src/main/http_server/hosts/` | Agent links, host registry, and cross-host connection matching |
-| `src/helper/system/rdma/` | RDMA acquisition through netlink and sysfs |
+| `src/privileged_helper/system/rdma/` | RDMA acquisition through netlink and sysfs |
 | `web/src/` | TypeScript pages, SPACE, rendering models, and CSS (HTML entry points: `web/{list,process,space}/index.html`) |
 | `tests/` | Rust, browser, log, and live sensor tests, plus C fixtures |
 
@@ -396,9 +396,9 @@ Use SSE for continuous CPU usage, per-second increments, and history. Ordinary `
 
 `GET /api/processes/fds` verifies identity and liveness, then collects pipe/FIFO/socket FDs, access direction, candidate peers, and owners sharing the same resource. UNIX domain socket peers are discovered with socket diagnostics. TCP/UDP candidates are found using information from the target process's network namespace. Shared owners and communication peers are distinct; no reads consume data. Scans are limited to three seconds, 100,000 FDs, and 8,192 matching FDs; results report truncation and similar conditions.
 
-See [fds.rs](src/helper/process/fds.rs) for FD collection, candidate matching, and searches for processes/FDs owning candidates. UNIX domain socket peer inode retrieval is in [socket diagnostics](src/helper/process/sockets.rs).
+See [fds.rs](src/privileged_helper/process/fds.rs) for FD collection, candidate matching, and searches for processes/FDs owning candidates. UNIX domain socket peer inode retrieval is in [socket diagnostics](src/privileged_helper/process/sockets.rs).
 
-Socket types are collected independently of peer identification and shown in SPACE connection details and process FD lists. Collection uses Netlink, RAW, and packet procfs tables as well as TCP, UDP, and UNIX tables. [SocketMetadataReader](src/helper/process/socket_metadata.rs) temporarily duplicates socket FDs with `pidfd_open`/`pidfd_getfd` and reads `SO_DOMAIN`, `SO_TYPE`, `SO_PROTOCOL`, `SO_ACCEPTCONN`, and `getpeername`. Type, listening status, and peer presence are handled separately. Successful direct observations are shared within each collection by device/inode. Process start times and socket device/inode are validated; pidfds are retained per process during a scan. Duplicated FDs are closed immediately. Collection does not send/receive data, alter socket settings, or stop targets. Pidfd duplication requires ptrace permission; on insufficient permission or unsupported kernels, types obtained through procfs are retained.
+Socket types are collected independently of peer identification and shown in SPACE connection details and process FD lists. Collection uses Netlink, RAW, and packet procfs tables as well as TCP, UDP, and UNIX tables. [SocketMetadataReader](src/privileged_helper/process/socket_metadata.rs) temporarily duplicates socket FDs with `pidfd_open`/`pidfd_getfd` and reads `SO_DOMAIN`, `SO_TYPE`, `SO_PROTOCOL`, `SO_ACCEPTCONN`, and `getpeername`. Type, listening status, and peer presence are handled separately. Successful direct observations are shared within each collection by device/inode. Process start times and socket device/inode are validated; pidfds are retained per process during a scan. Duplicated FDs are closed immediately. Collection does not send/receive data, alter socket settings, or stop targets. Pidfd duplication requires ptrace permission; on insufficient permission or unsupported kernels, types obtained through procfs are retained.
 
 The process FD list shows known types even for unconnected sockets, such as `TCP`, `NETLINK KOBJECT_UEVENT`, or `VSOCK STREAM`. API protocols other than TCP, UDP, and UNIX use `kind: "other"` and Linux `family`, `socket_type`, and `protocol` numbers, retaining unrecognized values. The Netlink procfs table alone does not identify socket type, so `socket_type` is null in that case. Unknown connection state is `state: null`; neither state nor peer PID is inferred from type. A socket with unknown type appears as `Socket · Type unavailable` and is included in scan warnings.
 
@@ -440,8 +440,8 @@ Both are retrieved on demand after identity/liveness checks, rather than recolle
 
 These APIs read files exposed by procfs. Only auxv string references additionally read target process memory with `process_vm_readv`.
 
-- `GET /api/processes/environment`: reads up to 1 MiB from procfs [`/proc/<pid>/environ`](https://man7.org/linux/man-pages/man5/proc_pid_environ.5.html), splitting NUL-delimited entries at the first `=` into names and values. Duplicate names, empty values, and `=` within values are preserved. This usually reflects the environment region at exec time, not every subsequent change. See [file reading](src/helper/process/details.rs) and [environment parsing](src/helper/process/details.rs).
-- `GET /api/processes/auxv`: determines 32/64-bit mode from the ELF header of `/proc/<pid>/exe` and reads up to 64 KiB from procfs [`/proc/<pid>/auxv`](https://man7.org/linux/man-pages/man5/proc_pid_auxv.5.html). It parses tag/value pairs, handling known and unknown tags. String references for `AT_EXECFN`, `AT_PLATFORM`, and `AT_BASE_PLATFORM` are resolved with `process_vm_readv`, up to 4,096 bytes each. Numeric values remain when references cannot be read. Big-endian ELF is unsupported. See [ELF header and auxv reading](src/helper/process/details.rs), [string reference resolution](src/helper/process/details.rs), and [memory reading](src/helper/process/memory.rs).
+- `GET /api/processes/environment`: reads up to 1 MiB from procfs [`/proc/<pid>/environ`](https://man7.org/linux/man-pages/man5/proc_pid_environ.5.html), splitting NUL-delimited entries at the first `=` into names and values. Duplicate names, empty values, and `=` within values are preserved. This usually reflects the environment region at exec time, not every subsequent change. See [file reading](src/privileged_helper/process/details.rs) and [environment parsing](src/privileged_helper/process/details.rs).
+- `GET /api/processes/auxv`: determines 32/64-bit mode from the ELF header of `/proc/<pid>/exe` and reads up to 64 KiB from procfs [`/proc/<pid>/auxv`](https://man7.org/linux/man-pages/man5/proc_pid_auxv.5.html). It parses tag/value pairs, handling known and unknown tags. String references for `AT_EXECFN`, `AT_PLATFORM`, and `AT_BASE_PLATFORM` are resolved with `process_vm_readv`, up to 4,096 bytes each. Numeric values remain when references cannot be read. Big-endian ELF is unsupported. See [ELF header and auxv reading](src/privileged_helper/process/details.rs), [string reference resolution](src/privileged_helper/process/details.rs), and [memory reading](src/privileged_helper/process/memory.rs).
 
 ### Initial/periodic snapshots and live sampling without stopping the target
 
@@ -484,9 +484,9 @@ All sensors use CO-RE eBPF. CPU scheduling, IPC, and file I/O use independent eB
 
 | Sensor | Backend observations and limits | eBPF source |
 |---|---|---|
-| CPU | Aggregates runtime and running CPUs with `sched_switch` | [sched.bpf.c](src/helper/system/sched.bpf.c) |
-| IPC | Observes pipe read/write and socket send/receive results; no payload reads or MSG_PEEK counts; excludes splice/sendfile, some io_uring, and workers without known attribution | [ipc.bpf.c](src/helper/system/ipc.bpf.c) |
-| File I/O | Observes successful byte/count results of VFS read/write and vectored I/O, including page-cache access; excludes mmap, io_uring, splice/sendfile, and physical disk transfer volume | [files.bpf.c](src/helper/system/files.bpf.c) |
+| CPU | Aggregates runtime and running CPUs with `sched_switch` | [sched.bpf.c](src/privileged_helper/system/sched.bpf.c) |
+| IPC | Observes pipe read/write and socket send/receive results; no payload reads or MSG_PEEK counts; excludes splice/sendfile, some io_uring, and workers without known attribution | [ipc.bpf.c](src/privileged_helper/system/ipc.bpf.c) |
+| File I/O | Observes successful byte/count results of VFS read/write and vectored I/O, including page-cache access; excludes mmap, io_uring, splice/sendfile, and physical disk transfer volume | [files.bpf.c](src/privileged_helper/system/files.bpf.c) |
 
 File paths are captured at operation time; unavailable paths use identifiers such as device/inode. Unavailable BPF hooks produce per-sensor reasons in the status API and logs while collection of available information continues. Required kernel features and permissions vary by sensor.
 
@@ -792,7 +792,7 @@ There is no authentication or TLS. Anyone who can connect can access process mem
 
 ## Logging
 
-Logging uses `log` and `env_logger`, writing timestamps, levels, source file paths, and line numbers (for example, `src/helper/system/service.rs:123`) to stderr. Default level is `info`. `RUST_LOG` filters still use module names.
+Logging uses `log` and `env_logger`, writing timestamps, levels, source file paths, and line numbers (for example, `src/privileged_helper/system/service.rs:123`) to stderr. Default level is `info`. `RUST_LOG` filters still use module names.
 
 - `info`: startup/shutdown, observation start/stop, target exit, collection state/recovery.
 - `warn`: observation failures, unavailable sensors; repeated identical states/errors are suppressed.
@@ -1014,7 +1014,7 @@ executables are built together. PID and Unix peer identity checks remain part of
 helper authentication. Frame lengths, collection lengths, tags, UTF-8 and socket
 deadlines are validated.
 
-`src/` contains only `ipc`, `helper` and `main`. Each executable includes the same
+`src/` contains only `ipc`, `privileged_helper` and `main`. Each executable includes the same
 IPC source definitions; main supplies their serde implementations through remote
 derives and JSON adapters. IPC has no serde or JSON values. The normal helper build
 does not include main's HTTP, JSON, ELF/DWARF, framehop, iced-x86, hardware-topology

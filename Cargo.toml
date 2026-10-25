@@ -25,7 +25,7 @@ path = "src/main/entry.rs"
 
 [[bin]]
 name = "procinsh-privileged-helper"
-path = "src/helper/entry.rs"
+path = "src/privileged_helper/entry.rs"
 
 [dependencies]
 log = "0.4"
