@@ -1,6 +1,6 @@
 use super::super::{SymbolInfo, elf_address, instruction_address, resolve_frame};
 use super::*;
-use crate::model::memory::parse_map;
+use crate::http_server::model::memory::parse_map;
 use std::process::Command;
 use std::{
     fs,

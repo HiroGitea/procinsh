@@ -5,19 +5,12 @@
 //! with links to the defining items and their source.
 //!
 //! # Interface
-//! - [`ipc`] (`pub`): `mod ipc`, shared native values and transport.
-//! - [`analysis`] (`pub`): `mod analysis`, interpretation of acquired values.
-//! - [`model`] (`pub`): `mod model`, main-only JSON representations and calculations.
+//! No items are exported. Startup delegates to [`http_server::run`].
 
-#[path = "analysis/root.rs"]
-pub mod analysis;
 #[path = "root.rs"]
 mod http_server;
 #[path = "../ipc/root.rs"]
-pub mod ipc;
-mod json;
-#[path = "model/root.rs"]
-pub mod model;
+mod ipc;
 
 #[cfg(not(all(
     target_os = "linux",

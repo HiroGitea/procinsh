@@ -1,33 +1,36 @@
 //! Shared native IPC data, codec and bounded Unix-stream framing. JSON conversion belongs to main.
 //!
 //! # Interface
-//! - [`schema`] (`pub`): `mod schema`.
-//! - [`transport`] (`pub`): `mod transport`.
-//! - [`codec`] (`pub`): `mod codec`.
-//! - [`model`] (`pub`): `mod model`.
-//! - [`activity`] (`pub`): `mod activity`.
-//! - [`descriptors`] (`pub`): `mod descriptors`.
-//! - [`hardware`] (`pub`): `mod hardware`.
-//! - [`history`] (`pub`): `mod history`.
-//! - [`registers`] (`pub`): `mod registers`.
-//! - [`stack`] (`pub`): `mod stack`.
-//! - [`acquisition`] (`pub`): `mod acquisition`.
-//! - [`elf`] (`pub`): `mod elf`.
-pub mod schema;
-pub mod transport;
+//! - [`schema`] (`pub(crate)`): `mod schema`.
+//! - [`transport`] (`pub(crate)`): `mod transport`.
+//! - [`codec`] (`pub(crate)`): `mod codec`.
+//! - [`model`] (`pub(crate)`): `mod model`.
+//! - [`activity`] (`pub(crate)`): `mod activity`.
+//! - [`descriptors`] (`pub(crate)`): `mod descriptors`.
+//! - [`hardware`] (`pub(crate)`): `mod hardware`.
+//! - [`history`] (`pub(crate)`): `mod history`.
+//! - [`registers`] (`pub(crate)`): `mod registers`.
+//! - [`stack`] (`pub(crate)`): `mod stack`.
+//! - [`acquisition`] (`pub(crate)`): `mod acquisition`.
+//! - [`elf`] (`pub(crate)`): `mod elf`.
+// Each executable uses a different subset of the shared wire declarations.
+#![allow(dead_code)]
 
-pub mod codec;
+pub(crate) mod schema;
+pub(crate) mod transport;
+
+pub(crate) mod codec;
 
 #[path = "model/root.rs"]
-pub mod model;
+pub(crate) mod model;
 
-pub mod activity;
-pub mod descriptors;
-pub mod hardware;
-pub mod history;
-pub mod registers;
-pub mod stack;
+pub(crate) mod activity;
+pub(crate) mod descriptors;
+pub(crate) mod hardware;
+pub(crate) mod history;
+pub(crate) mod registers;
+pub(crate) mod stack;
 
-pub mod acquisition;
+pub(crate) mod acquisition;
 
-pub mod elf;
+pub(crate) mod elf;

@@ -1,9 +1,9 @@
 //! Local fixture acquisition for unprivileged-analysis tests.
 pub(super) mod process {
     use crate::{
-        analysis::snapshot::symbol::{ElfCache, ElfFile, ElfSymbols},
+        http_server::analysis::snapshot::symbol::{ElfCache, ElfFile, ElfSymbols},
+        http_server::model::memory::MemoryMap,
         ipc::schema::ProcessId,
-        model::memory::MemoryMap,
     };
     use std::{
         fs,
@@ -18,8 +18,10 @@ pub(super) mod process {
         }
     }
     pub(crate) mod maps {
-        pub use crate::model::memory::parse_map;
-        pub fn read_maps(pid: i32) -> anyhow::Result<Vec<crate::model::memory::MemoryMap>> {
+        pub use crate::http_server::model::memory::parse_map;
+        pub fn read_maps(
+            pid: i32,
+        ) -> anyhow::Result<Vec<crate::http_server::model::memory::MemoryMap>> {
             fs::read_to_string(format!("/proc/{pid}/maps"))?
                 .lines()
                 .map(parse_map)

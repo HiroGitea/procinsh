@@ -117,11 +117,11 @@ pub(super) fn acquire(
 pub(in crate::privileged_helper::process) fn read(
     pid: i32,
     map: &MemoryMap,
-) -> Option<crate::analysis::snapshot::symbol::ElfFile> {
+) -> Option<crate::http_server::analysis::snapshot::symbol::ElfFile> {
     let length = matching_file(pid, map)?.1.len();
     match acquire(pid, map, &[FileRange { offset: 0, length }]).ok()? {
         crate::ipc::schema::MonitorResponse::Elf(Some(file)) => {
-            Some(crate::analysis::snapshot::symbol::ElfFile {
+            Some(crate::http_server::analysis::snapshot::symbol::ElfFile {
                 identity: file.identity,
                 bytes: file.chunks.into_iter().next()?.bytes,
             })

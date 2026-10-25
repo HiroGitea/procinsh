@@ -81,7 +81,7 @@ impl serde::Serialize for crate::ipc::acquisition::MemoryMaps {
 #[allow(dead_code)]
 #[serde(remote = "crate::ipc::acquisition::InstructionBytes")]
 struct InstructionBytesJson {
-    #[serde(serialize_with = "crate::model::memory::hex")]
+    #[serde(serialize_with = "crate::http_server::model::memory::hex")]
     pub address: u64,
     pub bytes: Vec<u8>,
     pub error: Option<String>,
@@ -215,7 +215,8 @@ impl serde::Serialize for crate::ipc::acquisition::SensorState {
 
 impl serde::Serialize for ObservationData {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let observation = crate::model::process::initial_observation(&self.process_sample);
+        let observation =
+            crate::http_server::model::process::initial_observation(&self.process_sample);
         if self.threads_only {
             serde::Serialize::serialize(&observation.threads, s)
         } else {
@@ -226,14 +227,16 @@ impl serde::Serialize for ObservationData {
 impl serde::Serialize for EnvironmentData {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut value = serde_json::json!({"process_id":self.process_id,"captured_at":self.captured_at,"raw_environment":self.raw_environment});
-        crate::analysis::details::complete(&mut value).map_err(serde::ser::Error::custom)?;
+        crate::http_server::analysis::details::complete(&mut value)
+            .map_err(serde::ser::Error::custom)?;
         serde::Serialize::serialize(&value, s)
     }
 }
 impl serde::Serialize for AuxData {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut value = serde_json::json!({"process_id":self.process_id,"captured_at":self.captured_at,"word_bits":self.word_bits,"raw_auxv":self.raw_auxv,"raw_aux_strings":self.raw_aux_strings});
-        crate::analysis::details::complete(&mut value).map_err(serde::ser::Error::custom)?;
+        crate::http_server::analysis::details::complete(&mut value)
+            .map_err(serde::ser::Error::custom)?;
         serde::Serialize::serialize(&value, s)
     }
 }

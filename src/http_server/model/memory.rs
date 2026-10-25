@@ -13,8 +13,8 @@
 //! | [`parse_map`] | `pub` | `fn parse_map(line: &str) -> Result<MemoryMap>` |
 //! | [`parse_smaps`] | `pub` | `fn parse_smaps(text: &str) -> Result<Vec<SmapsEntry>>` |
 
+use crate::http_server::model::resource::{DeviceId, decimal};
 pub use crate::ipc::model::memory::*;
-use crate::model::resource::{DeviceId, decimal};
 use anyhow::Result;
 use serde::Deserialize;
 pub fn deserialize_hex<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
@@ -23,7 +23,7 @@ pub fn deserialize_hex<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Res
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::memory::MemoryKind")]
+#[serde(remote = "crate::http_server::model::memory::MemoryKind")]
 #[serde(rename_all = "snake_case")]
 enum MemoryKindJson {
     Integer,
@@ -34,13 +34,13 @@ enum MemoryKindJson {
     File,
     Anonymous,
 }
-impl serde::Serialize for crate::model::memory::MemoryKind {
+impl serde::Serialize for crate::http_server::model::memory::MemoryKind {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         MemoryKindJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::memory::MemoryKind {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::memory::MemoryKind {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         MemoryKindJson::deserialize(d)
     }
@@ -50,7 +50,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::memory::MemoryKind {
 /// Addresses and file offsets serialize as hexadecimal strings; inodes as decimal strings.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::memory::MemoryMap")]
+#[serde(remote = "crate::http_server::model::memory::MemoryMap")]
 struct MemoryMapJson {
     #[serde(serialize_with = "hex", deserialize_with = "deserialize_hex")]
     pub start: u64,
@@ -65,18 +65,18 @@ struct MemoryMapJson {
     pub device: DeviceId,
     #[serde(
         serialize_with = "decimal",
-        deserialize_with = "crate::model::resource::deserialize_decimal"
+        deserialize_with = "crate::http_server::model::resource::deserialize_decimal"
     )]
     pub inode: u64,
     pub pathname: Option<String>,
 }
-impl serde::Serialize for crate::model::memory::MemoryMap {
+impl serde::Serialize for crate::http_server::model::memory::MemoryMap {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         MemoryMapJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::memory::MemoryMap {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::memory::MemoryMap {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         MemoryMapJson::deserialize(d)
     }
@@ -86,20 +86,20 @@ impl<'de> serde::Deserialize<'de> for crate::model::memory::MemoryMap {
 /// Serialization flattens the structural mapping alongside the usage measurements.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::memory::SmapsEntry")]
+#[serde(remote = "crate::http_server::model::memory::SmapsEntry")]
 struct SmapsEntryJson {
     #[serde(flatten)]
     pub mapping: MemoryMap,
     pub rss_bytes: Option<u64>,
     pub pss_bytes: Option<u64>,
 }
-impl serde::Serialize for crate::model::memory::SmapsEntry {
+impl serde::Serialize for crate::http_server::model::memory::SmapsEntry {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         SmapsEntryJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::memory::SmapsEntry {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::memory::SmapsEntry {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         SmapsEntryJson::deserialize(d)
     }
@@ -112,18 +112,18 @@ pub fn hex<S: serde::Serializer>(value: &u64, serializer: S) -> Result<S::Ok, S:
 /// One captured mapping context shared by all thread samples from that epoch.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::memory::MappingSnapshot")]
+#[serde(remote = "crate::http_server::model::memory::MappingSnapshot")]
 struct MappingSnapshotJson {
     pub epoch: u64,
     pub maps: Vec<MemoryMap>,
 }
-impl serde::Serialize for crate::model::memory::MappingSnapshot {
+impl serde::Serialize for crate::http_server::model::memory::MappingSnapshot {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         MappingSnapshotJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::memory::MappingSnapshot {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::memory::MappingSnapshot {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         MappingSnapshotJson::deserialize(d)
     }

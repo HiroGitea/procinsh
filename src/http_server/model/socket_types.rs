@@ -17,19 +17,19 @@ pub use crate::ipc::model::socket_types::*;
 use std::net::IpAddr;
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::socket_types::AddressFamily")]
+#[serde(remote = "crate::http_server::model::socket_types::AddressFamily")]
 #[serde(rename_all = "snake_case")]
 enum AddressFamilyJson {
     Ipv4,
     Ipv6,
 }
-impl serde::Serialize for crate::model::socket_types::AddressFamily {
+impl serde::Serialize for crate::http_server::model::socket_types::AddressFamily {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         AddressFamilyJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::socket_types::AddressFamily {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::socket_types::AddressFamily {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         AddressFamilyJson::deserialize(d)
     }
@@ -37,7 +37,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::socket_types::AddressFamily 
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::socket_types::SocketType")]
+#[serde(remote = "crate::http_server::model::socket_types::SocketType")]
 #[serde(tag = "kind", content = "code", rename_all = "snake_case")]
 enum SocketTypeJson {
     Stream,
@@ -49,13 +49,13 @@ enum SocketTypeJson {
     Packet,
     Unknown(u32),
 }
-impl serde::Serialize for crate::model::socket_types::SocketType {
+impl serde::Serialize for crate::http_server::model::socket_types::SocketType {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         SocketTypeJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::socket_types::SocketType {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::socket_types::SocketType {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         SocketTypeJson::deserialize(d)
     }
@@ -63,7 +63,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::socket_types::SocketType {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::socket_types::SocketProtocol")]
+#[serde(remote = "crate::http_server::model::socket_types::SocketProtocol")]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SocketProtocolJson {
     Tcp {
@@ -83,13 +83,13 @@ enum SocketProtocolJson {
         protocol: u32,
     },
 }
-impl serde::Serialize for crate::model::socket_types::SocketProtocol {
+impl serde::Serialize for crate::http_server::model::socket_types::SocketProtocol {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         SocketProtocolJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::socket_types::SocketProtocol {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::socket_types::SocketProtocol {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         SocketProtocolJson::deserialize(d)
     }
@@ -101,7 +101,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::socket_types::SocketProtocol
 /// it does not identify a process. Unknown observations must remain visible.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::socket_types::SocketConnectionStatus")]
+#[serde(remote = "crate::http_server::model::socket_types::SocketConnectionStatus")]
 #[serde(rename_all = "snake_case")]
 enum SocketConnectionStatusJson {
     Listening,
@@ -109,13 +109,15 @@ enum SocketConnectionStatusJson {
     PeerPresent,
     Unknown,
 }
-impl serde::Serialize for crate::model::socket_types::SocketConnectionStatus {
+impl serde::Serialize for crate::http_server::model::socket_types::SocketConnectionStatus {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         SocketConnectionStatusJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::socket_types::SocketConnectionStatus {
+impl<'de> serde::Deserialize<'de>
+    for crate::http_server::model::socket_types::SocketConnectionStatus
+{
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         SocketConnectionStatusJson::deserialize(d)
     }
@@ -123,7 +125,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::socket_types::SocketConnecti
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::socket_types::SocketState")]
+#[serde(remote = "crate::http_server::model::socket_types::SocketState")]
 #[serde(tag = "kind", content = "code", rename_all = "snake_case")]
 enum SocketStateJson {
     Established,
@@ -145,13 +147,13 @@ enum SocketStateJson {
     UnknownInet(u32),
     UnknownUnix(u32),
 }
-impl serde::Serialize for crate::model::socket_types::SocketState {
+impl serde::Serialize for crate::http_server::model::socket_types::SocketState {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         SocketStateJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::socket_types::SocketState {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::socket_types::SocketState {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         SocketStateJson::deserialize(d)
     }
@@ -159,20 +161,20 @@ impl<'de> serde::Deserialize<'de> for crate::model::socket_types::SocketState {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::socket_types::FdKind")]
+#[serde(remote = "crate::http_server::model::socket_types::FdKind")]
 #[serde(rename_all = "snake_case")]
 enum FdKindJson {
     Pipe,
     Socket,
     Fifo,
 }
-impl serde::Serialize for crate::model::socket_types::FdKind {
+impl serde::Serialize for crate::http_server::model::socket_types::FdKind {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         FdKindJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::socket_types::FdKind {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::socket_types::FdKind {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         FdKindJson::deserialize(d)
     }
@@ -180,7 +182,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::socket_types::FdKind {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::socket_types::FdAccess")]
+#[serde(remote = "crate::http_server::model::socket_types::FdAccess")]
 #[serde(rename_all = "snake_case")]
 enum FdAccessJson {
     Read,
@@ -188,13 +190,13 @@ enum FdAccessJson {
     ReadWrite,
     Unknown,
 }
-impl serde::Serialize for crate::model::socket_types::FdAccess {
+impl serde::Serialize for crate::http_server::model::socket_types::FdAccess {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         FdAccessJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::socket_types::FdAccess {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::socket_types::FdAccess {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         FdAccessJson::deserialize(d)
     }
@@ -202,18 +204,18 @@ impl<'de> serde::Deserialize<'de> for crate::model::socket_types::FdAccess {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::socket_types::InetAddress")]
+#[serde(remote = "crate::http_server::model::socket_types::InetAddress")]
 struct InetAddressJson {
     pub ip: IpAddr,
     pub port: u16,
 }
-impl serde::Serialize for crate::model::socket_types::InetAddress {
+impl serde::Serialize for crate::http_server::model::socket_types::InetAddress {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         InetAddressJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::socket_types::InetAddress {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::socket_types::InetAddress {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         InetAddressJson::deserialize(d)
     }

@@ -466,7 +466,7 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
     #[cfg(test)]
     let result = {
         let mut result = result;
-        crate::analysis::descriptors::complete(&mut result);
+        crate::http_server::analysis::descriptors::complete(&mut result);
         result
     };
     Ok(result)

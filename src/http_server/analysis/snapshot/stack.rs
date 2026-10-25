@@ -13,7 +13,7 @@ pub use crate::ipc::stack::{SourceFrame, StackFrame};
 #[allow(dead_code)]
 #[serde(remote = "crate::ipc::stack::StackFrame")]
 struct StackFrameJson {
-    #[serde(serialize_with = "crate::model::memory::hex")]
+    #[serde(serialize_with = "crate::http_server::model::memory::hex")]
     pub address: u64,
     pub symbol: Option<String>,
     pub symbol_offset: Option<String>,

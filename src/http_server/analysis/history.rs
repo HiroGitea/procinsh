@@ -9,8 +9,8 @@
 
 //! History observations use [`ProcessObservation`].
 
+use crate::http_server::model::process::ProcessObservation;
 pub use crate::ipc::history::HistoryPoint;
-use crate::model::process::ProcessObservation;
 use std::collections::VecDeque;
 
 #[derive(serde::Serialize)]

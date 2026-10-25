@@ -8,7 +8,7 @@
 //!
 //! Input and output values are defined by [`SystemSnapshot`].
 
-use crate::model::{resource::*, socket_types::*, system::*};
+use crate::http_server::model::{resource::*, socket_types::*, system::*};
 use std::collections::{HashMap, HashSet};
 pub fn build(result: &mut SystemSnapshot) -> bool {
     let mut owners: HashMap<_, _> = std::mem::take(&mut result.raw_owners).into_iter().collect();

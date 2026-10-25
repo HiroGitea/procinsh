@@ -3,7 +3,7 @@
 //! # Interface
 //! [`HardwareSources`] (`pub(super)`): `struct HardwareSources` supplies the sysfs root.
 #[cfg(test)]
-pub(super) use crate::analysis::hardware::*;
+pub(super) use crate::http_server::analysis::hardware::*;
 #[cfg(not(test))]
 pub(super) struct HardwareSources {
     pub sys: std::path::PathBuf,

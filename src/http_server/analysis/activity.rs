@@ -26,11 +26,11 @@ pub use crate::ipc::activity::{
 };
 use crate::ipc::activity::{process_key, u64_at};
 use crate::{
-    ipc::schema::ProcessId,
-    model::{
+    http_server::model::{
         process::ticks_per_second,
         resource::{DeviceId, FileIdentity, IpcIdentity, IpcKind},
     },
+    ipc::schema::ProcessId,
 };
 use std::collections::HashMap;
 #[derive(serde::Serialize, serde::Deserialize)]

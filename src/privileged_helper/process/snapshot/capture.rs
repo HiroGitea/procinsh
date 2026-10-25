@@ -5,7 +5,7 @@ use super::{arch::{Architecture, native}, instruction_bytes::InstructionBytes, p
 #[cfg(test)]
 use super::{registers, stack::StackFrame};
 #[cfg(test)]
-use crate::analysis::snapshot::{
+use crate::http_server::analysis::snapshot::{
     symbol::{ElfCache, SymbolInfo, elf_address, instruction_address, resolve_frame},
     unwind::StackUnwinder,
 };

@@ -5,7 +5,7 @@
 //! Supporting values: [`MonitorClient`], [`ProcessId`], [`ElfFileId`], [`ElfImage`].
 use super::client::MonitorClient;
 use crate::{
-    analysis::snapshot::symbol::ElfImage,
+    http_server::analysis::snapshot::symbol::ElfImage,
     ipc::{
         elf::{ElfFileId, FileRange, MAX_RANGES, MappedFileData},
         schema::{MonitorRequest, MonitorResponse, ProcessId},

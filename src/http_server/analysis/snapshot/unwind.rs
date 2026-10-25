@@ -10,7 +10,7 @@ use super::{
     stack::StackFrame,
     symbol::{ElfCache, elf_address},
 };
-use crate::model::memory::MemoryMap;
+use crate::http_server::model::memory::MemoryMap;
 use framehop::{
     Module, Unwinder,
     x86_64::{CacheX86_64, UnwindRegsX86_64, UnwinderX86_64},
@@ -155,7 +155,7 @@ impl StackUnwinder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::test_support::process::{self, TestTarget};
+    use crate::http_server::analysis::test_support::process::{self, TestTarget};
     use iced_x86::{Decoder, DecoderOptions, Mnemonic, Register};
     use object::{Object, ObjectSection, ObjectSymbol};
     use process::procfs;

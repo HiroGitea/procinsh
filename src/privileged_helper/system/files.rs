@@ -93,7 +93,7 @@ impl FileActivityCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::activity::FileBatch as Batch;
+    use crate::http_server::analysis::activity::FileBatch as Batch;
 
     fn event() -> Vec<u8> {
         let mut data = vec![0; 4144];

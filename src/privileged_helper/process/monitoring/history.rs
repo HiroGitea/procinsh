@@ -7,4 +7,4 @@
 //! | [`HistoryPoint`] | `pub(super)` | `struct HistoryPoint` |
 //! | [`push`] | `pub(super)` | `fn push(history: &mut VecDeque<HistoryPoint>, observation: &ProcessObservation)` |
 
-pub(super) use crate::analysis::history::*;
+pub(super) use crate::http_server::analysis::history::*;

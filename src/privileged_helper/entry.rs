@@ -1,18 +1,12 @@
 //! Private privileged acquisition executable. It has no HTTP listener.
 //!
 //! # Interface
-//! [`ipc`] (`pub`): `mod ipc`, shared native values and transport.
+//! No items are exported. Startup delegates to [`privileged_helper::run`].
 #[cfg(test)]
-#[path = "../http_server/analysis/root.rs"]
-pub mod analysis;
+#[path = "test_http/presentation.rs"]
+mod http_server;
 #[path = "../ipc/root.rs"]
-pub mod ipc;
-#[cfg(test)]
-#[path = "../http_server/json.rs"]
-mod json;
-#[cfg(test)]
-#[path = "../http_server/model/root.rs"]
-pub mod model;
+mod ipc;
 #[path = "root.rs"]
 mod privileged_helper;
 

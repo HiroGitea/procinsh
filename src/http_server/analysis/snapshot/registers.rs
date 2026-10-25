@@ -12,8 +12,8 @@
 //!
 //! Mapping arguments use [`MemoryMap`]; classification values use [`MemoryKind`].
 
+use crate::http_server::model::memory::{MemoryKind, MemoryMap};
 pub use crate::ipc::registers::{Register, RegisterMapping, RegisterSet};
-use crate::model::memory::{MemoryKind, MemoryMap};
 
 #[derive(serde::Serialize)]
 #[allow(dead_code)]
@@ -46,7 +46,7 @@ fn optional_hex<S: serde::Serializer>(
 #[serde(remote = "crate::ipc::registers::Register")]
 struct RegisterJson {
     pub name: String,
-    #[serde(serialize_with = "crate::model::memory::hex")]
+    #[serde(serialize_with = "crate::http_server::model::memory::hex")]
     pub value: u64,
     pub decimal: String,
     pub kind: MemoryKind,
@@ -126,8 +126,10 @@ mod tests {
 
     #[test]
     fn register_mapping_keeps_fields_and_offset_or_integer() {
-        let map =
-            crate::model::memory::parse_map("1000-2000 rw-p 00000000 08:01 42 /tmp/a [b]").unwrap();
+        let map = crate::http_server::model::memory::parse_map(
+            "1000-2000 rw-p 00000000 08:01 42 /tmp/a [b]",
+        )
+        .unwrap();
         let register = classify("RAX", 0x1008, &[map]);
         assert_eq!(register.kind, MemoryKind::File);
         assert_eq!(register.offset, Some(8));

@@ -5,27 +5,17 @@
 //! | Definition | Visibility | Kind / signature |
 //! | --- | --- | --- |
 //! | [`EnvironmentEntry`] | `pub` | `struct EnvironmentEntry` |
-//! | [`Environment`] | `pub` | `struct Environment` |
 //! | [`parse_environment`] | `pub` | `fn parse_environment(bytes: &[u8]) -> Vec<EnvironmentEntry>` |
 //! | [`AuxEntry`] | `pub` | `struct AuxEntry` |
-//! | [`AuxVector`] | `pub` | `struct AuxVector` |
 //! | [`parse_auxv`] | `pub` | `fn parse_auxv(bytes: &[u8], word_bytes: usize) -> Result<Vec<AuxEntry>>` |
 //! | [`complete`] | `pub` | `fn complete(value: &mut serde_json::Value) -> Result<()>` |
 
-use crate::ipc::schema::ProcessId;
 use anyhow::{Result, bail, ensure};
 use serde::Serialize;
 #[derive(Debug, Serialize, serde::Deserialize)]
 pub struct EnvironmentEntry {
     pub name: String,
     pub value: Option<String>,
-}
-#[derive(Debug, Serialize, serde::Deserialize)]
-pub struct Environment {
-    pub process_id: ProcessId,
-    pub captured_at: u64,
-    pub entries: Vec<EnvironmentEntry>,
-    pub lossy_utf8: bool,
 }
 
 pub fn parse_environment(bytes: &[u8]) -> Vec<EnvironmentEntry> {
@@ -50,8 +40,8 @@ pub struct AuxEntry {
     pub tag: String,
     pub name: String,
     #[serde(
-        serialize_with = "crate::model::memory::hex",
-        deserialize_with = "crate::model::memory::deserialize_hex"
+        serialize_with = "crate::http_server::model::memory::hex",
+        deserialize_with = "crate::http_server::model::memory::deserialize_hex"
     )]
     pub value: u64,
     pub decimal: String,
@@ -59,13 +49,6 @@ pub struct AuxEntry {
     pub description: String,
     pub text: Option<String>,
     pub text_error: Option<String>,
-}
-#[derive(Debug, Serialize, serde::Deserialize)]
-pub struct AuxVector {
-    pub process_id: ProcessId,
-    pub captured_at: u64,
-    pub word_bits: u8,
-    pub entries: Vec<AuxEntry>,
 }
 
 fn aux_info(tag: u64) -> (&'static str, &'static str, &'static str) {

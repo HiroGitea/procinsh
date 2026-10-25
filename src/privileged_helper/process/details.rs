@@ -105,7 +105,7 @@ pub(super) fn auxv(id: ProcessId) -> Result<crate::ipc::acquisition::AuxData> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::details::{parse_auxv, parse_environment};
+    use crate::http_server::analysis::details::{parse_auxv, parse_environment};
 
     #[test]
     fn environment_preserves_duplicates_empty_values_and_equals() {

@@ -15,24 +15,24 @@
 
 pub use crate::ipc::model::process::*;
 use crate::{
+    http_server::model::threads::{ThreadObservation, ThreadSample},
     ipc::schema::ProcessId,
-    model::threads::{ThreadObservation, ThreadSample},
 };
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::process::IoStats")]
+#[serde(remote = "crate::http_server::model::process::IoStats")]
 struct IoStatsJson {
     pub read_bytes: u64,
     pub write_bytes: u64,
 }
-impl serde::Serialize for crate::model::process::IoStats {
+impl serde::Serialize for crate::http_server::model::process::IoStats {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         IoStatsJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::process::IoStats {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::process::IoStats {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         IoStatsJson::deserialize(d)
     }
@@ -40,7 +40,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::process::IoStats {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::process::Rates")]
+#[serde(remote = "crate::http_server::model::process::Rates")]
 struct RatesJson {
     pub minor_faults: Option<f64>,
     pub major_faults: Option<f64>,
@@ -49,13 +49,13 @@ struct RatesJson {
     pub read_bytes: Option<f64>,
     pub write_bytes: Option<f64>,
 }
-impl serde::Serialize for crate::model::process::Rates {
+impl serde::Serialize for crate::http_server::model::process::Rates {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         RatesJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::process::Rates {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::process::Rates {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         RatesJson::deserialize(d)
     }
@@ -64,7 +64,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::process::Rates {
 /// Serializable counters and derived rates, without raw ticks or monotonic sampling state.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::process::ProcessObservation")]
+#[serde(remote = "crate::http_server::model::process::ProcessObservation")]
 struct ProcessObservationJson {
     pub timestamp: u64,
     pub process_id: ProcessId,
@@ -82,13 +82,13 @@ struct ProcessObservationJson {
     pub nice: i64,
     pub priority: i64,
 }
-impl serde::Serialize for crate::model::process::ProcessObservation {
+impl serde::Serialize for crate::http_server::model::process::ProcessObservation {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         ProcessObservationJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::process::ProcessObservation {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::process::ProcessObservation {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         ProcessObservationJson::deserialize(d)
     }
@@ -97,7 +97,7 @@ impl<'de> serde::Deserialize<'de> for crate::model::process::ProcessObservation 
 /// Raw process and thread counters with monotonic measurement time; no derived rates.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
-#[serde(remote = "crate::model::process::ProcessSample")]
+#[serde(remote = "crate::http_server::model::process::ProcessSample")]
 struct ProcessSampleJson {
     pub timestamp: u64,
     pub process_id: ProcessId,
@@ -115,13 +115,13 @@ struct ProcessSampleJson {
     pub ticks: u64,
     pub measured_at: u64,
 }
-impl serde::Serialize for crate::model::process::ProcessSample {
+impl serde::Serialize for crate::http_server::model::process::ProcessSample {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         ProcessSampleJson::serialize(self, s)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for crate::model::process::ProcessSample {
+impl<'de> serde::Deserialize<'de> for crate::http_server::model::process::ProcessSample {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         ProcessSampleJson::deserialize(d)
     }

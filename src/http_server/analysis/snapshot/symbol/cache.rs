@@ -8,7 +8,7 @@
 //! | [`ElfFileId`] | `pub` | `type ElfFileId = (u64, u64, u64, i64, i64)` |
 //! | [`ElfCache`] | `pub` | `struct ElfCache` |
 
-use crate::model::memory::MemoryMap;
+use crate::http_server::model::memory::MemoryMap;
 use object::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
 use std::{
     collections::HashMap,

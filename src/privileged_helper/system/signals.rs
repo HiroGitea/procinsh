@@ -23,7 +23,7 @@ use std::sync::{
 const MAX_EVENTS: usize = 1024;
 
 #[cfg(test)]
-use crate::analysis::activity::resolve_signal as resolve;
+use crate::http_server::analysis::activity::resolve_signal as resolve;
 use crate::ipc::activity::SignalSample;
 use crate::privileged_helper::abi::decode_signal as decode;
 /// Owns the signal_generate hook and a bounded batch of process-level observations.

@@ -5,11 +5,11 @@
 //! Shared observation values and calculations come from [`crate::ipc::model::process`].
 #[cfg(test)]
 use super::super::procfs::IoStats;
-pub(in crate::privileged_helper::process) use crate::ipc::model::process::ProcessSample;
 #[cfg(test)]
-pub(in crate::privileged_helper::process) use crate::model::process::{
+pub(in crate::privileged_helper::process) use crate::http_server::model::process::{
     initial_observation, next_observation,
 };
+pub(in crate::privileged_helper::process) use crate::ipc::model::process::ProcessSample;
 use crate::privileged_helper::process::{self, ProcessId, procfs, threads};
 use anyhow::Result;
 pub(in crate::privileged_helper::process) fn capture_sample(

@@ -384,7 +384,7 @@ pub(super) fn collect_from(
         .collect();
     #[cfg(test)]
     {
-        truncated |= crate::analysis::relations::build(&mut result);
+        truncated |= crate::http_server::analysis::relations::build(&mut result);
     }
     add_remote_gids(&mut result, &inode_ns, sources);
     let pids = result

@@ -1014,7 +1014,10 @@ executables are built together. PID and Unix peer identity checks remain part of
 helper authentication. Frame lengths, collection lengths, tags, UTF-8 and socket
 deadlines are validated.
 
-`src/` contains only `ipc`, `privileged_helper` and `http_server`. Each executable includes the same
+`src/` contains only `ipc`, `privileged_helper` and `http_server`. The two executable
+subsystems expose only `run`; analysis, JSON adapters and presentation models are
+private children of `http_server`. IPC modules are visible only within the crate.
+Each executable includes the same
 IPC source definitions; main supplies their serde implementations through remote
 derives and JSON adapters. IPC has no serde or JSON values. The normal helper build
 does not include main's HTTP, JSON, ELF/DWARF, framehop, iced-x86, hardware-topology
