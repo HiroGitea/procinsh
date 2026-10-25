@@ -3,7 +3,7 @@ use super::sample::SampleSource;
 use super::sample::monotonic_ns;
 use super::{
     arch::{Architecture, native},
-    disasm::Disassembly,
+    instruction_bytes::InstructionBytes,
     perf::PerfEventReader,
     registers::{self, Register},
     stack::StackFrame,
@@ -36,7 +36,7 @@ pub(in crate::privileged_helper::process) struct ThreadSample {
     lost_samples: u64,
     registers: Vec<Register>,
     call_stack: Vec<StackFrame>,
-    disassembly: Option<Disassembly>,
+    disassembly: Option<InstructionBytes>,
     unwind_stop: String,
     error: Option<String>,
 }
@@ -273,8 +273,7 @@ fn process_sample(
             });
         apply_symbol_info(frame, info);
     }
-    let mut code = Disassembly::capture(pid, r.0[native::PC], maps);
-    code.decode();
+    let code = InstructionBytes::capture(pid, r.0[native::PC], maps);
     let age = monotonic_ns().saturating_sub(sample.time_ns) / 1_000_000;
     thread.sampled_ns = Some(sample.time_ns);
     thread.latest = ThreadSample {
@@ -717,7 +716,7 @@ mod live_tests {
             });
             let first = sampler.latest()[0].clone();
             assert_eq!(first.registers.len(), 18);
-            assert!(!first.disassembly.as_ref().unwrap().instructions.is_empty());
+            assert!(!first.disassembly.as_ref().unwrap().bytes.is_empty());
             if name.starts_with("recursive") {
                 assert!(first.call_stack.len() >= 4, "{:?}", first.call_stack);
                 assert!(

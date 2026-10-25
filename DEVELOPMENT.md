@@ -91,7 +91,7 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 | `src/http_server/hosts/` | Multiple hosts: agent links (framing, authentication, reconnection), forwarding helper requests to agents, the host list, cross-host connection matching |
 | `src/privileged_helper/process/monitoring/` | Independent observations per connection, 60-second history, latest-state delivery |
 | `src/privileged_helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
-| `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, DWARF CFI unwinding with framehop, disassembly |
+| `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, DWARF CFI unwinding with framehop, instruction-byte capture |
 | `src/privileged_helper/process/snapshot/symbol/` | ELF retrieval/caching, address conversion, symbol/source location resolution using ELF/DWARF |
 | `src/privileged_helper/process/snapshot/stack.rs` | Frame types shared by sampling and symbol resolution |
 | `src/privileged_helper/system/` | Structure of all processes, subscriptions, BPF collection, name resolution |
@@ -161,8 +161,10 @@ SYS_ADMIN, PERFMON and BPF, clears inheritable/ambient sets, and sets
 `no_new_privs`. It never binds HTTP. Missing capabilities reduce coverage;
 operation permissions still depend on kernel/namespace policy. ELF parsing
 uses verified open descriptors and bounded sections, without loading external
-DWO/DWP paths; unsupported files retain raw-frame fallbacks. Symbol resolution,
-unwinding and disassembly finish in the helper before results cross IPC.
+DWO/DWP paths; unsupported files retain raw-frame fallbacks. Symbol resolution
+and unwinding finish in the helper before results cross IPC. Instruction bytes
+are captured in the helper; iced-x86 decoding and Intel formatting run in the
+unprivileged HTTP process after IPC receipt.
 
 ### Launch, protocol and lifetime
 
@@ -445,7 +447,7 @@ The 18 registers and stack come from the same perf sample or ptrace stop. Frameh
 
 SSE `live_samples` includes TID, `sampled_at` (Unix ms), `sample_age_ms` (monotonic clock), CPU, `lost_samples`, registers, call_stack, disassembly, unwind_stop, and error. Before capture, time is null and the UI shows Waiting for sample; captured values show age in the Threads list. Sleeping/blocked threads attempt updates through ptrace every 10 seconds, retaining the last values otherwise. These are saved user-space states, not the current values of sleeping threads. Threads sleeping before observation can be captured in the initial delivery if ptrace is allowed. An initial failure waits for the next execution/switch-out or a ptrace retry after 10 seconds. The Registers panel shows only the register table. Capture source and voluntary/preempted distinctions remain internal and are not exposed through the GUI or HTTP API. Simultaneous state across all threads is not guaranteed. Insufficient perf permissions appear as thread errors in Threads. Collector errors are retained in API `sampling_error` while ordinary observations continue.
 
-The Disassembly panel shows instructions and retrieval errors. Disassembly is best effort, reading after sampling from the sampled RIP using `process_vm_readv`. Iced-x86 decodes up to 256 bytes and 32 instructions. JIT/self-modifying code bytes may not match the sampled RIP's state. 32-bit compatibility mode is unsupported.
+The Disassembly panel shows instructions and retrieval errors. Disassembly is best effort, reading after sampling from the sampled RIP using `process_vm_readv`. The helper captures up to 256 bytes; the unprivileged HTTP process uses iced-x86 to decode up to 32 instructions. JIT/self-modifying code bytes may not match the sampled RIP's state. 32-bit compatibility mode is unsupported.
 
 PERF_RECORD_LOST, ring overruns, and invalid records count as loss. RAII releases FDs/mmap mappings on thread exit, target exit, SSE disconnection, and server shutdown. CAP_SYS_PTRACE and process_vm_readv are used for ptrace snapshots, auxv, and live disassembly.
 

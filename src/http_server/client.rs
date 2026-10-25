@@ -81,7 +81,9 @@ impl MonitorClient {
                         return Err(error).context("monitor IPC request timed out");
                     }
                 };
-                response.map_err(anyhow::Error::msg)
+                let mut response = response.map_err(anyhow::Error::msg)?;
+                super::disasm::decode_response(&mut response)?;
+                Ok(response)
             }
         }
     }

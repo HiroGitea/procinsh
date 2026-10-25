@@ -1,5 +1,5 @@
 //! Initial and ten-second ptrace snapshots, non-stopping perf samples,
-//! sampled-stack unwind and best-effort live disassembly.
+//! sampled-stack unwind and best-effort instruction-byte capture.
 //!
 //! # Interface
 //!
@@ -10,7 +10,7 @@
 
 mod arch;
 mod capture;
-mod disasm;
+mod instruction_bytes;
 mod perf;
 mod ptrace;
 mod registers;

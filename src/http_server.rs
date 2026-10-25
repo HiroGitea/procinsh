@@ -7,6 +7,7 @@
 mod api;
 mod client;
 mod delivery;
+mod disasm;
 mod hosts;
 #[cfg(test)]
 mod hosts_link_tests;
