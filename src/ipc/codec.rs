@@ -14,12 +14,9 @@
 //! Struct fields follow their declared wire order; enum variants have explicit
 //! byte tags. Strings and collections have u32 lengths. Integers and floats use
 //! their native byte representation. Rust padding, pointers and container layouts
-//! are never copied. The peers must use the same protocol version and architecture.
+//! are never copied. The peers run on the same machine and are built together.
 use anyhow::{Result, bail, ensure};
-use serde_json::Value;
-use std::{collections::BTreeMap, sync::Arc};
-
-pub(crate) const MAGIC: &[u8; 4] = b"PCI1";
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct LimitExceeded;
@@ -36,7 +33,6 @@ pub struct Encoder {
 }
 pub struct Decoder<'a> {
     bytes: &'a [u8],
-    depth: usize,
 }
 /// An owned value with an explicit wire representation independent of Rust layout.
 pub trait Wire: Sized {
@@ -80,29 +76,17 @@ impl<'a> Decoder<'a> {
         let length = self.length()?;
         self.take(length)
     }
-    fn nested<T>(&mut self, read: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
-        ensure!(self.depth < 128, "monitor value nesting limit exceeded");
-        self.depth += 1;
-        let result = read(self);
-        self.depth -= 1;
-        result
-    }
 }
 pub fn encode<T: Wire>(value: &T, limit: usize) -> Result<Vec<u8>> {
     let mut output = Encoder {
         bytes: Vec::new(),
         limit: limit.min(u32::MAX as usize),
     };
-    output.append(MAGIC)?;
     value.write(&mut output)?;
     Ok(output.bytes)
 }
 pub fn decode<T: Wire>(bytes: &[u8]) -> Result<T> {
-    let mut input = Decoder { bytes, depth: 0 };
-    ensure!(
-        input.take(MAGIC.len())? == MAGIC,
-        "unsupported monitor protocol version"
-    );
+    let mut input = Decoder { bytes };
     let value = T::read(&mut input)?;
     ensure!(input.bytes.is_empty(), "trailing monitor bytes");
     Ok(value)
@@ -276,90 +260,6 @@ impl Wire for std::net::SocketAddr {
     }
 }
 
-impl Wire for Value {
-    fn write(&self, output: &mut Encoder) -> Result<()> {
-        match self {
-            Self::Null => 0u8.write(output),
-            Self::Bool(false) => 1u8.write(output),
-            Self::Bool(true) => 2u8.write(output),
-            Self::Number(value) => {
-                if let Some(value) = value.as_u64() {
-                    3u8.write(output)?;
-                    value.write(output)
-                } else if let Some(value) = value.as_i64() {
-                    4u8.write(output)?;
-                    value.write(output)
-                } else {
-                    5u8.write(output)?;
-                    value
-                        .as_f64()
-                        .ok_or_else(|| anyhow::anyhow!("invalid monitor number"))?
-                        .write(output)
-                }
-            }
-            Self::String(value) => {
-                6u8.write(output)?;
-                value.write(output)
-            }
-            Self::Array(values) => {
-                if values
-                    .iter()
-                    .all(|value| value.as_u64().is_some_and(|value| value <= 255))
-                {
-                    9u8.write(output)?;
-                    output.length(values.len())?;
-                    for value in values {
-                        output.append(&[value.as_u64().unwrap() as u8])?;
-                    }
-                    Ok(())
-                } else {
-                    7u8.write(output)?;
-                    values.write(output)
-                }
-            }
-            Self::Object(values) => {
-                8u8.write(output)?;
-                output.length(values.len())?;
-                for (key, value) in values {
-                    key.write(output)?;
-                    value.write(output)?;
-                }
-                Ok(())
-            }
-        }
-    }
-    fn read(input: &mut Decoder<'_>) -> Result<Self> {
-        input.nested(|input| {
-            Ok(match u8::read(input)? {
-                0 => Self::Null,
-                1 => Self::Bool(false),
-                2 => Self::Bool(true),
-                3 => Self::from(u64::read(input)?),
-                4 => Self::from(i64::read(input)?),
-                5 => Self::Number(
-                    serde_json::Number::from_f64(f64::read(input)?)
-                        .ok_or_else(|| anyhow::anyhow!("invalid monitor float"))?,
-                ),
-                6 => Self::String(String::read(input)?),
-                7 => Self::Array(Vec::read(input)?),
-                8 => {
-                    let length = input.length()?;
-                    let mut values = BTreeMap::new();
-                    for _ in 0..length {
-                        let key = String::read(input)?;
-                        ensure!(
-                            values.insert(key, Self::read(input)?).is_none(),
-                            "duplicate monitor field"
-                        );
-                    }
-                    Self::Object(values.into_iter().collect())
-                }
-                9 => Self::Array(input.blob()?.iter().copied().map(Self::from).collect()),
-                _ => bail!("invalid monitor value tag"),
-            })
-        })
-    }
-}
 macro_rules! wire_struct {
     ($type:ty { $($field:ident),* $(,)? })=>{
         impl $crate::ipc::codec::Wire for $type {
@@ -394,15 +294,17 @@ pub(crate) use {wire_enum, wire_struct};
 mod tests {
     use super::*;
     use crate::ipc::schema::*;
-    use serde_json::json;
     #[test]
-    fn native_fields_preserve_numeric_values_strings_and_socket_scope() {
-        let value = json!({"unsigned":u64::MAX,"signed":i64::MIN,"float":1.25,"bytes":[0,1,255],"empty":[],"text":"日本語\0literal","nested":{"value":null,"flag":true}});
-        let bytes = encode(&value, 4096).unwrap();
-        assert_eq!(decode::<Value>(&bytes).unwrap(), value);
+    fn native_numbers_strings_and_socket_scope_roundtrip() {
         let scalar = 0x0102030405060708u64;
-        let number = encode(&scalar, 128).unwrap();
-        assert_eq!(&number[4..], &scalar.to_ne_bytes());
+        let bytes = encode(&scalar, 128).unwrap();
+        assert_eq!(bytes, scalar.to_ne_bytes());
+        assert_eq!(decode::<u64>(&bytes).unwrap(), scalar);
+        let text = "日本語\0literal".to_owned();
+        assert_eq!(
+            decode::<String>(&encode(&text, 1024).unwrap()).unwrap(),
+            text
+        );
         let address = std::net::SocketAddr::V6(std::net::SocketAddrV6::new(
             "fe80::1".parse().unwrap(),
             9090,
@@ -413,78 +315,49 @@ mod tests {
             decode::<std::net::SocketAddr>(&encode(&address, 128).unwrap()).unwrap(),
             address
         );
+        assert!(decode::<bool>(&[2]).is_err());
+        assert!(decode::<Vec<u64>>(&u32::MAX.to_ne_bytes()).is_err());
+        assert!(decode::<String>(&[1, 0, 0, 0, 255]).is_err());
+        assert!(encode(&text, 8).unwrap_err().is::<LimitExceeded>());
     }
     #[test]
     fn closed_requests_reject_truncation_unknown_tags_and_trailing_fields() {
-        let request = MonitorRequest::MappedElf {
+        let request = MonitorRequest::Process {
             id: ProcessId {
                 pid: 42,
                 start_time_ticks: u64::MAX,
             },
-            mapping_start: 0x1234,
-            known_file: Some((1, 2, 3, 4, 5)),
+            resource: ProcessResource::Maps,
         };
         let bytes = encode(&request, MAX_REQUEST).unwrap();
         assert!(matches!(
             decode::<MonitorRequest>(&bytes).unwrap(),
-            MonitorRequest::MappedElf {
-                id: ProcessId {
-                    pid: 42,
-                    start_time_ticks: u64::MAX
-                },
-                mapping_start: 0x1234,
-                known_file: Some((1, 2, 3, 4, 5))
+            MonitorRequest::Process {
+                resource: ProcessResource::Maps,
+                ..
             }
         ));
-        for length in 0..bytes.len() {
-            assert!(decode::<MonitorRequest>(&bytes[..length]).is_err());
+        for n in 0..bytes.len() {
+            assert!(decode::<MonitorRequest>(&bytes[..n]).is_err());
         }
-        let mut extra = bytes.clone();
+        let mut extra = bytes;
         extra.push(0);
         assert!(decode::<MonitorRequest>(&extra).is_err());
-        let mut unknown = MAGIC.to_vec();
-        unknown.push(255);
-        assert!(decode::<MonitorRequest>(&unknown).is_err());
-        let mut invalid_option = bytes;
-        invalid_option[4 + 1 + 4 + 8 + 8] = 2;
-        assert!(decode::<MonitorRequest>(&invalid_option).is_err());
-    }
-    #[test]
-    fn malformed_lengths_utf8_booleans_depth_and_output_limits_are_rejected() {
-        let mut length = MAGIC.to_vec();
-        length.extend_from_slice(&u32::MAX.to_ne_bytes());
-        assert!(decode::<Vec<u64>>(&length).is_err());
-        let mut text = MAGIC.to_vec();
-        text.extend_from_slice(&1u32.to_ne_bytes());
-        text.push(255);
-        assert!(decode::<String>(&text).is_err());
-        let mut boolean = MAGIC.to_vec();
-        boolean.push(2);
-        assert!(decode::<bool>(&boolean).is_err());
-        let mut deep = MAGIC.to_vec();
-        for _ in 0..129 {
-            deep.push(7);
-            deep.extend_from_slice(&1u32.to_ne_bytes());
-        }
-        deep.push(0);
-        assert!(decode::<Value>(&deep).is_err());
-        assert!(
-            encode(&"too large".to_string(), 8)
-                .unwrap_err()
-                .is::<LimitExceeded>()
-        );
+        assert!(decode::<MonitorRequest>(&[255]).is_err());
     }
     #[test]
     fn captured_snapshots_remain_typed_until_main_processing() {
-        let snapshot = crate::model::system::SystemSnapshot {
+        let snapshot = crate::ipc::model::system::SystemSnapshot {
             captured_at: 123,
             raw_sockets: vec![(
                 10,
-                crate::model::sockets::SocketInfo {
-                    protocol: crate::model::socket_types::SocketProtocol::Tcp {
-                        family: crate::model::socket_types::AddressFamily::Ipv6,
+                crate::ipc::model::sockets::SocketInfo {
+                    protocol: crate::ipc::model::socket_types::SocketProtocol::Tcp {
+                        family: crate::ipc::model::socket_types::AddressFamily::Ipv6,
                     },
-                    state: Some(crate::model::socket_types::SocketState::UnknownInet(99)),
+                    state: Some(crate::ipc::model::socket_types::SocketState::UnknownInet(
+                        99,
+                    )),
                     local: Some("[::1]:1234".parse().unwrap()),
                     remote: None,
                     path: None,
@@ -503,7 +376,9 @@ mod tests {
         assert_eq!(decoded.raw_sockets[0].0, 10);
         assert_eq!(
             decoded.raw_sockets[0].1.state,
-            Some(crate::model::socket_types::SocketState::UnknownInet(99))
+            Some(crate::ipc::model::socket_types::SocketState::UnknownInet(
+                99
+            ))
         );
     }
 }

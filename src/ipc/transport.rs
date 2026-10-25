@@ -42,18 +42,11 @@ pub fn read_timeout<T: Wire>(
     read_until(socket, &mut header, deadline).context("monitor IPC disconnected or timed out")?;
     let size = u32::from_ne_bytes(header) as usize;
     ensure!(
-        size >= codec::MAGIC.len() && size <= limit,
+        size > 0 && size <= limit,
         "invalid monitor frame length: {size}"
     );
-    let mut magic = [0; 4];
-    read_until(socket, &mut magic, deadline).context("truncated monitor protocol header")?;
-    ensure!(
-        &magic == codec::MAGIC,
-        "unsupported monitor protocol version"
-    );
     let mut bytes = vec![0; size];
-    bytes[..4].copy_from_slice(&magic);
-    read_until(socket, &mut bytes[4..], deadline).context("truncated monitor IPC frame")?;
+    read_until(socket, &mut bytes, deadline).context("truncated monitor IPC frame")?;
     codec::decode(&bytes).context("invalid monitor IPC message")
 }
 
@@ -110,7 +103,7 @@ fn write_until(
 mod tests {
     use super::*;
     use crate::{
-        analysis::snapshot::symbol::ElfFile,
+        ipc::elf::{FileChunk, MappedFileData},
         ipc::schema::{MAX_RESPONSE, MonitorResponse, WireResponse},
     };
     #[test]
@@ -119,9 +112,12 @@ mod tests {
         let length = 33 * 1024 * 1024;
         let (mut sender, mut receiver) = UnixStream::pair().unwrap();
         let writer = std::thread::spawn(move || {
-            let reply: WireResponse = Ok(MonitorResponse::Elf(Some(ElfFile {
+            let reply: WireResponse = Ok(MonitorResponse::Elf(Some(MappedFileData {
                 identity: (1, 2, length as u64, 3, 4),
-                bytes: (0..length).map(|index| index as u8).collect(),
+                chunks: vec![FileChunk {
+                    offset: 0,
+                    bytes: (0..length).map(|index| index as u8).collect(),
+                }],
             })));
             write(&mut sender, &reply, MAX_RESPONSE).unwrap();
         });
@@ -130,9 +126,10 @@ mod tests {
             panic!("expected typed ELF reply")
         };
         assert_eq!(file.identity, (1, 2, length as u64, 3, 4));
-        assert_eq!(file.bytes.len(), length);
+        assert_eq!(file.chunks[0].bytes.len(), length);
         assert!(
-            file.bytes
+            file.chunks[0]
+                .bytes
                 .iter()
                 .enumerate()
                 .all(|(index, byte)| *byte == index as u8)
@@ -140,19 +137,11 @@ mod tests {
         writer.join().unwrap();
     }
     #[test]
-    fn protocol_version_is_checked_before_allocating_a_large_frame() {
+    fn oversize_frame_is_rejected_before_reading_the_body() {
         let (mut sender, mut receiver) = UnixStream::pair().unwrap();
         sender
-            .write_all(&(MAX_RESPONSE as u32).to_ne_bytes())
+            .write_all(&((MAX_RESPONSE + 1) as u32).to_ne_bytes())
             .unwrap();
-        sender.write_all(b"OLD0").unwrap();
-        let error = read::<WireResponse>(&mut receiver, MAX_RESPONSE)
-            .err()
-            .unwrap();
-        assert!(
-            error
-                .to_string()
-                .contains("unsupported monitor protocol version")
-        );
+        assert!(read::<WireResponse>(&mut receiver, MAX_RESPONSE).is_err());
     }
 }

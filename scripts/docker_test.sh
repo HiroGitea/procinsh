@@ -45,7 +45,8 @@ run_suite() {
   local options=()
   case "$selected" in
     ordinary|kernel|rust|browser)
-      options+=(--cap-add=BPF --cap-add=PERFMON --cap-add=SYS_PTRACE
+      # Concurrent perf rings must not exhaust Docker's default memlock allowance.
+      options+=(--ulimit memlock=-1:-1 --cap-add=BPF --cap-add=PERFMON --cap-add=SYS_PTRACE
         --cap-add=DAC_READ_SEARCH --cap-add=SYS_ADMIN)
       ;;
   esac

@@ -20,10 +20,10 @@ fn main() {
         dist.join("assets").is_dir(),
         "Missing frontend assets. Run `npm --prefix web ci && npm --prefix web run build` before building with Cargo."
     );
-    println!("cargo:rerun-if-changed=src/privileged_helper/system/sched.bpf.c");
-    println!("cargo:rerun-if-changed=src/privileged_helper/system/ipc.bpf.c");
-    println!("cargo:rerun-if-changed=src/privileged_helper/system/files.bpf.c");
-    println!("cargo:rerun-if-changed=src/privileged_helper/system/signals.bpf.c");
+    println!("cargo:rerun-if-changed=src/helper/system/sched.bpf.c");
+    println!("cargo:rerun-if-changed=src/helper/system/ipc.bpf.c");
+    println!("cargo:rerun-if-changed=src/helper/system/files.bpf.c");
+    println!("cargo:rerun-if-changed=src/helper/system/signals.bpf.c");
     println!("cargo:rerun-if-env-changed=BPFTOOL");
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let bpftool = env::var_os("BPFTOOL").unwrap_or_else(|| "bpftool".into());
@@ -57,7 +57,7 @@ fn main() {
     };
     for name in ["sched", "ipc", "files", "signals"] {
         libbpf_cargo::SkeletonBuilder::new()
-            .source(format!("src/privileged_helper/system/{name}.bpf.c"))
+            .source(format!("src/helper/system/{name}.bpf.c"))
             .clang_args([
                 format!("-I{}", out.display()),
                 format!("-D__TARGET_ARCH_{target_arch}"),

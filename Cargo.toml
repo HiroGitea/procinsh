@@ -19,8 +19,13 @@ include = [
     "/web/dist/**",
 ]
 
-[lib]
-name = "procinsh_protocol"
+[[bin]]
+name = "procinsh"
+path = "src/main/entry.rs"
+
+[[bin]]
+name = "procinsh-privileged-helper"
+path = "src/helper/entry.rs"
 
 [dependencies]
 log = "0.4"

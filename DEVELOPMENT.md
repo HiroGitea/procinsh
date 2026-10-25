@@ -82,25 +82,26 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 
 | Location | Responsibility |
 |---|---|
-| `src/main.rs` | CLI, logger initialization, startup configuration validation |
-| `src/http_server/` | Unprivileged HTTP, helper supervision, IPC client and SSE formatting |
-| `src/privileged_helper/` | Privileged acquisition, collectors and IPC request dispatch |
+| `src/main/entry.rs` | CLI, logger initialization, startup configuration validation |
+| `src/main/http_server/` | Unprivileged HTTP, helper supervision, IPC client and SSE formatting |
+| `src/helper/` | Privileged acquisition, collectors and IPC request dispatch |
 | `src/ipc/` | Message schema and bounded transport shared by both executables |
-| `src/http_server/api/` | HTTP input/responses, domain error to status conversion, JSON and SSE (Server-Sent Events) |
-| `src/http_server/web.rs` | Static web UI serving |
-| `src/http_server/hosts/` | Multiple hosts: agent links (framing, authentication, reconnection), forwarding helper requests to agents, the host list, cross-host connection matching |
-| `src/privileged_helper/process/monitoring/` | Independent observations per connection, 60-second history, latest-state delivery |
-| `src/privileged_helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
-| `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, instruction-byte capture |
-| `src/privileged_helper/process/elf.rs` | Identity-verified acquisition of mapped ELF bytes |
-| `src/analysis/snapshot/` | ELF/DWARF parsing, caching, framehop unwinding, register classification and symbol/source resolution in main |
-| `src/http_server/processing.rs` | Main-side interpretation of raw IPC responses before HTTP output |
-| `src/model/` | Shared typed acquisition values |
-| `src/analysis/snapshot/stack.rs` | Stack frame values |
-| `src/privileged_helper/system/` | Structure of all processes, subscriptions, BPF collection, name resolution |
-| `src/privileged_helper/system/rdma/` | RDMA queue pairs, connection manager IDs, and ports via RDMA netlink, IPoIB neighbors, and sysfs |
-| `src/analysis/hardware/` | GPUs, RDMA NICs, accelerators, NVSwitches, PCIe bridges, inter-device paths, and processes holding devices open, using sysfs/procfs |
-| `src/privileged_helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
+| `src/main/http_server/api/` | HTTP input/responses, domain error to status conversion, JSON and SSE (Server-Sent Events) |
+| `src/main/http_server/web.rs` | Static web UI serving |
+| `src/helper/process/monitoring/` | Independent acquisition per connection, latest-state delivery |
+| `src/helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
+| `src/helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, instruction-byte capture |
+| `src/helper/process/elf.rs` | Identity-verified acquisition of mapped ELF bytes |
+| `src/main/analysis/snapshot/` | ELF/DWARF parsing, caching, framehop unwinding, register classification and symbol/source resolution in main |
+| `src/main/http_server/processing.rs` | Main-side interpretation of raw IPC responses before HTTP output |
+| `src/ipc/model/` | Native data values shared through IPC, without serde |
+| `src/main/model/`, `src/main/json/` | Main-only JSON representations of shared values |
+| `src/ipc/stack.rs` | Stack frame values |
+| `src/helper/system/` | Protected system snapshots, subscriptions and BPF collection |
+| `src/main/analysis/hardware/` | GPUs, RDMA NICs, accelerators, NVSwitches, PCIe bridges, inter-device paths, and processes holding devices open, using sysfs/procfs |
+| `src/helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
+| `src/main/http_server/hosts/` | Agent links, host registry, and cross-host connection matching |
+| `src/helper/system/rdma/` | RDMA acquisition through netlink and sysfs |
 | `web/src/` | TypeScript pages, SPACE, rendering models, and CSS (HTML entry points: `web/{list,process,space}/index.html`) |
 | `tests/` | Rust, browser, log, and live sensor tests, plus C fixtures |
 
@@ -120,7 +121,7 @@ HTTP handlers use the shared IPC schema in `ipc/schema.rs` and the client in `ht
 
 As an exception, domain types and subscription operations re-exported through façades use `pub(in crate::privileged_helper)`. This visibility allows parents to re-export items from private children; it does not expose them outside the crate. Internal tests live in their respective modules. `tests/http.rs` starts the binary to verify HTTP, SSE, and SIGTERM shutdown.
 
-Tokio/Axum handles HTTP and SSE. Detail APIs send bounded IPC requests to the helper. Periodic process observation and system-wide structure/activity collection run on helper OS threads. Process detail monitoring has independent state per connection. HTTP `AppState` holds the IPC client and shutdown state; helper `MonitorState` owns the process scanner and collection subsystems. Process monitoring manages connection counts and collectors; each collector manages its perf lifecycle. Main owns symbol/unwind caches, per-session rate calculations and histories. See [the privilege boundary](developer-docs/privilege-boundary.md).
+Tokio/Axum handles HTTP and SSE. Detail APIs send bounded IPC requests to the helper. Periodic process observation and system-wide structure/activity collection run on helper OS threads. Process detail monitoring has independent state per connection. HTTP `AppState` holds the IPC client and shutdown state; helper `MonitorState` owns the process scanner and collection subsystems. Process monitoring manages connection counts and collectors; each collector manages its perf lifecycle. Main owns symbol/unwind caches, per-session rate calculations and histories. See [Acquisition and analysis boundary](#acquisition-and-analysis-boundary).
 
 Web UI API types live in `web/src/shared/api-types.ts` and are maintained alongside Rust JSON responses. The contract includes null handling and hexadecimal address strings. These are compile-time types, not runtime input validation. Vite bundles Three.js as an npm dependency; TypeScript and type definitions are build-only npm dependencies.
 
@@ -395,9 +396,9 @@ Use SSE for continuous CPU usage, per-second increments, and history. Ordinary `
 
 `GET /api/processes/fds` verifies identity and liveness, then collects pipe/FIFO/socket FDs, access direction, candidate peers, and owners sharing the same resource. UNIX domain socket peers are discovered with socket diagnostics. TCP/UDP candidates are found using information from the target process's network namespace. Shared owners and communication peers are distinct; no reads consume data. Scans are limited to three seconds, 100,000 FDs, and 8,192 matching FDs; results report truncation and similar conditions.
 
-See [fds.rs](src/privileged_helper/process/fds.rs) for FD collection, candidate matching, and searches for processes/FDs owning candidates. UNIX domain socket peer inode retrieval is in [socket diagnostics](src/privileged_helper/process/sockets.rs).
+See [fds.rs](src/helper/process/fds.rs) for FD collection, candidate matching, and searches for processes/FDs owning candidates. UNIX domain socket peer inode retrieval is in [socket diagnostics](src/helper/process/sockets.rs).
 
-Socket types are collected independently of peer identification and shown in SPACE connection details and process FD lists. Collection uses Netlink, RAW, and packet procfs tables as well as TCP, UDP, and UNIX tables. [SocketMetadataReader](src/privileged_helper/process/socket_metadata.rs) temporarily duplicates socket FDs with `pidfd_open`/`pidfd_getfd` and reads `SO_DOMAIN`, `SO_TYPE`, `SO_PROTOCOL`, `SO_ACCEPTCONN`, and `getpeername`. Type, listening status, and peer presence are handled separately. Successful direct observations are shared within each collection by device/inode. Process start times and socket device/inode are validated; pidfds are retained per process during a scan. Duplicated FDs are closed immediately. Collection does not send/receive data, alter socket settings, or stop targets. Pidfd duplication requires ptrace permission; on insufficient permission or unsupported kernels, types obtained through procfs are retained.
+Socket types are collected independently of peer identification and shown in SPACE connection details and process FD lists. Collection uses Netlink, RAW, and packet procfs tables as well as TCP, UDP, and UNIX tables. [SocketMetadataReader](src/helper/process/socket_metadata.rs) temporarily duplicates socket FDs with `pidfd_open`/`pidfd_getfd` and reads `SO_DOMAIN`, `SO_TYPE`, `SO_PROTOCOL`, `SO_ACCEPTCONN`, and `getpeername`. Type, listening status, and peer presence are handled separately. Successful direct observations are shared within each collection by device/inode. Process start times and socket device/inode are validated; pidfds are retained per process during a scan. Duplicated FDs are closed immediately. Collection does not send/receive data, alter socket settings, or stop targets. Pidfd duplication requires ptrace permission; on insufficient permission or unsupported kernels, types obtained through procfs are retained.
 
 The process FD list shows known types even for unconnected sockets, such as `TCP`, `NETLINK KOBJECT_UEVENT`, or `VSOCK STREAM`. API protocols other than TCP, UDP, and UNIX use `kind: "other"` and Linux `family`, `socket_type`, and `protocol` numbers, retaining unrecognized values. The Netlink procfs table alone does not identify socket type, so `socket_type` is null in that case. Unknown connection state is `state: null`; neither state nor peer PID is inferred from type. A socket with unknown type appears as `Socket · Type unavailable` and is included in scan warnings.
 
@@ -413,7 +414,7 @@ Switching network namespaces requires `CAP_SYS_ADMIN`. [dev_run.sh](scripts/dev_
 
 ### Hardware
 
-Main enriches system snapshots using [analysis/hardware](src/analysis/hardware.rs) to read GPUs, RDMA NICs, accelerators, NVSwitches, and their upstream PCIe bridges up to host bridges from sysfs. This requires no privileges.
+Main enriches system snapshots using [analysis/hardware](src/main/analysis/hardware.rs) to read GPUs, RDMA NICs, accelerators, NVSwitches, and their upstream PCIe bridges up to host bridges from sysfs. This requires no privileges.
 
 - Discovery: upstream chains come from each device's real path under `/sys/bus/pci/devices`, such as `/sys/devices/pci0000:80/0000:80:03.4/0000:85:00.0`. Devices with `infiniband/` or class 0x0c06 are RDMA NICs; classes 0x0300/0x0302 are GPUs (excluding ASPEED/Matrox BMCs); class 0x12 denotes accelerators; NVIDIA class 0x0680 denotes NVSwitch. Only their upstream bridges are included.
 - Attributes: reads class, vendor, device, driver, numa_node, `current/max_link_speed`, `current/max_link_width`, power_state, `power/runtime_status`, iommu_group, and BARs from `resource`. It does not open `config` or BAR resize files, which could trigger runtime resume. Link speeds are not read for runtime-suspended devices. NVIDIA GPU model, UUID, and device minor come from `/proc/driver/nvidia/gpus/<address>/information`; vendor libraries such as NVML are not used.
@@ -439,8 +440,8 @@ Both are retrieved on demand after identity/liveness checks, rather than recolle
 
 These APIs read files exposed by procfs. Only auxv string references additionally read target process memory with `process_vm_readv`.
 
-- `GET /api/processes/environment`: reads up to 1 MiB from procfs [`/proc/<pid>/environ`](https://man7.org/linux/man-pages/man5/proc_pid_environ.5.html), splitting NUL-delimited entries at the first `=` into names and values. Duplicate names, empty values, and `=` within values are preserved. This usually reflects the environment region at exec time, not every subsequent change. See [file reading](src/privileged_helper/process/details.rs) and [environment parsing](src/privileged_helper/process/details.rs).
-- `GET /api/processes/auxv`: determines 32/64-bit mode from the ELF header of `/proc/<pid>/exe` and reads up to 64 KiB from procfs [`/proc/<pid>/auxv`](https://man7.org/linux/man-pages/man5/proc_pid_auxv.5.html). It parses tag/value pairs, handling known and unknown tags. String references for `AT_EXECFN`, `AT_PLATFORM`, and `AT_BASE_PLATFORM` are resolved with `process_vm_readv`, up to 4,096 bytes each. Numeric values remain when references cannot be read. Big-endian ELF is unsupported. See [ELF header and auxv reading](src/privileged_helper/process/details.rs), [string reference resolution](src/privileged_helper/process/details.rs), and [memory reading](src/privileged_helper/process/memory.rs).
+- `GET /api/processes/environment`: reads up to 1 MiB from procfs [`/proc/<pid>/environ`](https://man7.org/linux/man-pages/man5/proc_pid_environ.5.html), splitting NUL-delimited entries at the first `=` into names and values. Duplicate names, empty values, and `=` within values are preserved. This usually reflects the environment region at exec time, not every subsequent change. See [file reading](src/helper/process/details.rs) and [environment parsing](src/helper/process/details.rs).
+- `GET /api/processes/auxv`: determines 32/64-bit mode from the ELF header of `/proc/<pid>/exe` and reads up to 64 KiB from procfs [`/proc/<pid>/auxv`](https://man7.org/linux/man-pages/man5/proc_pid_auxv.5.html). It parses tag/value pairs, handling known and unknown tags. String references for `AT_EXECFN`, `AT_PLATFORM`, and `AT_BASE_PLATFORM` are resolved with `process_vm_readv`, up to 4,096 bytes each. Numeric values remain when references cannot be read. Big-endian ELF is unsupported. See [ELF header and auxv reading](src/helper/process/details.rs), [string reference resolution](src/helper/process/details.rs), and [memory reading](src/helper/process/memory.rs).
 
 ### Initial/periodic snapshots and live sampling without stopping the target
 
@@ -483,9 +484,9 @@ All sensors use CO-RE eBPF. CPU scheduling, IPC, and file I/O use independent eB
 
 | Sensor | Backend observations and limits | eBPF source |
 |---|---|---|
-| CPU | Aggregates runtime and running CPUs with `sched_switch` | [sched.bpf.c](src/privileged_helper/system/sched.bpf.c) |
-| IPC | Observes pipe read/write and socket send/receive results; no payload reads or MSG_PEEK counts; excludes splice/sendfile, some io_uring, and workers without known attribution | [ipc.bpf.c](src/privileged_helper/system/ipc.bpf.c) |
-| File I/O | Observes successful byte/count results of VFS read/write and vectored I/O, including page-cache access; excludes mmap, io_uring, splice/sendfile, and physical disk transfer volume | [files.bpf.c](src/privileged_helper/system/files.bpf.c) |
+| CPU | Aggregates runtime and running CPUs with `sched_switch` | [sched.bpf.c](src/helper/system/sched.bpf.c) |
+| IPC | Observes pipe read/write and socket send/receive results; no payload reads or MSG_PEEK counts; excludes splice/sendfile, some io_uring, and workers without known attribution | [ipc.bpf.c](src/helper/system/ipc.bpf.c) |
+| File I/O | Observes successful byte/count results of VFS read/write and vectored I/O, including page-cache access; excludes mmap, io_uring, splice/sendfile, and physical disk transfer volume | [files.bpf.c](src/helper/system/files.bpf.c) |
 
 File paths are captured at operation time; unavailable paths use identifiers such as device/inode. Unavailable BPF hooks produce per-sensor reasons in the status API and logs while collection of available information continues. Required kernel features and permissions vary by sensor.
 
@@ -526,7 +527,7 @@ The list, process detail, and SPACE pages have separate HTML and TypeScript entr
 | [shared/navigation.ts](web/src/shared/navigation.ts) | Process identity matching, API queries, detail links preserving start time |
 | [shared/api-types.ts](web/src/shared/api-types.ts) | TypeScript types matching Rust JSON/SSE responses; no runtime input validation |
 | [list/dom-types.ts](web/src/list/dom-types.ts), [process/dom-types.ts](web/src/process/dom-types.ts), [space/dom-types.ts](web/src/space/dom-types.ts) | HTML element ID/type mappings: `ListElements`, `ProcessElements`, `SpaceElements`; shared typed element lookup through `listElement`, `processElement`, `spaceElement` |
-| [web.rs](src/http_server/web.rs) | Embedding HTML/CSS, generated JavaScript, vendor files in the Rust binary and serving them at their URLs |
+| [web.rs](src/main/http_server/web.rs) | Embedding HTML/CSS, generated JavaScript, vendor files in the Rust binary and serving them at their URLs |
 
 TypeScript build settings are in [tsconfig.json](web/tsconfig.json), commands in [package.json](web/package.json). Generated HTML goes to `web/dist/{list,process,space}/index.html`, JS/CSS to `web/dist/assets/`. Browser routes `/`, `/list`, `/process/{pid}`, and `/space` serve the corresponding generated HTML; HTML references assets under `/assets/`. To view changes, build the web assets and Rust binary as described in [Build and runtime environment](#build-and-runtime-environment).
 
@@ -791,7 +792,7 @@ There is no authentication or TLS. Anyone who can connect can access process mem
 
 ## Logging
 
-Logging uses `log` and `env_logger`, writing timestamps, levels, source file paths, and line numbers (for example, `src/privileged_helper/system/service.rs:123`) to stderr. Default level is `info`. `RUST_LOG` filters still use module names.
+Logging uses `log` and `env_logger`, writing timestamps, levels, source file paths, and line numbers (for example, `src/helper/system/service.rs:123`) to stderr. Default level is `info`. `RUST_LOG` filters still use module names.
 
 - `info`: startup/shutdown, observation start/stop, target exit, collection state/recovery.
 - `warn`: observation failures, unavailable sensors; repeated identical states/errors are suppressed.
@@ -983,3 +984,61 @@ tests/targets/bin/recursive --allow-inspector
 - [Rust module dependencies](https://akawashiro.github.io/procinsh/main/rust-architecture/)
 - [TypeScript module dependencies](https://akawashiro.github.io/procinsh/main/typescript-architecture/)
 - [Rust doc](https://akawashiro.github.io/procinsh/main/procinsh/index.html)
+
+
+## Acquisition and analysis boundary
+
+The privileged helper owns protected reads and kernel resources. The HTTP process
+clears capabilities and interprets acquired values before exposing the existing
+HTTP API. No file descriptor crosses IPC.
+
+| Helper acquisition | Main interpretation |
+| --- | --- |
+| Protected procfs reads and process/FD identity checks | Process and thread rates, histories, usernames, environment/auxv formatting |
+| Ptrace/perf registers, stack bytes, instruction bytes and mapping metadata | Register classification, framehop unwinding and iced-x86 disassembly |
+| Open a currently executable mapped file, pin and verify its device/inode, read bounded bytes and recheck metadata | ELF/DWARF parsing, decompression, symbol/source lookup and caching |
+| FD ownership, socket metadata, namespace diagnostics and IPoIB neighbor observations | Peer/shared-holder relationships and destination enrichment |
+| BPF loading, attachment, bounded ring draining and map reads | File/IPC aggregation, CPU counter deltas and signal identity matching |
+| Character-device metadata from protected per-process FD scans | Unprivileged sysfs/procfs hardware topology, paths and device-handle grouping |
+| Observation sessions, acquisition cancellation and kernel resource cleanup | Reverse DNS workers and caches; response formatting |
+
+Test containers give perf/BPF suites the required capabilities and an unlimited
+memlock allowance so concurrent perf rings are not rejected by Docker's default
+locked-memory limit.
+
+IPC requests are limited to 1 KiB and replies to 1 GiB. The same-machine codec
+uses native-endian numbers, explicit enum tags and length-prefixed UTF-8 strings
+and collections. Structs are encoded field by field, without copying Rust padding
+or pointers. No protocol or package version matching is performed; the installed
+executables are built together. PID and Unix peer identity checks remain part of
+helper authentication. Frame lengths, collection lengths, tags, UTF-8 and socket
+deadlines are validated.
+
+`src/` contains only `ipc`, `helper` and `main`. Each executable includes the same
+IPC source definitions; main supplies their serde implementations through remote
+derives and JSON adapters. IPC has no serde or JSON values. The normal helper build
+does not include main's HTTP, JSON, ELF/DWARF, framehop, iced-x86, hardware-topology
+or DNS code. Helper tests include main's presentation adapters to exercise the
+existing HTTP contracts without putting that code into the installed helper.
+
+A mapped-file request selects a process identity, the start address of a current
+executable mapping and up to 60 file ranges. It cannot select a pathname or an
+arbitrary process-memory range. The helper pins and verifies a regular file against
+the mapping's device/inode, checks the ranges against the file length, reads at
+most 64 MiB per request, and rechecks the file metadata before replying. Source
+files are limited to 128 MiB. Descriptors remain inside the helper.
+
+Main first reads the ELF header and file identity. A previously cached identity
+requires no further data transfer. Otherwise, main reads the program/section
+headers and section-name table, then selects symbol/string tables, DWARF and
+unwind sections. Executable code and unrelated sections are omitted. A sparse
+reader lets the parser access only those captured ranges. Each reply must retain
+the same file identity throughout acquisition. Parsing, decompression limits,
+caching and source lookup all run in main. Unsupported or changed files retain
+raw stack addresses.
+
+Main owns per-session rates, histories, CPU deltas and analysis caches. Closing an
+observation releases that session's state. Mapping epochs travel with captured
+stack/register samples so a retained sample uses its original mapping context.
+Observation leases release abandoned helper collectors; lagged system subscribers
+receive a current typed snapshot for resynchronization.
