@@ -17,13 +17,13 @@ mod privileges;
 pub(crate) use launch::run;
 mod helper_service;
 #[cfg(test)]
-#[path = "../main/http_server/middleware.rs"]
+#[path = "../http_server/middleware.rs"]
 mod middleware;
 mod netlink;
 mod process;
 mod resource;
 #[cfg(test)]
-#[path = "../main/http_server/router.rs"]
+#[path = "../http_server/router.rs"]
 mod router;
 mod socket_types;
 #[cfg(test)]
@@ -44,14 +44,14 @@ mod test_support;
 #[path = "test_http/tests.rs"]
 mod tests;
 #[cfg(test)]
-#[path = "../main/http_server/web.rs"]
+#[path = "../http_server/web.rs"]
 mod web;
 
 #[cfg(test)]
 mod helper_tests;
 
 #[cfg(test)]
-#[path = "../main/http_server/delivery.rs"]
+#[path = "../http_server/delivery.rs"]
 mod http_delivery;
 
 pub(crate) mod abi;

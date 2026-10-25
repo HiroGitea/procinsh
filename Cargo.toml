@@ -21,7 +21,7 @@ include = [
 
 [[bin]]
 name = "procinsh"
-path = "src/main/entry.rs"
+path = "src/http_server/entry.rs"
 
 [[bin]]
 name = "procinsh-privileged-helper"

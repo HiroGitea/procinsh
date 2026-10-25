@@ -82,23 +82,23 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 
 | Location | Responsibility |
 |---|---|
-| `src/main/entry.rs` | CLI, logger initialization, startup configuration validation |
-| `src/main/http_server/` | Unprivileged HTTP, helper supervision, IPC client and SSE formatting |
+| `src/http_server/entry.rs` | CLI, logger initialization, startup configuration validation |
+| `src/http_server/` | Unprivileged HTTP, helper supervision, IPC client and SSE formatting |
 | `src/privileged_helper/` | Privileged acquisition, collectors and IPC request dispatch |
 | `src/ipc/` | Message schema and bounded transport shared by both executables |
-| `src/main/http_server/api/` | HTTP input/responses, domain error to status conversion, JSON and SSE (Server-Sent Events) |
-| `src/main/http_server/web.rs` | Static web UI serving |
+| `src/http_server/api/` | HTTP input/responses, domain error to status conversion, JSON and SSE (Server-Sent Events) |
+| `src/http_server/web.rs` | Static web UI serving |
 | `src/privileged_helper/process/monitoring/` | Independent acquisition per connection, latest-state delivery |
 | `src/privileged_helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
 | `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, instruction-byte capture |
 | `src/privileged_helper/process/elf.rs` | Identity-verified acquisition of mapped ELF bytes |
-| `src/main/analysis/snapshot/` | ELF/DWARF parsing, caching, framehop unwinding, register classification and symbol/source resolution in main |
-| `src/main/http_server/processing.rs` | Main-side interpretation of raw IPC responses before HTTP output |
+| `src/http_server/analysis/snapshot/` | ELF/DWARF parsing, caching, framehop unwinding, register classification and symbol/source resolution in main |
+| `src/http_server/processing.rs` | Main-side interpretation of raw IPC responses before HTTP output |
 | `src/ipc/model/` | Native data values shared through IPC, without serde |
-| `src/main/model/`, `src/main/json/` | Main-only JSON representations of shared values |
+| `src/http_server/model/`, `src/http_server/json/` | Main-only JSON representations of shared values |
 | `src/ipc/stack.rs` | Stack frame values |
 | `src/privileged_helper/system/` | Protected system snapshots, subscriptions and BPF collection |
-| `src/main/analysis/hardware/` | GPUs, RDMA NICs, accelerators, NVSwitches, PCIe bridges, inter-device paths, and processes holding devices open, using sysfs/procfs |
+| `src/http_server/analysis/hardware/` | GPUs, RDMA NICs, accelerators, NVSwitches, PCIe bridges, inter-device paths, and processes holding devices open, using sysfs/procfs |
 | `src/privileged_helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
 | `src/main/http_server/hosts/` | Agent links, host registry, and cross-host connection matching |
 | `src/privileged_helper/system/rdma/` | RDMA acquisition through netlink and sysfs |
@@ -414,7 +414,7 @@ Switching network namespaces requires `CAP_SYS_ADMIN`. [dev_run.sh](scripts/dev_
 
 ### Hardware
 
-Main enriches system snapshots using [analysis/hardware](src/main/analysis/hardware.rs) to read GPUs, RDMA NICs, accelerators, NVSwitches, and their upstream PCIe bridges up to host bridges from sysfs. This requires no privileges.
+Main enriches system snapshots using [analysis/hardware](src/http_server/analysis/hardware.rs) to read GPUs, RDMA NICs, accelerators, NVSwitches, and their upstream PCIe bridges up to host bridges from sysfs. This requires no privileges.
 
 - Discovery: upstream chains come from each device's real path under `/sys/bus/pci/devices`, such as `/sys/devices/pci0000:80/0000:80:03.4/0000:85:00.0`. Devices with `infiniband/` or class 0x0c06 are RDMA NICs; classes 0x0300/0x0302 are GPUs (excluding ASPEED/Matrox BMCs); class 0x12 denotes accelerators; NVIDIA class 0x0680 denotes NVSwitch. Only their upstream bridges are included.
 - Attributes: reads class, vendor, device, driver, numa_node, `current/max_link_speed`, `current/max_link_width`, power_state, `power/runtime_status`, iommu_group, and BARs from `resource`. It does not open `config` or BAR resize files, which could trigger runtime resume. Link speeds are not read for runtime-suspended devices. NVIDIA GPU model, UUID, and device minor come from `/proc/driver/nvidia/gpus/<address>/information`; vendor libraries such as NVML are not used.
@@ -527,7 +527,7 @@ The list, process detail, and SPACE pages have separate HTML and TypeScript entr
 | [shared/navigation.ts](web/src/shared/navigation.ts) | Process identity matching, API queries, detail links preserving start time |
 | [shared/api-types.ts](web/src/shared/api-types.ts) | TypeScript types matching Rust JSON/SSE responses; no runtime input validation |
 | [list/dom-types.ts](web/src/list/dom-types.ts), [process/dom-types.ts](web/src/process/dom-types.ts), [space/dom-types.ts](web/src/space/dom-types.ts) | HTML element ID/type mappings: `ListElements`, `ProcessElements`, `SpaceElements`; shared typed element lookup through `listElement`, `processElement`, `spaceElement` |
-| [web.rs](src/main/http_server/web.rs) | Embedding HTML/CSS, generated JavaScript, vendor files in the Rust binary and serving them at their URLs |
+| [web.rs](src/http_server/web.rs) | Embedding HTML/CSS, generated JavaScript, vendor files in the Rust binary and serving them at their URLs |
 
 TypeScript build settings are in [tsconfig.json](web/tsconfig.json), commands in [package.json](web/package.json). Generated HTML goes to `web/dist/{list,process,space}/index.html`, JS/CSS to `web/dist/assets/`. Browser routes `/`, `/list`, `/process/{pid}`, and `/space` serve the corresponding generated HTML; HTML references assets under `/assets/`. To view changes, build the web assets and Rust binary as described in [Build and runtime environment](#build-and-runtime-environment).
 
@@ -1014,7 +1014,7 @@ executables are built together. PID and Unix peer identity checks remain part of
 helper authentication. Frame lengths, collection lengths, tags, UTF-8 and socket
 deadlines are validated.
 
-`src/` contains only `ipc`, `privileged_helper` and `main`. Each executable includes the same
+`src/` contains only `ipc`, `privileged_helper` and `http_server`. Each executable includes the same
 IPC source definitions; main supplies their serde implementations through remote
 derives and JSON adapters. IPC has no serde or JSON values. The normal helper build
 does not include main's HTTP, JSON, ELF/DWARF, framehop, iced-x86, hardware-topology

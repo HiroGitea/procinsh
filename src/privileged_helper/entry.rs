@@ -3,15 +3,15 @@
 //! # Interface
 //! [`ipc`] (`pub`): `mod ipc`, shared native values and transport.
 #[cfg(test)]
-#[path = "../main/analysis/root.rs"]
+#[path = "../http_server/analysis/root.rs"]
 pub mod analysis;
 #[path = "../ipc/root.rs"]
 pub mod ipc;
 #[cfg(test)]
-#[path = "../main/json.rs"]
+#[path = "../http_server/json.rs"]
 mod json;
 #[cfg(test)]
-#[path = "../main/model/root.rs"]
+#[path = "../http_server/model/root.rs"]
 pub mod model;
 #[path = "root.rs"]
 mod privileged_helper;

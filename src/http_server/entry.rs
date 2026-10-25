@@ -11,7 +11,7 @@
 
 #[path = "analysis/root.rs"]
 pub mod analysis;
-#[path = "http_server/root.rs"]
+#[path = "root.rs"]
 mod http_server;
 #[path = "../ipc/root.rs"]
 pub mod ipc;
