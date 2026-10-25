@@ -1,0 +1,481 @@
+//! Derive system activity from bounded kernel observations in main.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`SignalEvent`] | `pub` | `struct SignalEvent` |
+//! | [`IpcActivity`] | `pub` | `struct IpcActivity` |
+//! | [`CpuActivity`] | `pub` | `struct CpuActivity` |
+//! | [`FileActivity`] | `pub` | `struct FileActivity` |
+//! | [`decode_file`] | `pub` | `fn decode_file(data: &[u8]) -> Option<FileActivity>` |
+//! | [`FileBatch`] | `pub` | `struct FileBatch` |
+//! | [`IpcEvent`] | `pub` | `struct IpcEvent` |
+//! | [`decode_ipc`] | `pub` | `fn decode_ipc(bytes: &[u8]) -> Option<IpcEvent>` |
+//! | [`SignalSample`] | `pub` | `struct SignalSample` |
+//! | [`decode_signal`] | `pub` | `fn decode_signal(bytes: &[u8]) -> Option<SignalSample>` |
+//! | [`resolve_signal`] | `pub` | `fn resolve_signal( sample: SignalSample, processes: &HashMap<i32, ProcessId>, ) -> Option<SignalEvent>` |
+//! | [`ProcessKey`] | `pub` | `struct ProcessKey` |
+//! | [`process_key`] | `pub` | `fn process_key(bytes: &[u8]) -> Option<ProcessKey>` |
+//! | [`CpuCounters`] | `pub` | `struct CpuCounters` |
+//! | [`RawActivity`] | `pub` | `struct RawActivity` |
+//! | [`ActivityBatch`] | `pub` | `struct ActivityBatch` |
+//! | [`ActivityProcessor`] | `pub` | `struct ActivityProcessor` |
+//!
+//! Process identities use [`ProcessId`]; lookup tables use [`HashMap`].
+
+use crate::{
+    ipc::schema::ProcessId,
+    model::{
+        process::ticks_per_second,
+        resource::{DeviceId, FileIdentity, IpcIdentity, IpcKind},
+    },
+};
+use serde::Serialize;
+use std::collections::HashMap;
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
+pub struct SignalEvent {
+    pub timestamp_ns: u64,
+    pub src_pid: u32,
+    pub dst_pid: u32,
+    pub signal: i32,
+    pub source_id: ProcessId,
+    pub destination_id: ProcessId,
+}
+#[derive(Clone, Serialize, serde::Deserialize)]
+pub struct IpcActivity {
+    pub process_id: ProcessId,
+    pub resource: IpcIdentity,
+    pub write: bool,
+    pub bytes: u64,
+    pub count: u64,
+}
+#[derive(Clone, Serialize, serde::Deserialize)]
+pub struct CpuActivity {
+    pub process_id: ProcessId,
+    pub runtime_ns: u64,
+    pub switches: u64,
+    pub running_threads: usize,
+    pub cpus: Vec<usize>,
+}
+const MAX_AGGREGATES: usize = 8192;
+
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
+pub struct FileActivity {
+    pub process_id: ProcessId,
+    pub file: FileIdentity,
+    pub path: Option<String>,
+    pub write: bool,
+    pub bytes: u64,
+    pub count: u64,
+}
+
+pub fn decode_file(data: &[u8]) -> Option<FileActivity> {
+    if data.len() != 4144 {
+        return None;
+    }
+    let u64_at = |i| u64::from_ne_bytes(data[i..i + 8].try_into().unwrap());
+    let u32_at = |i| u32::from_ne_bytes(data[i..i + 4].try_into().unwrap());
+    let bytes = u64_at(24);
+    if bytes == 0 || u32_at(36) > 1 {
+        return None;
+    }
+    let len = u32_at(40) as usize;
+    let path = if (2..=4096).contains(&len) && data[48 + len - 1] == 0 {
+        Some(String::from_utf8_lossy(&data[48..48 + len - 1]).into_owned())
+    } else {
+        None
+    };
+    let dev = u64_at(16);
+    Some(FileActivity {
+        process_id: ProcessId {
+            pid: u32_at(32) as i32,
+            start_time_ticks: ((u64_at(0) as u128
+                * crate::model::process::ticks_per_second() as u128)
+                / 1_000_000_000) as u64,
+        },
+        file: FileIdentity {
+            device: DeviceId::from_kernel(dev),
+            inode: u64_at(8),
+            generation: u32_at(44),
+        },
+        path,
+        write: u32_at(36) != 0,
+        bytes,
+        count: 1,
+    })
+}
+#[derive(Default)]
+pub struct FileBatch {
+    pub events: HashMap<(ProcessId, FileIdentity, bool), FileActivity>,
+    pub dropped: u64,
+}
+impl FileBatch {
+    pub fn add(&mut self, event: FileActivity) {
+        let key = (event.process_id, event.file, event.write);
+        if let Some(prior) = self.events.get_mut(&key) {
+            prior.bytes = prior.bytes.saturating_add(event.bytes);
+            prior.count = prior.count.saturating_add(event.count);
+            if event.path.is_some() {
+                prior.path = event.path;
+            }
+        } else if self.events.len() < MAX_AGGREGATES {
+            self.events.insert(key, event);
+        } else {
+            self.dropped += 1;
+        }
+    }
+}
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct IpcEvent {
+    pub start: u64,
+    pub inode: u64,
+    pub device: u64,
+    pub bytes: u64,
+    pub pid: u32,
+    pub kind: u32,
+    pub write: bool,
+    pub worker: bool,
+}
+
+pub fn decode_ipc(bytes: &[u8]) -> Option<IpcEvent> {
+    if bytes.len() != 56 {
+        return None;
+    }
+    let u64at = |i| u64::from_ne_bytes(bytes[i..i + 8].try_into().unwrap());
+    let u32at = |i| u32::from_ne_bytes(bytes[i..i + 4].try_into().unwrap());
+    Some(IpcEvent {
+        start: u64at(8),
+        inode: u64at(16),
+        device: u64at(24),
+        bytes: u64at(32),
+        pid: u32at(40),
+        kind: u32at(44),
+        write: u32at(48) != 0,
+        worker: u32at(52) != 0,
+    })
+}
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+pub struct SignalSample {
+    pub timestamp_ns: u64,
+    pub src_start: u64,
+    pub dst_start: u64,
+    pub src_pid: u32,
+    pub dst_pid: u32,
+    pub signal: i32,
+}
+
+pub fn decode_signal(bytes: &[u8]) -> Option<SignalSample> {
+    if bytes.len() != 40 {
+        return None;
+    }
+    let u64at = |i| u64::from_ne_bytes(bytes[i..i + 8].try_into().unwrap());
+    let u32at = |i| u32::from_ne_bytes(bytes[i..i + 4].try_into().unwrap());
+    Some(SignalSample {
+        timestamp_ns: u64at(0),
+        src_start: u64at(8),
+        dst_start: u64at(16),
+        src_pid: u32at(24),
+        dst_pid: u32at(28),
+        signal: u32at(32) as i32,
+    })
+}
+
+pub fn resolve_signal(
+    sample: SignalSample,
+    processes: &HashMap<i32, ProcessId>,
+) -> Option<SignalEvent> {
+    let source_id = *processes.get(&(sample.src_pid as i32))?;
+    let destination_id = *processes.get(&(sample.dst_pid as i32))?;
+    let ticks = |start: u64| (start as u128 * ticks_per_second() as u128 / 1_000_000_000) as u64;
+    if sample.signal <= 0
+        || sample.signal > 64
+        || ticks(sample.src_start) != source_id.start_time_ticks
+        || ticks(sample.dst_start) != destination_id.start_time_ticks
+    {
+        return None;
+    }
+    Some(SignalEvent {
+        timestamp_ns: sample.timestamp_ns,
+        src_pid: sample.src_pid,
+        dst_pid: sample.dst_pid,
+        signal: sample.signal,
+        source_id,
+        destination_id,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ProcessKey {
+    pub start: u64,
+    pub pid: u32,
+}
+
+fn u32_at(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_ne_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
+    ))
+}
+
+fn u64_at(bytes: &[u8], offset: usize) -> Option<u64> {
+    Some(u64::from_ne_bytes(
+        bytes.get(offset..offset + 8)?.try_into().ok()?,
+    ))
+}
+
+pub fn process_key(bytes: &[u8]) -> Option<ProcessKey> {
+    Some(ProcessKey {
+        start: u64_at(bytes, 0)?,
+        pid: u32_at(bytes, 8)?,
+    })
+}
+
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct CpuCounters {
+    pub now: u64,
+    pub current: Vec<Vec<u8>>,
+    /// Nonzero per-CPU cumulative runtime/switch pairs; CPU indices are in `current`.
+    pub totals: Vec<(Vec<u8>, Vec<[u64; 2]>)>,
+}
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct RawActivity {
+    pub files: Vec<FileActivity>,
+    pub ipc: Vec<IpcEvent>,
+    pub signals: Vec<SignalSample>,
+    pub cpu: CpuCounters,
+}
+pub struct ActivityBatch {
+    pub files: Vec<FileActivity>,
+    pub ipc: Vec<IpcActivity>,
+    pub signals: Vec<SignalEvent>,
+    pub cpu: Vec<CpuActivity>,
+    pub unresolved: u64,
+    pub files_dropped: u64,
+}
+#[derive(Default)]
+pub struct ActivityProcessor {
+    previous_cpu: HashMap<ProcessKey, (u64, u64)>,
+    previous_running: std::collections::HashSet<ProcessKey>,
+    unresolved: u64,
+}
+impl ActivityProcessor {
+    pub fn process(&mut self, raw: RawActivity, known: &HashMap<i32, ProcessId>) -> ActivityBatch {
+        let mut files = FileBatch::default();
+        for event in raw.files {
+            files.add(event);
+        }
+        let mut pending = HashMap::new();
+        for e in raw.ipc {
+            let ticks = (e.start as u128 * ticks_per_second() as u128 / 1_000_000_000) as u64;
+            let Some(id) = known
+                .get(&(e.pid as i32))
+                .filter(|id| !e.worker && ticks == id.start_time_ticks)
+            else {
+                self.unresolved += 1;
+                continue;
+            };
+            let resource = IpcIdentity {
+                kind: if e.kind == 1 {
+                    IpcKind::Pipe
+                } else {
+                    IpcKind::Socket
+                },
+                device: DeviceId::from_kernel(e.device),
+                inode: e.inode,
+            };
+            if pending.len() >= 8192 {
+                self.unresolved += 1;
+                continue;
+            }
+            let entry = pending
+                .entry((*id, resource, e.write))
+                .or_insert((0u64, 0u64));
+            entry.0 = entry.0.saturating_add(e.bytes);
+            entry.1 += 1;
+        }
+        let ipc = pending
+            .into_iter()
+            .map(
+                |((process_id, resource, write), (bytes, count))| IpcActivity {
+                    process_id,
+                    resource,
+                    write,
+                    bytes,
+                    count,
+                },
+            )
+            .collect();
+        let signals = raw
+            .signals
+            .into_iter()
+            .filter_map(|sample| resolve_signal(sample, known))
+            .collect();
+        let cpu = self.cpu(raw.cpu, known);
+        ActivityBatch {
+            files: files.events.into_values().collect(),
+            ipc,
+            signals,
+            cpu,
+            unresolved: self.unresolved,
+            files_dropped: files.dropped,
+        }
+    }
+    fn cpu(&mut self, raw: CpuCounters, known: &HashMap<i32, ProcessId>) -> Vec<CpuActivity> {
+        let now = raw.now;
+        let mut running: HashMap<ProcessKey, Vec<usize>> = HashMap::new();
+        let mut ongoing: HashMap<ProcessKey, u64> = HashMap::new();
+        for (cpu, value) in raw.current.iter().enumerate() {
+            let Some(key) = process_key(value) else {
+                continue;
+            };
+            let since = u64_at(value, 16).unwrap_or(now);
+            if key.pid == 0 || since > now {
+                continue;
+            }
+            running.entry(key).or_default().push(cpu);
+            *ongoing.entry(key).or_default() += now - since;
+        }
+
+        let mut cumulative: HashMap<ProcessKey, (u64, u64)> = HashMap::new();
+        for (key_bytes, values) in raw.totals {
+            let Some(key) = process_key(&key_bytes) else {
+                continue;
+            };
+            let value = cumulative.entry(key).or_default();
+            for per_cpu in values {
+                value.0 = value.0.saturating_add(per_cpu[0]);
+                value.1 = value.1.saturating_add(per_cpu[1]);
+            }
+        }
+        for (key, runtime) in ongoing {
+            cumulative.entry(key).or_default().0 = cumulative
+                .get(&key)
+                .map_or(runtime, |value| value.0.saturating_add(runtime));
+        }
+
+        let ticks = ticks_per_second() as u128;
+        let known: std::collections::HashSet<_> = known.values().copied().collect();
+        let mut result = Vec::new();
+        let mut next_previous = HashMap::new();
+        let mut next_running = std::collections::HashSet::new();
+        for (key, total) in cumulative {
+            let identity = ProcessId {
+                pid: key.pid as i32,
+                start_time_ticks: ((key.start as u128 * ticks) / 1_000_000_000) as u64,
+            };
+            if !known.contains(&identity) {
+                continue;
+            }
+            let previous = self.previous_cpu.get(&key).copied().unwrap_or(total);
+            let runtime_ns = total.0.saturating_sub(previous.0);
+            let switches = total.1.saturating_sub(previous.1);
+            let cpus = running.remove(&key).unwrap_or_default();
+            if !cpus.is_empty() {
+                next_running.insert(key);
+            }
+            if runtime_ns > 0
+                || switches > 0
+                || !cpus.is_empty()
+                || self.previous_running.contains(&key)
+            {
+                result.push(CpuActivity {
+                    process_id: identity,
+                    runtime_ns,
+                    switches,
+                    running_threads: cpus.len(),
+                    cpus,
+                });
+            }
+            next_previous.insert(key, total);
+        }
+        self.previous_cpu = next_previous;
+        self.previous_running = next_running;
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn cpu_idle_transition_is_reported_even_without_a_counter_delta() {
+        let start = 1_000_000_000u64;
+        let id = ProcessId {
+            pid: 42,
+            start_time_ticks: ticks_per_second() as u64,
+        };
+        let known = HashMap::from([(42, id)]);
+        let mut key = vec![0; 16];
+        key[..8].copy_from_slice(&start.to_ne_bytes());
+        key[8..12].copy_from_slice(&42u32.to_ne_bytes());
+        let now = start + 1_000_000_000;
+        let mut slot = vec![0; 32];
+        slot[..16].copy_from_slice(&key);
+        slot[16..24].copy_from_slice(&now.to_ne_bytes());
+        let captured = |current| RawActivity {
+            cpu: CpuCounters {
+                now,
+                current,
+                totals: vec![(key.clone(), vec![[100, 2]])],
+            },
+            ..Default::default()
+        };
+        let mut processor = ActivityProcessor::default();
+        let busy = processor.process(captured(vec![slot]), &known).cpu;
+        assert_eq!(busy[0].running_threads, 1);
+        let idle = processor.process(captured(Vec::new()), &known).cpu;
+        assert_eq!(idle.len(), 1);
+        assert_eq!(idle[0].running_threads, 0);
+        assert_eq!(idle[0].runtime_ns, 0);
+        assert_eq!(idle[0].switches, 0);
+        assert!(idle[0].cpus.is_empty());
+        assert!(
+            processor
+                .process(captured(Vec::new()), &known)
+                .cpu
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn cpu_deltas_include_work_completed_before_a_process_became_idle() {
+        let start = 1_000_000_000u64;
+        let id = ProcessId {
+            pid: 42,
+            start_time_ticks: ticks_per_second() as u64,
+        };
+        let known = HashMap::from([(42, id)]);
+        let mut key = vec![0; 16];
+        key[..8].copy_from_slice(&start.to_ne_bytes());
+        key[8..12].copy_from_slice(&42u32.to_ne_bytes());
+        let counters = |values| RawActivity {
+            cpu: CpuCounters {
+                now: 10,
+                current: Vec::new(),
+                totals: vec![(key.clone(), values)],
+            },
+            ..Default::default()
+        };
+        let mut processor = ActivityProcessor::default();
+        assert!(
+            processor
+                .process(counters(vec![[100, 2]]), &known)
+                .cpu
+                .is_empty()
+        );
+        let cpu = processor
+            .process(counters(vec![[150, 3], [20, 2]]), &known)
+            .cpu;
+        assert_eq!(cpu.len(), 1);
+        assert_eq!(cpu[0].runtime_ns, 70);
+        assert_eq!(cpu[0].switches, 3);
+        assert_eq!(cpu[0].running_threads, 0);
+        assert!(cpu[0].cpus.is_empty());
+        assert!(
+            processor
+                .process(counters(vec![[150, 3], [20, 2]]), &known)
+                .cpu
+                .is_empty()
+        );
+    }
+}

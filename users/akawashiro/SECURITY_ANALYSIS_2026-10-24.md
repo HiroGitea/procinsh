@@ -33,7 +33,7 @@ HTTP の起動・権限・middleware、IPC schema/transport/client/helper、proc
 | 高 | group-stop と割り込み停止を区別しない | 確認済み、停止状態の変化は要再現 | 意図しない再開など |
 | 高 | 遅い要求が単一 IPC を塞ぎ、timeout が接続全体を閉じる | 経路は確認済み、実負荷での発生は要再現 | 全クライアントの観測停止 |
 | 高 | セッション数と実稼働 collector・TID・perf 資源の総量が一致しない | 確認済み、蓄積量は要再現 | FD・メモリ・CPU の枯渇 |
-| 中〜高 | ELF キャッシュと unwinder の保持量に共有バイト予算がない | 確認済み、OOM は未実証 | 特権 helper のメモリ圧迫 |
+| 中〜高 | ELF キャッシュと unwinder の保持量に共有バイト予算がない | 確認済み、OOM は未実証 | main のメモリ圧迫 |
 | 中〜高 | helper・起動アカウント・setcap 配備経路に広い信頼が必要 | 確認済み、侵害は未実証 | 侵害時の影響拡大 |
 | 中 | 全システム BPF フックと CPU 数依存の map | 確認済み、負荷量は未測定 | ホストの遅延、メモリ消費、観測欠落 |
 | 中 | 数値 PID/TID の検査と実操作の間の競合 | 確認済み、誤対象操作は要再現 | 別対象の一時停止・観測 |
@@ -43,7 +43,7 @@ HTTP の起動・権限・middleware、IPC schema/transport/client/helper、proc
 
 [memory.rs](../../src/privileged_helper/process/memory.rs) は `process_vm_readv` を使い、1回のサイズを65,536 bytesまでに制限し、アドレス加算を検査する。調査した本番コードに `process_vm_writev`、`PTRACE_POKEDATA`、`PTRACE_SETREGSET` はない。[ptrace.rs](../../src/privileged_helper/process/snapshot/ptrace.rs) の要求は SEIZE、INTERRUPT、GETREGSET、DETACH で、レジスタ取得先は helper 自身のバッファである。
 
-[unwind.rs](../../src/privileged_helper/process/snapshot/unwind.rs) は取得済みスタックの範囲を検査し、最大256フレームで打ち切る。命令の逆アセンブルは読み取った bytes の解析であり、対象内でその命令を実行する処理ではない。perf の writable mmap は共有 ring の消費位置を更新するためで、対象のメモリを writable に map するものではない。
+[unwind.rs](../../src/analysis/snapshot/unwind.rs) は取得済みスタックの範囲を検査し、最大256フレームで打ち切る。命令の逆アセンブルは読み取った bytes の解析であり、対象内でその命令を実行する処理ではない。perf の writable mmap は共有 ring の消費位置を更新するためで、対象のメモリを writable に map するものではない。
 
 4種類の BPF は自身の map とイベント領域を更新する。signal センサーも `signal_generate` の通知を観測するだけで、シグナルを送信しない。対象への書き込み helper や戻り値の強制変更は見つからなかった。ただし読み取りに伴うページ取得や、一時停止と負荷による間接的なデータ整合性への影響は別問題である。
 
@@ -91,13 +91,13 @@ CPU-clock は約100 Hzだが、context-switch event は period=1であり、そ�
 
 ## 5. ELF/DWARF と procfs の防御と残る制限
 
-[symbol/cache.rs](../../src/privileged_helper/process/snapshot/symbol/cache.rs) は O_PATH で inode を固定し、regular file と device/inode を確認した後に `/proc/self/fd/...` から開く。同じ descriptor から最大128 MiB+1を読み、前後の identity を検査する。pathname を確認後にそのまま開き直す設計ではなく、FIFO・device の読み取りも拒否する。
+[process/elf.rs](../../src/privileged_helper/process/elf.rs) は O_PATH で inode を固定し、regular file と device/inode を確認した後に `/proc/self/fd/...` から開く。同じ descriptor から最大128 MiB+1を読み、前後の identity を検査する。pathname を確認後にそのまま開き直す設計ではなく、FIFO・device の読み取りも拒否する。
 
-ELF は展開前に1 section 32 MiB、全 section 64 MiBを検査し、圧縮方式を無圧縮と zlib に限定する。symbol 数262,144、名前総量8 MiB、DWARF unit 数16,384にも上限がある。これらは入力由来の無制限割当てを減らす。ただし metadata の一致は、同時更新されたファイルの内容が完全に一貫する保証ではない。
+main 側の [ELF parser](../../src/analysis/snapshot/symbol/cache.rs) は展開前に1 section 32 MiB、全 section 64 MiBを検査し、圧縮方式を無圧縮と zlib に限定する。symbol 数262,144、名前総量8 MiB、DWARF unit 数16,384にも上限がある。これらは入力由来の無制限割当てを減らす。ただし metadata の一致は、同時更新されたファイルの内容が完全に一貫する保証ではない。
 
 cache は64件・128 MiBを目安に clear するが、バイト計算は `entries.keys().map(|key| key.2)`、つまり**元ファイルのサイズ**である。展開済み section、symbol、addr2line の解析結果、allocator overhead の実保持量ではない。小さい圧縮 ELF が大きい section に展開される場合、この差は大きい。
 
-さらに [StackUnwinder::refresh](../../src/privileged_helper/process/snapshot/unwind.rs) は全 executable mapping を巡回し、`elf.unwind.clone()` を module として保持する。Arc の共有データは cache の clear 後も module 側から参照されうる。したがって64件という cache 件数も、unwinder が保持する全 module 数や bytes の上限にはならない。圧縮 ELF を多数 map する対象などで、大きな保持量となる可能性がある。OOM は未実証である。
+さらに [StackUnwinder::refresh](../../src/analysis/snapshot/unwind.rs) は全 executable mapping を巡回し、`elf.unwind.clone()` を module として保持する。Arc の共有データは cache の clear 後も module 側から参照されうる。したがって64件という cache 件数も、unwinder が保持する全 module 数や bytes の上限にはならない。圧縮 ELF を多数 map する対象などで、大きな保持量となる可能性がある。OOM は未実証である。
 
 [procfs.rs](../../src/privileged_helper/process/procfs.rs) は text を16 MiBに制限し、maps/smaps もこの経路を使う。environment は1 MiB、auxv は64 KiBまでである。一方、これらは入力単位の上限であり、全解析結果・セッション・履歴・JSON Value の合計 RSS 上限ではない。IPC の1 GiB response 上限も、`to_value` や snapshot 作成の**後**の framing に適用される。
 

@@ -1,32 +1,37 @@
+//! Resolve.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`SymbolInfo`] | `pub` | `struct SymbolInfo` |
+//! | [`instruction_address`] | `pub` | `fn instruction_address(address: u64, return_address: bool) -> u64` |
+//! | [`elf_address`] | `pub` | `fn elf_address(address: u64, map: &MemoryMap, elf: &ElfSymbols, page: u64) -> Option<u64>` |
+//! | [`resolve_frame`] | `pub` | `fn resolve_frame(address: u64, elf: &ElfSymbols) -> Option<SymbolInfo>` |
+//!
+//! Resolution uses [`MemoryMap`], [`ElfSymbols`] and [`SourceFrame`].
+
 use super::cache::ElfSymbols;
-use crate::privileged_helper::process::{maps::MemoryMap, snapshot::stack::SourceFrame};
+use crate::{analysis::snapshot::stack::SourceFrame, model::memory::MemoryMap};
 /// Symbol and source information for one ELF address.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(in crate::privileged_helper::process::snapshot) struct SymbolInfo {
-    pub(in crate::privileged_helper::process::snapshot) name: Option<String>,
-    pub(in crate::privileged_helper::process::snapshot) offset: Option<u64>,
-    pub(in crate::privileged_helper::process::snapshot) file: Option<String>,
-    pub(in crate::privileged_helper::process::snapshot) line: Option<u32>,
-    pub(in crate::privileged_helper::process::snapshot) inline_frames: Vec<SourceFrame>,
+pub struct SymbolInfo {
+    pub name: Option<String>,
+    pub offset: Option<u64>,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub inline_frames: Vec<SourceFrame>,
 }
 
 /// Correct a saved return address before selecting its mapping.
 /// The currently executing instruction must be passed with `return_address = false`.
-pub(in crate::privileged_helper::process::snapshot) fn instruction_address(
-    address: u64,
-    return_address: bool,
-) -> u64 {
+pub fn instruction_address(address: u64, return_address: bool) -> u64 {
     address.saturating_sub(u64::from(return_address))
 }
 
 /// Convert a corrected runtime address into an ELF address, accounting for the
 /// mapping offset, PIE/ASLR load bias, and page-aligned segment mappings.
-pub(in crate::privileged_helper::process::snapshot) fn elf_address(
-    address: u64,
-    map: &MemoryMap,
-    elf: &ElfSymbols,
-    page: u64,
-) -> Option<u64> {
+pub fn elf_address(address: u64, map: &MemoryMap, elf: &ElfSymbols, page: u64) -> Option<u64> {
     if page == 0 || !map.contains(address) {
         return None;
     }
@@ -45,10 +50,7 @@ pub(in crate::privileged_helper::process::snapshot) fn elf_address(
 /// Resolve an ELF address without changing a frame or the ELF cache.
 /// Returns `None` only when no symbol, source location, or inline frame is found.
 /// DWARF reads only bounded in-memory sections under the ELF's private lock.
-pub(in crate::privileged_helper::process::snapshot) fn resolve_frame(
-    address: u64,
-    elf: &ElfSymbols,
-) -> Option<SymbolInfo> {
+pub fn resolve_frame(address: u64, elf: &ElfSymbols) -> Option<SymbolInfo> {
     let mut info = SymbolInfo::default();
     if let Some((start, _, name)) = elf.symbols.iter().rev().find(|(start, size, _)| {
         *start <= address && (*size == 0 || address < start.saturating_add(*size))

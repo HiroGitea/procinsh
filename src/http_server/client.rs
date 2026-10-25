@@ -13,6 +13,8 @@ enum Backend {
     Remote {
         sender: mpsc::Sender<PendingRequest>,
         shutdown: UnixStream,
+        processor: Box<tokio::sync::Mutex<super::processing::ObservationProcessor>>,
+        closed_sessions: std::sync::Mutex<Vec<u64>>,
     },
     /// A remote host's helper, reached through its agent link.
     Agent(Arc<AgentLink>),
@@ -60,14 +62,43 @@ impl MonitorClient {
                     }
                 }
             })?;
-        Ok(Self(Arc::new(Backend::Remote { sender, shutdown })))
+        Ok(Self(Arc::new(Backend::Remote {
+            sender,
+            shutdown,
+            processor: Box::new(tokio::sync::Mutex::new(Default::default())),
+            closed_sessions: std::sync::Mutex::new(Vec::new()),
+        })))
     }
 
     pub(super) async fn request(&self, request: MonitorRequest) -> Result<MonitorResponse> {
+        let session = match &request {
+            MonitorRequest::Poll { session } => Some(*session),
+            _ => None,
+        };
+        let mut response = self.exchange(request).await?;
+        if let Backend::Remote {
+            processor,
+            closed_sessions,
+            ..
+        } = &*self.0
+        {
+            let mut processor = processor.lock().await;
+            for session in closed_sessions.lock().unwrap().drain(..) {
+                processor.close(session);
+            }
+            processor.process(self, session, &mut response).await?;
+        }
+        super::disasm::decode_response(&mut response)?;
+        Ok(response)
+    }
+
+    pub(super) async fn exchange(&self, request: MonitorRequest) -> Result<MonitorResponse> {
         match &*self.0 {
             Backend::Unavailable => bail!("privileged helper unavailable"),
             Backend::Agent(link) => link.request(request).await,
-            Backend::Remote { sender, shutdown } => {
+            Backend::Remote {
+                sender, shutdown, ..
+            } => {
                 let (reply, received) = oneshot::channel();
                 sender
                     .try_send(PendingRequest { request, reply })
@@ -81,9 +112,7 @@ impl MonitorClient {
                         return Err(error).context("monitor IPC request timed out");
                     }
                 };
-                let mut response = response.map_err(anyhow::Error::msg)?;
-                super::disasm::decode_response(&mut response)?;
-                Ok(response)
+                response.map_err(anyhow::Error::msg)
             }
         }
     }
@@ -101,6 +130,19 @@ impl MonitorClient {
 
     /// Queues a session close without waiting for the reply.
     pub(super) fn close(&self, session: u64) {
+        if let Backend::Remote {
+            processor,
+            closed_sessions,
+            ..
+        } = &*self.0
+        {
+            closed_sessions.lock().unwrap().push(session);
+            if let Ok(mut processor) = processor.try_lock() {
+                for session in closed_sessions.lock().unwrap().drain(..) {
+                    processor.close(session);
+                }
+            }
+        }
         match &*self.0 {
             Backend::Unavailable => {}
             Backend::Agent(link) => link.close_session(session),

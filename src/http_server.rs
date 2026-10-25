@@ -1,4 +1,4 @@
-//! HTTP application with cleared capabilities and helper supervision.
+//! HTTP application with cleared capabilities, observation analysis and helper supervision.
 //!
 //! # Interface
 //! - [`run`] (`pub(crate)`): `fn run(config: ServerConfig) -> anyhow::Result<()>`.
@@ -14,6 +14,7 @@ mod hosts_link_tests;
 mod launch;
 mod middleware;
 mod privileges;
+mod processing;
 mod router;
 mod server;
 mod state;

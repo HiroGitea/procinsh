@@ -60,7 +60,8 @@ fn memory_partial_reads_and_map_statistics() {
 #[test]
 fn environment_and_auxv_read_child_metadata_and_reject_stale_identity() {
     let mut target = Target::new("sleeping");
-    let environment = process::details::environment(target.id).unwrap();
+    let environment: procinsh_protocol::analysis::details::Environment =
+        serde_json::from_value(process::details::environment(target.id).unwrap()).unwrap();
     let entry = environment
         .entries
         .iter()
@@ -80,7 +81,8 @@ fn environment_and_auxv_read_child_metadata_and_reject_stale_identity() {
             .as_deref(),
         Some("")
     );
-    let auxv = process::details::auxv(target.id).unwrap();
+    let auxv: procinsh_protocol::analysis::details::AuxVector =
+        serde_json::from_value(process::details::auxv(target.id).unwrap()).unwrap();
     assert_eq!(auxv.word_bits, 64);
     assert_eq!(
         auxv.entries

@@ -2,26 +2,41 @@
 //!
 //! Only plain sysfs attributes are read. `config` and BAR resize files are never
 //! opened, since they can wake a runtime-suspended device.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`HardwareRole`] | `pub` | `enum HardwareRole` |
+//! | [`HardwareKind`] | `pub` | `enum HardwareKind` |
+//! | [`PcieLink`] | `pub` | `struct PcieLink` |
+//! | [`PcieLinkInfo`] | `pub` | `struct PcieLinkInfo` |
+//! | [`BarInfo`] | `pub` | `struct BarInfo` |
+//! | [`PciNode`] | `pub` | `struct PciNode` |
+//! | [`text`] | `pub` | `fn text(path: &Path) -> Option<String>` |
+//! | [`names`] | `pub` | `fn names(path: &Path) -> Vec<String>` |
+//! | [`read_topology`] | `pub` | `fn read_topology(sys: &Path) -> Vec<PciNode>` |
+//! | [`online_numa_nodes`] | `pub` | `fn online_numa_nodes(sys: &Path) -> usize` |
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(in crate::privileged_helper::system) enum HardwareRole {
+pub enum HardwareRole {
     HostBridge,
     RootPort,
     SwitchPort,
     Endpoint,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(in crate::privileged_helper::system) enum HardwareKind {
+pub enum HardwareKind {
     Gpu,
     /// An RDMA-capable NIC (InfiniBand or RoCE).
     Rdma,
@@ -31,14 +46,14 @@ pub(in crate::privileged_helper::system) enum HardwareKind {
 }
 
 /// The negotiated or maximum link of a device to its upstream port.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-pub(in crate::privileged_helper::system) struct PcieLink {
-    pub(in crate::privileged_helper::system) speed_gts: f64,
-    pub(in crate::privileged_helper::system) width: u32,
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PcieLink {
+    pub speed_gts: f64,
+    pub width: u32,
 }
 impl PcieLink {
     /// Usable bandwidth in GB/s after line encoding (8b/10b up to 5 GT/s, then 128b/130b).
-    pub(in crate::privileged_helper::system) fn bandwidth(self) -> f64 {
+    pub fn bandwidth(self) -> f64 {
         let encoding = if self.speed_gts <= 5.0 {
             0.8
         } else {
@@ -48,40 +63,40 @@ impl PcieLink {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-pub(in crate::privileged_helper::system) struct PcieLinkInfo {
-    pub(in crate::privileged_helper::system) current: Option<PcieLink>,
-    pub(in crate::privileged_helper::system) max: Option<PcieLink>,
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PcieLinkInfo {
+    pub current: Option<PcieLink>,
+    pub max: Option<PcieLink>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub(in crate::privileged_helper::system) struct BarInfo {
-    pub(in crate::privileged_helper::system) index: u32,
-    pub(in crate::privileged_helper::system) bytes: u64,
-    pub(in crate::privileged_helper::system) prefetchable: bool,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BarInfo {
+    pub index: u32,
+    pub bytes: u64,
+    pub prefetchable: bool,
 }
 
 /// A PCI node: a host bridge, a bridge on the way to a device of interest, or the device.
 #[derive(Clone, Debug, PartialEq)]
-pub(in crate::privileged_helper::system) struct PciNode {
-    pub(in crate::privileged_helper::system) address: String,
-    pub(in crate::privileged_helper::system) parent: Option<String>,
-    pub(in crate::privileged_helper::system) role: HardwareRole,
-    pub(in crate::privileged_helper::system) kind: Option<HardwareKind>,
-    pub(in crate::privileged_helper::system) path: PathBuf,
-    pub(in crate::privileged_helper::system) class: Option<u32>,
-    pub(in crate::privileged_helper::system) vendor_id: Option<u32>,
-    pub(in crate::privileged_helper::system) device_id: Option<u32>,
-    pub(in crate::privileged_helper::system) driver: Option<String>,
-    pub(in crate::privileged_helper::system) numa_node: Option<u32>,
-    pub(in crate::privileged_helper::system) link: Option<PcieLinkInfo>,
-    pub(in crate::privileged_helper::system) power_state: Option<String>,
-    pub(in crate::privileged_helper::system) runtime_status: Option<String>,
-    pub(in crate::privileged_helper::system) iommu_group: Option<u32>,
-    pub(in crate::privileged_helper::system) bars: Vec<BarInfo>,
+pub struct PciNode {
+    pub address: String,
+    pub parent: Option<String>,
+    pub role: HardwareRole,
+    pub kind: Option<HardwareKind>,
+    pub path: PathBuf,
+    pub class: Option<u32>,
+    pub vendor_id: Option<u32>,
+    pub device_id: Option<u32>,
+    pub driver: Option<String>,
+    pub numa_node: Option<u32>,
+    pub link: Option<PcieLinkInfo>,
+    pub power_state: Option<String>,
+    pub runtime_status: Option<String>,
+    pub iommu_group: Option<u32>,
+    pub bars: Vec<BarInfo>,
 }
 
-pub(super) fn text(path: &Path) -> Option<String> {
+pub fn text(path: &Path) -> Option<String> {
     let value = fs::read_to_string(path).ok()?;
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_owned())
@@ -91,7 +106,7 @@ fn hex(path: &Path) -> Option<u32> {
     u32::from_str_radix(text(path)?.trim_start_matches("0x"), 16).ok()
 }
 
-pub(super) fn names(path: &Path) -> Vec<String> {
+pub fn names(path: &Path) -> Vec<String> {
     let mut names: Vec<_> = fs::read_dir(path)
         .into_iter()
         .flatten()
@@ -222,7 +237,7 @@ fn node(
 }
 
 /// Devices of interest and every bridge above them, parents before children.
-pub(in crate::privileged_helper::system) fn read_topology(sys: &Path) -> Vec<PciNode> {
+pub fn read_topology(sys: &Path) -> Vec<PciNode> {
     let mut chains = Vec::new();
     for name in names(&sys.join("bus/pci/devices")) {
         let Ok(dir) = fs::canonicalize(sys.join("bus/pci/devices").join(&name)) else {
@@ -292,7 +307,7 @@ pub(in crate::privileged_helper::system) fn read_topology(sys: &Path) -> Vec<Pci
 }
 
 /// Online NUMA node count, from `devices/system/node/online` such as `0` or `0-1`.
-pub(in crate::privileged_helper::system) fn online_numa_nodes(sys: &Path) -> usize {
+pub fn online_numa_nodes(sys: &Path) -> usize {
     text(&sys.join("devices/system/node/online"))
         .map(|ranges| {
             ranges
@@ -306,8 +321,18 @@ pub(in crate::privileged_helper::system) fn online_numa_nodes(sys: &Path) -> usi
         .unwrap_or(1)
 }
 
+crate::ipc::codec::wire_struct!(PcieLink { speed_gts, width });
+crate::ipc::codec::wire_struct!(PcieLinkInfo { current, max });
+crate::ipc::codec::wire_struct!(BarInfo {
+    index,
+    bytes,
+    prefetchable
+});
+crate::ipc::codec::wire_enum!(HardwareRole { 0 => HostBridge, 1 => RootPort, 2 => SwitchPort, 3 => Endpoint });
+crate::ipc::codec::wire_enum!(HardwareKind { 0 => Gpu, 1 => Rdma, 2 => Accelerator, 3 => NvSwitch });
+
 #[cfg(test)]
-pub(in crate::privileged_helper::system) mod fixture {
+pub mod fixture {
     //! A temporary sysfs/procfs tree shaped like real kernels.
     use std::{
         fs,
@@ -315,8 +340,8 @@ pub(in crate::privileged_helper::system) mod fixture {
         path::{Path, PathBuf},
     };
 
-    pub(in crate::privileged_helper::system) struct SysfsFixture {
-        pub(in crate::privileged_helper::system) root: PathBuf,
+    pub struct SysfsFixture {
+        pub root: PathBuf,
     }
     impl Drop for SysfsFixture {
         fn drop(&mut self) {
@@ -324,7 +349,7 @@ pub(in crate::privileged_helper::system) mod fixture {
         }
     }
     impl SysfsFixture {
-        pub(in crate::privileged_helper::system) fn new(name: &str) -> Self {
+        pub fn new(name: &str) -> Self {
             let root =
                 std::env::temp_dir().join(format!("procinsh-sysfs-{name}-{}", std::process::id()));
             let _ = fs::remove_dir_all(&root);
@@ -333,23 +358,19 @@ pub(in crate::privileged_helper::system) mod fixture {
             fs::create_dir_all(root.join("proc")).unwrap();
             Self { root }
         }
-        pub(in crate::privileged_helper::system) fn sys(&self) -> PathBuf {
+        pub fn sys(&self) -> PathBuf {
             self.root.join("sys")
         }
-        pub(in crate::privileged_helper::system) fn proc(&self) -> PathBuf {
+        pub fn proc(&self) -> PathBuf {
             self.root.join("proc")
         }
-        pub(in crate::privileged_helper::system) fn write(&self, path: &str, value: &str) {
+        pub fn write(&self, path: &str, value: &str) {
             let path = self.root.join(path);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, format!("{value}\n")).unwrap();
         }
         /// Adds a device at `chain` (host bridge first) with attributes.
-        pub(in crate::privileged_helper::system) fn device(
-            &self,
-            chain: &[&str],
-            attributes: &[(&str, &str)],
-        ) -> PathBuf {
+        pub fn device(&self, chain: &[&str], attributes: &[(&str, &str)]) -> PathBuf {
             let dir = chain
                 .iter()
                 .fold(self.sys().join("devices"), |dir, c| dir.join(c));
@@ -370,11 +391,7 @@ pub(in crate::privileged_helper::system) mod fixture {
             }
             dir
         }
-        pub(in crate::privileged_helper::system) fn char_device(
-            &self,
-            number: &str,
-            target: &Path,
-        ) {
+        pub fn char_device(&self, number: &str, target: &Path) {
             fs::create_dir_all(target).unwrap();
             symlink(target, self.sys().join("dev/char").join(number)).unwrap();
         }
@@ -382,7 +399,7 @@ pub(in crate::privileged_helper::system) mod fixture {
 
     /// This machine: a GPU and an InfiniBand HCA under root ports of different host
     /// bridges on one NUMA node, plus a BMC display adapter.
-    pub(in crate::privileged_helper::system) fn workstation(name: &str) -> SysfsFixture {
+    pub fn workstation(name: &str) -> SysfsFixture {
         let f = SysfsFixture::new(name);
         let bridge = |speed: &'static str, width: &'static str| {
             vec![
@@ -444,7 +461,7 @@ pub(in crate::privileged_helper::system) mod fixture {
     }
 
     /// A DGX-like tree: two NUMA nodes, each with a PCIe switch holding two GPUs and a NIC.
-    pub(in crate::privileged_helper::system) fn switched(name: &str) -> SysfsFixture {
+    pub fn switched(name: &str) -> SysfsFixture {
         let f = SysfsFixture::new(name);
         for (bridge, bus, numa) in [("pci0000:00", 0u8, "0"), ("pci0000:80", 0x80, "1")] {
             let attrs = |class: &'static str, vendor: &'static str| {

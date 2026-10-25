@@ -1,85 +1,29 @@
 //! Regular-file activity, independent of IPC/CPU availability.
-use crate::privileged_helper::{
-    process::ProcessId,
-    resource::{DeviceId, FileIdentity},
-};
+#[cfg(test)]
+use crate::privileged_helper::resource::{DeviceId, FileIdentity};
 use anyhow::{Context, Result};
 use libbpf_rs::{MapCore, MapFlags, ObjectBuilder, RingBufferBuilder};
-use serde::Serialize;
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 pub(super) const COVERAGE: &str = "Regular-file read/write, pread/pwrite and vectored I/O, including page cache. Not physical disk traffic. mmap, io_uring, splice/sendfile and kernel workers are not observed.";
 const MAX_AGGREGATES: usize = 8192;
-#[derive(Clone, Debug, Serialize)]
-pub(in crate::privileged_helper) struct FileActivity {
-    process_id: ProcessId,
-    file: FileIdentity,
-    path: Option<String>,
-    write: bool,
-    bytes: u64,
-    count: u64,
-}
-
-fn decode(data: &[u8]) -> Option<FileActivity> {
-    if data.len() != 4144 {
-        return None;
-    }
-    let u64_at = |i| u64::from_ne_bytes(data[i..i + 8].try_into().unwrap());
-    let u32_at = |i| u32::from_ne_bytes(data[i..i + 4].try_into().unwrap());
-    let bytes = u64_at(24);
-    if bytes == 0 || u32_at(36) > 1 {
-        return None;
-    }
-    let len = u32_at(40) as usize;
-    let path = if (2..=4096).contains(&len) && data[48 + len - 1] == 0 {
-        Some(String::from_utf8_lossy(&data[48..48 + len - 1]).into_owned())
-    } else {
-        None
-    };
-    let dev = u64_at(16);
-    Some(FileActivity {
-        process_id: ProcessId {
-            pid: u32_at(32) as i32,
-            start_time_ticks: ((u64_at(0) as u128
-                * crate::privileged_helper::process::ticks_per_second() as u128)
-                / 1_000_000_000) as u64,
-        },
-        file: FileIdentity {
-            device: DeviceId::from_kernel(dev),
-            inode: u64_at(8),
-            generation: u32_at(44),
-        },
-        path,
-        write: u32_at(36) != 0,
-        bytes,
-        count: 1,
-    })
-}
+pub(super) use procinsh_protocol::analysis::activity::FileActivity;
+use procinsh_protocol::analysis::activity::decode_file as decode;
 #[derive(Default)]
 struct Batch {
-    events: HashMap<(ProcessId, FileIdentity, bool), FileActivity>,
+    events: Vec<FileActivity>,
     dropped: u64,
 }
 impl Batch {
     fn add(&mut self, event: FileActivity) {
-        let key = (event.process_id, event.file, event.write);
-        if let Some(prior) = self.events.get_mut(&key) {
-            prior.bytes = prior.bytes.saturating_add(event.bytes);
-            prior.count = prior.count.saturating_add(event.count);
-            if event.path.is_some() {
-                prior.path = event.path;
-            }
-        } else if self.events.len() < MAX_AGGREGATES {
-            self.events.insert(key, event);
+        if self.events.len() < MAX_AGGREGATES {
+            self.events.push(event);
         } else {
             self.dropped += 1;
         }
     }
 }
-/// Owns BPF resources and collects aggregated regular-file I/O activity.
+/// Owns BPF resources and captures bounded regular-file I/O observations.
 pub(super) struct FileActivityCollector {
     ring: libbpf_rs::RingBuffer<'static>,
     _links: Vec<libbpf_rs::Link>,
@@ -132,13 +76,7 @@ impl FileActivityCollector {
     }
 
     pub(super) fn drain(&self) -> Vec<FileActivity> {
-        self.batch
-            .lock()
-            .unwrap()
-            .events
-            .drain()
-            .map(|(_, event)| event)
-            .collect()
+        std::mem::take(&mut self.batch.lock().unwrap().events)
     }
 
     pub(super) fn lost(&self) -> u64 {
@@ -155,6 +93,7 @@ impl FileActivityCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use procinsh_protocol::analysis::activity::FileBatch as Batch;
 
     fn event() -> Vec<u8> {
         let mut data = vec![0; 4144];

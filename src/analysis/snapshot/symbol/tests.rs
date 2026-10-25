@@ -1,8 +1,13 @@
 use super::super::{SymbolInfo, elf_address, instruction_address, resolve_frame};
 use super::*;
-use crate::privileged_helper::process::maps::parse_map;
+use crate::model::memory::parse_map;
 use std::process::Command;
-use std::{fs, sync::Arc};
+use std::{
+    fs,
+    os::unix::fs::MetadataExt,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 fn empty_elf() -> ElfSymbols {
     ElfSymbols {
@@ -123,10 +128,9 @@ fn dwarf_inline_source_only_and_cache_lifecycle() {
     let fixture = Fixture::new();
     let path = fixture.compile("-g", "full");
     let map = file_map(&path);
-    let pid = std::process::id() as i32;
     let mut cache = ElfCache::default();
-    let miss = cache.get(pid, &map).unwrap();
-    let hit = cache.get(pid, &map).unwrap();
+    let miss = load_cached(&mut cache, &map).unwrap();
+    let hit = load_cached(&mut cache, &map).unwrap();
     assert!(Arc::ptr_eq(&miss, &hit));
     let (start, size, _) = miss.symbols.iter().find(|s| s.2 == "outer").unwrap();
     let address = (*start..start + size)
@@ -140,7 +144,7 @@ fn dwarf_inline_source_only_and_cache_lifecycle() {
     assert_eq!(Some(info.clone()), resolve_frame(address, &miss));
 
     // No ELF symbols: DWARF alone must still produce a result.
-    let mut dwarf_only = ElfSymbols::load(&path).unwrap();
+    let mut dwarf_only = load(&path).unwrap();
     dwarf_only.symbols.clear();
     let dwarf_info = resolve_frame(address, &dwarf_only).unwrap();
     assert_eq!(dwarf_info.inline_frames, info.inline_frames);
@@ -148,7 +152,7 @@ fn dwarf_inline_source_only_and_cache_lifecycle() {
 
     // Line tables without function DIEs or an ELF symbol table.
     let lines_path = fixture.compile("-gline-tables-only", "lines");
-    let mut lines = ElfSymbols::load(&lines_path).unwrap();
+    let mut lines = load(&lines_path).unwrap();
     let line_address = lines.symbols.iter().find(|s| s.2 == "main").unwrap().0;
     lines.symbols.clear();
     let source = resolve_frame(line_address, &lines).unwrap();
@@ -163,7 +167,7 @@ fn dwarf_inline_source_only_and_cache_lifecycle() {
             .entries
             .insert((0, i as u64, 0, 0, 0), Arc::clone(&miss));
     }
-    let reloaded = cache.get(pid, &map).unwrap();
+    let reloaded = load_cached(&mut cache, &map).unwrap();
     assert_eq!(cache.entries.len(), 1);
     assert!(!Arc::ptr_eq(&miss, &reloaded));
     assert_eq!(Some(info), resolve_frame(address, &reloaded));
@@ -171,13 +175,13 @@ fn dwarf_inline_source_only_and_cache_lifecycle() {
 
     let mut wrong_identity = map.clone();
     wrong_identity.inode += 1;
-    assert!(cache.get(pid, &wrong_identity).is_none());
+    assert!(load_cached(&mut cache, &wrong_identity).is_none());
     let large_path = fixture.0.join("oversized");
     fs::File::create(&large_path)
         .unwrap()
         .set_len(MAX_FILE_SIZE + 1)
         .unwrap();
-    assert!(cache.get(pid, &file_map(&large_path)).is_none());
+    assert!(load_cached(&mut cache, &file_map(&large_path)).is_none());
     assert_eq!(cache.entries.len(), 1);
 }
 
@@ -185,13 +189,12 @@ fn dwarf_inline_source_only_and_cache_lifecycle() {
 fn pinned_elf_survives_path_replacement_and_rejects_decompression_bombs() {
     let fixture = Fixture::new();
     let path = fixture.compile("-g", "pinned");
-    let map = file_map(&path);
-    let (descriptor, _) = matching_file(std::process::id() as i32, &map).unwrap();
+    let captured = fs::read(&path).unwrap();
     fs::rename(&path, fixture.0.join("original")).unwrap();
     fs::write(&path, b"replacement is not an ELF").unwrap();
-    let elf = ElfSymbols::load_file(&descriptor).unwrap();
+    let elf = ElfSymbols::parse(&captured).unwrap();
     assert!(elf.symbols.iter().any(|symbol| symbol.2 == "outer"));
-    assert!(ElfSymbols::load(&path).is_none());
+    assert!(load(&path).is_none());
 
     let path = fixture.compile("-g", "compressed");
     let mut bytes = fs::read(&path).unwrap();
@@ -211,5 +214,45 @@ fn pinned_elf_survives_path_replacement_and_rejects_decompression_bombs() {
     bytes[offset + 8..offset + 16].copy_from_slice(&(MAX_SECTION_SIZE + 1).to_le_bytes());
     bytes[offset + 16..offset + 24].copy_from_slice(&1_u64.to_le_bytes());
     fs::write(&path, bytes).unwrap();
-    assert!(ElfSymbols::load(&path).is_none());
+    assert!(load(&path).is_none());
+}
+
+fn load(path: &Path) -> Option<ElfSymbols> {
+    ElfSymbols::parse(&fs::read(path).ok()?)
+}
+fn load_cached(cache: &mut ElfCache, map: &MemoryMap) -> Option<Arc<ElfSymbols>> {
+    let path = Path::new(map.pathname.as_deref()?);
+    let meta = fs::metadata(path).ok()?;
+    if meta.len() > MAX_FILE_SIZE {
+        return None;
+    }
+    cache.insert(
+        map,
+        ElfFile {
+            identity: (
+                meta.dev(),
+                meta.ino(),
+                meta.len(),
+                meta.mtime(),
+                meta.mtime_nsec(),
+            ),
+            bytes: fs::read(path).ok()?,
+        },
+    )
+}
+
+#[test]
+fn rejected_file_versions_do_not_reuse_stale_symbols() {
+    let fixture = Fixture::new();
+    let path = fixture.compile("-g", "changed");
+    let map = file_map(&path);
+    let mut cache = ElfCache::default();
+    assert!(load_cached(&mut cache, &map).is_some());
+    let old = cache.identity(&map).unwrap();
+    fs::write(&path, b"not an ELF").unwrap();
+    assert!(load_cached(&mut cache, &map).is_none());
+    assert!(cache.get(&map).is_none());
+    let rejected = cache.identity(&map).unwrap();
+    assert_ne!(rejected, old);
+    assert_eq!(rejected.2, 10);
 }

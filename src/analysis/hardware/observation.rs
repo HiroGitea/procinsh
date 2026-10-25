@@ -1,4 +1,11 @@
 //! One hardware observation for a system snapshot.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`HardwareSources`] | `pub` | `struct HardwareSources` |
+//! | [`HardwareObservation`] | `pub` | `struct HardwareObservation` |
 
 use super::devices::{HardwareDevice, device};
 use super::handles::DeviceHandleCollector;
@@ -11,9 +18,9 @@ use std::{
 
 /// Where sysfs and procfs are mounted; tests use temporary trees.
 #[derive(Clone)]
-pub(in crate::privileged_helper::system) struct HardwareSources {
-    pub(in crate::privileged_helper::system) sys: PathBuf,
-    pub(in crate::privileged_helper::system) proc: PathBuf,
+pub struct HardwareSources {
+    pub sys: PathBuf,
+    pub proc: PathBuf,
 }
 impl Default for HardwareSources {
     fn default() -> Self {
@@ -25,14 +32,14 @@ impl Default for HardwareSources {
 }
 
 #[derive(Default)]
-pub(in crate::privileged_helper::system) struct HardwareObservation {
-    pub(in crate::privileged_helper::system) devices: Vec<HardwareDevice>,
-    pub(in crate::privileged_helper::system) paths: Vec<HardwarePath>,
+pub struct HardwareObservation {
+    pub devices: Vec<HardwareDevice>,
+    pub paths: Vec<HardwarePath>,
 }
 
 impl HardwareObservation {
     /// Reads GPUs, RDMA NICs, accelerators and NVSwitches with their bridges and paths.
-    pub(in crate::privileged_helper::system) fn observe(sources: &HardwareSources) -> Self {
+    pub fn observe(sources: &HardwareSources) -> Self {
         let nodes = read_topology(&sources.sys);
         Self {
             paths: paths(&nodes, online_numa_nodes(&sources.sys)),
@@ -41,10 +48,7 @@ impl HardwareObservation {
     }
 
     /// A collector for descriptors of this observation's devices.
-    pub(in crate::privileged_helper::system) fn handles(
-        &self,
-        sources: &HardwareSources,
-    ) -> DeviceHandleCollector {
+    pub fn handles(&self, sources: &HardwareSources) -> DeviceHandleCollector {
         let addresses: HashSet<_> = self.devices.iter().map(|d| d.address.clone()).collect();
         let minors: HashMap<_, _> = self
             .devices
@@ -56,9 +60,7 @@ impl HardwareObservation {
 }
 
 #[cfg(test)]
-pub(in crate::privileged_helper::system) fn observe_at(
-    root: &std::path::Path,
-) -> HardwareObservation {
+pub fn observe_at(root: &std::path::Path) -> HardwareObservation {
     HardwareObservation::observe(&HardwareSources {
         sys: root.join("sys"),
         proc: root.join("proc"),

@@ -134,8 +134,14 @@ mod tests {
             },
         ];
         for response in responses {
-            let mut response =
-                serde_json::from_slice(&serde_json::to_vec(&response).unwrap()).unwrap();
+            let mut response = procinsh_protocol::ipc::codec::decode(
+                &procinsh_protocol::ipc::codec::encode(
+                    &response,
+                    procinsh_protocol::ipc::schema::MAX_RESPONSE,
+                )
+                .unwrap(),
+            )
+            .unwrap();
             decode_response(&mut response).unwrap();
             let value = match response {
                 MonitorResponse::Data(value)

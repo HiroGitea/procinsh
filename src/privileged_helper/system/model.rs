@@ -2,18 +2,19 @@
 //!
 //! # Interface
 //!
-//! | Definition | Visibility | Kind |
+//! | Definition | Visibility | Kind / signature |
 //! | --- | --- | --- |
 //! | [`SystemActivity`] | `pub(in crate::privileged_helper)` | `struct SystemActivity` |
-//! | [`IpcActivity`] | `pub(in crate::privileged_helper)` | `struct IpcActivity` |
-//! | [`CpuActivity`] | `pub(in crate::privileged_helper)` | `struct CpuActivity` |
-//! | [`SignalEvent`] | `pub(super)` | `struct SignalEvent` |
 //! | [`SystemMonitorStatus`] | `pub(in crate::privileged_helper)` | `struct SystemMonitorStatus` |
 //! | [`SensorState`] | `pub(in crate::privileged_helper)` | `enum SensorState` |
-//!
-//! Activity endpoints use [`ProcessId`]; file observations use [`FileActivity`].
+//! | [`CpuActivity`] | `pub(in crate::privileged_helper)` | `struct CpuActivity` |
+//! | [`IpcActivity`] | `pub(in crate::privileged_helper)` | `struct IpcActivity` |
+//! | [`SignalEvent`] | `pub(in crate::privileged_helper)` | `struct SignalEvent` |
+
 use super::files::FileActivity;
+#[cfg(test)]
 use crate::privileged_helper::process::ProcessId;
+#[cfg(test)]
 use crate::privileged_helper::resource::IpcIdentity;
 use serde::Serialize;
 
@@ -26,34 +27,14 @@ pub(in crate::privileged_helper) struct SystemActivity {
     pub(super) cpu: Vec<CpuActivity>,
     pub(super) signals: Vec<SignalEvent>,
     pub(super) status: SystemMonitorStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) raw_activity: Option<procinsh_protocol::analysis::activity::RawActivity>,
 }
+pub(in crate::privileged_helper) use procinsh_protocol::analysis::activity::CpuActivity;
+pub(in crate::privileged_helper) use procinsh_protocol::analysis::activity::IpcActivity;
 /// An observed signal generation, not a confirmation of delivery or execution.
 /// Endpoint identities prevent PID reuse from attaching an event to another process.
-#[derive(Clone, Debug, Serialize)]
-pub(super) struct SignalEvent {
-    pub(super) timestamp_ns: u64,
-    pub(super) src_pid: u32,
-    pub(super) dst_pid: u32,
-    pub(super) signal: i32,
-    pub(super) source_id: ProcessId,
-    pub(super) destination_id: ProcessId,
-}
-#[derive(Clone, Serialize)]
-pub(in crate::privileged_helper) struct IpcActivity {
-    pub(super) process_id: ProcessId,
-    pub(super) resource: IpcIdentity,
-    pub(super) write: bool,
-    pub(super) bytes: u64,
-    pub(super) count: u64,
-}
-#[derive(Clone, Serialize)]
-pub(in crate::privileged_helper) struct CpuActivity {
-    pub(super) process_id: ProcessId,
-    pub(super) runtime_ns: u64,
-    pub(super) switches: u64,
-    pub(super) running_threads: usize,
-    pub(super) cpus: Vec<usize>,
-}
+pub(in crate::privileged_helper) use procinsh_protocol::analysis::activity::SignalEvent;
 #[derive(Clone, Default, Serialize)]
 /// State and collection health of the system monitoring sensors.
 pub(in crate::privileged_helper) struct SystemMonitorStatus {
@@ -129,6 +110,7 @@ mod tests {
                 running_threads: 2,
                 cpus: vec![0, 2],
             }],
+            raw_activity: None,
             status: SystemMonitorStatus {
                 active: true,
                 signals: SensorState::Observing,

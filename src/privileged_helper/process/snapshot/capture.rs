@@ -7,14 +7,22 @@ use super::{
     perf::PerfEventReader,
     registers::{self, Register},
     stack::StackFrame,
+};
+use crate::privileged_helper::process::{
+    self, ProcessId,
+    maps::{MappingSnapshot, MemoryMap},
+    procfs,
+};
+use anyhow::Result;
+#[cfg(test)]
+use procinsh_protocol::analysis::snapshot::{
     symbol::{ElfCache, SymbolInfo, elf_address, instruction_address, resolve_frame},
     unwind::StackUnwinder,
 };
-use crate::privileged_helper::process::{self, ProcessId, maps::MemoryMap, procfs};
-use anyhow::Result;
 use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -28,6 +36,7 @@ pub(in crate::privileged_helper::process) struct ThreadSample {
     /// Instruction set of the inspected process; `null` when it is unknown or unsupported.
     architecture: Option<Architecture>,
     sampled_at: Option<u64>,
+    sample_time_ns: Option<u64>,
     #[cfg(test)]
     #[serde(skip)]
     sample_source: Option<SampleSource>,
@@ -35,6 +44,11 @@ pub(in crate::privileged_helper::process) struct ThreadSample {
     cpu: Option<u32>,
     lost_samples: u64,
     registers: Vec<Register>,
+    raw_registers: Option<registers::RegisterSet>,
+    stack_bytes: Vec<u8>,
+    map_epoch: Option<u64>,
+    #[serde(skip)]
+    context: Option<Arc<MappingSnapshot>>,
     call_stack: Vec<StackFrame>,
     disassembly: Option<InstructionBytes>,
     unwind_stop: String,
@@ -46,12 +60,17 @@ impl ThreadSample {
             tid,
             architecture,
             sampled_at: None,
+            sample_time_ns: None,
             #[cfg(test)]
             sample_source: None,
             sample_age_ms: None,
             cpu: None,
             lost_samples: 0,
             registers: Vec::new(),
+            raw_registers: None,
+            stack_bytes: Vec::new(),
+            map_epoch: None,
+            context: None,
             call_stack: Vec::new(),
             disassembly: None,
             unwind_stop: "Waiting for sample".into(),
@@ -72,9 +91,12 @@ pub(in crate::privileged_helper::process) struct Sampler {
     id: ProcessId,
     architecture: Option<Architecture>,
     threads: BTreeMap<i32, Thread>,
+    #[cfg(test)]
     symbols: ElfCache,
+    #[cfg(test)]
     unwind: StackUnwinder,
     next_ptrace: Option<Instant>,
+    context: Arc<MappingSnapshot>,
 }
 impl Sampler {
     pub(in crate::privileged_helper::process) fn new(id: ProcessId) -> Self {
@@ -82,9 +104,15 @@ impl Sampler {
             id,
             architecture: Architecture::of_process(id.pid),
             threads: BTreeMap::new(),
+            #[cfg(test)]
             symbols: ElfCache::default(),
+            #[cfg(test)]
             unwind: StackUnwinder::default(),
             next_ptrace: None,
+            context: Arc::new(MappingSnapshot {
+                epoch: 0,
+                maps: Vec::new(),
+            }),
         }
     }
     /// Captures the initial ptrace snapshot and schedules the next attempt ten seconds
@@ -106,11 +134,14 @@ impl Sampler {
                 Ok(sample) => process_sample(
                     self.id.pid,
                     self.architecture,
+                    #[cfg(test)]
                     &mut self.unwind,
+                    #[cfg(test)]
                     &mut self.symbols,
                     thread,
                     sample,
                     maps,
+                    Arc::clone(&self.context),
                 ),
                 Err(error) => {
                     let message = format!("ptrace sampling: {error:#}");
@@ -129,7 +160,23 @@ impl Sampler {
     /// Drains perf samples and captures current threads when the ptrace deadline is due.
     pub(in crate::privileged_helper::process) fn poll(&mut self, maps: &[MemoryMap]) -> Result<()> {
         process::validate_process_identity(self.id)?;
-        self.unwind.refresh(self.id.pid, maps, &mut self.symbols);
+        if self.context.maps.as_slice() != maps {
+            self.context = Arc::new(MappingSnapshot {
+                epoch: self.context.epoch + 1,
+                maps: maps.to_vec(),
+            });
+        }
+        #[cfg(test)]
+        {
+            for map in maps.iter().filter(|map| map.executable && map.inode != 0) {
+                if self.symbols.get(map).is_none()
+                    && let Some(file) = process::elf::read(self.id.pid, map)
+                {
+                    self.symbols.insert(map, file);
+                }
+            }
+            self.unwind.refresh(maps, &self.symbols);
+        }
         let mut alive = BTreeSet::new();
         for tid in super::super::threads::tids(self.id.pid)? {
             let Ok(stat) = procfs::read_stat(&format!("/proc/{}/task/{tid}/stat", self.id.pid))
@@ -207,11 +254,14 @@ impl Sampler {
                 process_sample(
                     self.id.pid,
                     self.architecture,
+                    #[cfg(test)]
                     &mut self.unwind,
+                    #[cfg(test)]
                     &mut self.symbols,
                     thread,
                     sample,
                     maps,
+                    Arc::clone(&self.context),
                 );
             }
         }
@@ -224,6 +274,18 @@ impl Sampler {
         }
         process::validate_process_identity(self.id)?;
         Ok(())
+    }
+    /// Returns each mapping context referenced by retained thread samples once.
+    pub(in crate::privileged_helper::process) fn mapping_snapshots(&self) -> Vec<MappingSnapshot> {
+        let mut snapshots = BTreeMap::new();
+        for thread in self.threads.values() {
+            if let Some(context) = &thread.latest.context {
+                snapshots
+                    .entry(context.epoch)
+                    .or_insert_with(|| context.as_ref().clone());
+            }
+        }
+        snapshots.into_values().collect()
     }
     /// Returns the latest samples with ages refreshed from monotonic time.
     pub(in crate::privileged_helper::process) fn latest(&self) -> Vec<ThreadSample> {
@@ -243,11 +305,12 @@ impl Sampler {
 fn process_sample(
     pid: i32,
     architecture: Option<Architecture>,
-    unwind: &mut StackUnwinder,
-    symbols: &mut ElfCache,
+    #[cfg(test)] unwind: &mut StackUnwinder,
+    #[cfg(test)] symbols: &mut ElfCache,
     thread: &mut Thread,
     sample: super::sample::RawSample,
     maps: &[MemoryMap],
+    context: Arc<MappingSnapshot>,
 ) {
     if thread.sampled_ns.is_some_and(|time| sample.time_ns <= time) {
         return;
@@ -255,24 +318,24 @@ fn process_sample(
     let tid = sample.tid;
     let lost = thread.latest.lost_samples;
     let r = &sample.registers;
-    let (mut frames, reason) = unwind.walk(
-        r.0[native::PC],
-        r.0[native::SP],
-        r.0[native::FP],
-        maps,
-        &sample.stack,
-    );
-    for (index, frame) in frames.iter_mut().enumerate() {
-        let address = instruction_address(frame.address, index > 0);
-        let info = maps
-            .iter()
-            .find(|m| m.contains(address) && m.inode != 0)
-            .and_then(|map| {
-                let elf = symbols.get(pid, map)?;
-                resolve_frame(elf_address(address, map, &elf, procfs::page_size())?, &elf)
-            });
-        apply_symbol_info(frame, info);
-    }
+    #[cfg(test)]
+    let (frames, reason) = {
+        let (mut frames, reason) = unwind.walk(r.0[native::PC], r.0[native::SP], r.0[native::FP], maps, &sample.stack);
+        for (index, frame) in frames.iter_mut().enumerate() {
+            let address = instruction_address(frame.address, index > 0);
+            let info = maps
+                .iter()
+                .find(|m| m.contains(address) && m.inode != 0)
+                .and_then(|map| {
+                    let elf = symbols.get(map)?;
+                    resolve_frame(elf_address(address, map, &elf, procfs::page_size())?, &elf)
+                });
+            apply_symbol_info(frame, info);
+        }
+        (frames, reason)
+    };
+    #[cfg(not(test))]
+    let (frames, reason) = (Vec::new(), String::new());
     let code = InstructionBytes::capture(pid, r.0[native::PC], maps);
     let age = monotonic_ns().saturating_sub(sample.time_ns) / 1_000_000;
     thread.sampled_ns = Some(sample.time_ns);
@@ -280,12 +343,20 @@ fn process_sample(
         tid,
         architecture,
         sampled_at: Some(process::timestamp_ms().saturating_sub(age)),
+        sample_time_ns: Some(sample.time_ns),
         #[cfg(test)]
         sample_source: Some(sample.source),
         sample_age_ms: Some(age),
         cpu: sample.cpu,
         lost_samples: lost,
+        #[cfg(test)]
         registers: registers::from_sample(r, maps),
+        #[cfg(not(test))]
+        registers: Vec::new(),
+        raw_registers: Some(r.clone()),
+        stack_bytes: sample.stack.clone(),
+        map_epoch: Some(context.epoch),
+        context: Some(context),
         call_stack: frames,
         disassembly: Some(code),
         unwind_stop: reason,
@@ -295,6 +366,7 @@ fn process_sample(
 
 // Replace all resolved fields so repeated application cannot append inline frames
 // or preserve stale data from an earlier resolution.
+#[cfg(test)]
 fn apply_symbol_info(frame: &mut StackFrame, info: Option<SymbolInfo>) {
     let info = info.unwrap_or_default();
     frame.symbol = info.name;
@@ -616,6 +688,7 @@ mod live_tests {
             thread,
             sample,
             &maps,
+            Arc::clone(&sampler.context),
         );
         assert_eq!(thread.sampled_ns, Some(time));
         assert_eq!(thread.latest.sample_source, Some(SampleSource::Ptrace));
@@ -635,6 +708,7 @@ mod live_tests {
             thread,
             sample,
             &maps,
+            Arc::clone(&sampler.context),
         );
         assert_eq!(thread.sampled_ns, Some(time + 1));
         assert_eq!(thread.latest.sample_source, Some(SampleSource::CpuClock));

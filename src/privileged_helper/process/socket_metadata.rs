@@ -36,7 +36,7 @@ pub(in crate::privileged_helper) struct SocketMetadataReader {
 /// Independent kind and connection observations for one verified socket.
 /// An unsupported option does not discard other observations. Addresses are
 /// not decoded; getpeername success only confirms that a peer can be queried.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(in crate::privileged_helper) struct SocketMetadata {
     pub(in crate::privileged_helper) protocol: Option<SocketProtocol>,
     pub(in crate::privileged_helper) connection_status: SocketConnectionStatus,

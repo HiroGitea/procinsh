@@ -1,11 +1,17 @@
+//! Acquire bounded environment bytes, auxv words and selected target strings.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`environment`] | `pub(super)` | `fn environment(id: ProcessId) -> Result<serde_json::Value>` |
+//! | [`auxv`] | `pub(super)` | `fn auxv(id: ProcessId) -> Result<serde_json::Value>` |
+
 use super::{ProcessId, memory, permission_help, timestamp_ms, validate_process_identity};
 use anyhow::{Context, Result, bail, ensure};
-use serde::Serialize;
 use std::{fs::File, io::Read};
-
 const MAX_ENVIRONMENT: usize = 1024 * 1024;
 const MAX_AUXV: usize = 64 * 1024;
-
 fn read_limited(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.take(limit as u64 + 1).read_to_end(&mut bytes)?;
@@ -14,150 +20,6 @@ fn read_limited(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
         "The read limit of {limit} bytes was exceeded."
     );
     Ok(bytes)
-}
-
-#[derive(Debug, Serialize)]
-pub(super) struct EnvironmentEntry {
-    pub(super) name: String,
-    pub(super) value: Option<String>,
-}
-#[derive(Debug, Serialize)]
-pub(super) struct Environment {
-    pub(super) process_id: ProcessId,
-    pub(super) captured_at: u64,
-    pub(super) entries: Vec<EnvironmentEntry>,
-    pub(super) lossy_utf8: bool,
-}
-
-fn parse_environment(bytes: &[u8]) -> Vec<EnvironmentEntry> {
-    bytes
-        .split(|b| *b == 0)
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| {
-            let (name, value) = match entry.iter().position(|b| *b == b'=') {
-                Some(index) => (&entry[..index], Some(&entry[index + 1..])),
-                None => (entry, None),
-            };
-            EnvironmentEntry {
-                name: String::from_utf8_lossy(name).into_owned(),
-                value: value.map(|v| String::from_utf8_lossy(v).into_owned()),
-            }
-        })
-        .collect()
-}
-
-pub(super) fn environment(id: ProcessId) -> Result<Environment> {
-    validate_process_identity(id)?;
-    let result = (|| -> Result<Vec<u8>> {
-        read_limited(
-            File::open(format!("/proc/{}/environ", id.pid))?,
-            MAX_ENVIRONMENT,
-        )
-    })();
-    validate_process_identity(id)?;
-    let bytes = result.map_err(|e| anyhow::anyhow!(permission_help("/proc/PID/environ", e)))?;
-    Ok(Environment {
-        process_id: id,
-        captured_at: timestamp_ms(),
-        entries: parse_environment(&bytes),
-        lossy_utf8: std::str::from_utf8(&bytes).is_err(),
-    })
-}
-
-#[derive(Debug, Serialize)]
-pub(super) struct AuxEntry {
-    pub(super) tag: String,
-    pub(super) name: String,
-    #[serde(serialize_with = "super::maps::hex")]
-    pub(super) value: u64,
-    pub(super) decimal: String,
-    pub(super) kind: &'static str,
-    pub(super) description: &'static str,
-    pub(super) text: Option<String>,
-    pub(super) text_error: Option<String>,
-}
-#[derive(Debug, Serialize)]
-pub(super) struct AuxVector {
-    pub(super) process_id: ProcessId,
-    pub(super) captured_at: u64,
-    pub(super) word_bits: u8,
-    pub(super) entries: Vec<AuxEntry>,
-}
-
-fn aux_info(tag: u64) -> (&'static str, &'static str, &'static str) {
-    match tag {
-        0 => ("AT_NULL", "number", "End of vector"),
-        1 => ("AT_IGNORE", "number", "Ignored entry"),
-        2 => ("AT_EXECFD", "number", "Executable file descriptor"),
-        3 => ("AT_PHDR", "address", "Program header address"),
-        4 => ("AT_PHENT", "number", "Size of one program header"),
-        5 => ("AT_PHNUM", "number", "Number of program headers"),
-        6 => ("AT_PAGESZ", "number", "Page size (bytes)"),
-        7 => ("AT_BASE", "address", "ELF interpreter base address"),
-        8 => ("AT_FLAGS", "bitmask", "Flags"),
-        9 => ("AT_ENTRY", "address", "Program entry point"),
-        10 => ("AT_NOTELF", "number", "Non-ELF program"),
-        11 => ("AT_UID", "number", "Real UID"),
-        12 => ("AT_EUID", "number", "Effective UID"),
-        13 => ("AT_GID", "number", "Real GID"),
-        14 => ("AT_EGID", "number", "Effective GID"),
-        15 => ("AT_PLATFORM", "address", "Platform string"),
-        16 => ("AT_HWCAP", "bitmask", "CPU feature bitmask (ABI-specific)"),
-        17 => ("AT_CLKTCK", "number", "Clock ticks / sec"),
-        23 => ("AT_SECURE", "number", "secure-execution mode"),
-        24 => ("AT_BASE_PLATFORM", "address", "Base platform string"),
-        25 => ("AT_RANDOM", "address", "Address of 16 random bytes"),
-        26 => ("AT_HWCAP2", "bitmask", "CPU feature bitmask 2"),
-        27 => ("AT_RSEQ_FEATURE_SIZE", "number", "rseq feature size"),
-        28 => ("AT_RSEQ_ALIGN", "number", "rseq alignment"),
-        29 => ("AT_HWCAP3", "bitmask", "CPU feature bitmask 3"),
-        30 => ("AT_HWCAP4", "bitmask", "CPU feature bitmask 4"),
-        31 => ("AT_EXECFN", "address", "Executable filename at startup"),
-        32 => ("AT_SYSINFO", "address", "vDSO system call function"),
-        33 => ("AT_SYSINFO_EHDR", "address", "vDSO ELF header"),
-        51 => (
-            "AT_MINSIGSTKSZ",
-            "number",
-            "Minimum stack for signal delivery (bytes)",
-        ),
-        _ => ("AT_UNKNOWN", "unknown", "Unknown tag (raw value)"),
-    }
-}
-
-fn parse_auxv(bytes: &[u8], word_bytes: usize) -> Result<Vec<AuxEntry>> {
-    ensure!(matches!(word_bytes, 4 | 8), "unsupported auxv word size");
-    let mut entries = Vec::new();
-    for pair in bytes.chunks_exact(word_bytes * 2) {
-        let word = |b: &[u8]| {
-            if word_bytes == 8 {
-                u64::from_le_bytes(b.try_into().unwrap())
-            } else {
-                u32::from_le_bytes(b.try_into().unwrap()) as u64
-            }
-        };
-        let tag = word(&pair[..word_bytes]);
-        let value = word(&pair[word_bytes..]);
-        let (name, kind, description) = aux_info(tag);
-        entries.push(AuxEntry {
-            tag: tag.to_string(),
-            name: if name == "AT_UNKNOWN" {
-                format!("AT_UNKNOWN_{tag}")
-            } else {
-                name.into()
-            },
-            value,
-            decimal: value.to_string(),
-            kind,
-            description,
-            text: None,
-            text_error: None,
-        });
-        if tag == 0 {
-            ensure!(value == 0, "auxv: invalid AT_NULL value");
-            return Ok(entries);
-        }
-    }
-    bail!("Incomplete auxv (AT_NULL is missing).")
 }
 
 fn elf_word_bytes(ident: &[u8]) -> Result<usize> {
@@ -182,43 +44,71 @@ fn read_string(pid: i32, address: u64) -> Result<String> {
     Ok(String::from_utf8_lossy(&bytes[..end]).into_owned())
 }
 
-pub(super) fn auxv(id: ProcessId) -> Result<AuxVector> {
+pub(super) fn environment(id: ProcessId) -> Result<serde_json::Value> {
     validate_process_identity(id)?;
-    let result = (|| -> Result<(usize, Vec<AuxEntry>)> {
-        // Read the target's ELF class instead of assuming the inspector's word size.
-        let mut ident = [0u8; 16];
-        File::open(format!("/proc/{}/exe", id.pid))?.read_exact(&mut ident)?;
-        let word_bytes = elf_word_bytes(&ident)?;
-        let bytes = read_limited(File::open(format!("/proc/{}/auxv", id.pid))?, MAX_AUXV)?;
-        let mut entries = parse_auxv(&bytes, word_bytes)?;
-        for entry in &mut entries {
-            if matches!(
-                entry.name.as_str(),
-                "AT_EXECFN" | "AT_PLATFORM" | "AT_BASE_PLATFORM"
-            ) && entry.value != 0
-            {
-                match read_string(id.pid, entry.value) {
-                    Ok(text) => entry.text = Some(text),
-                    Err(error) => entry.text_error = Some(error.to_string()),
-                }
-            }
-        }
-        Ok((word_bytes, entries))
-    })();
+    let bytes = read_limited(
+        File::open(format!("/proc/{}/environ", id.pid))?,
+        MAX_ENVIRONMENT,
+    )
+    .map_err(|e| anyhow::anyhow!(permission_help("/proc/PID/environ", e)))?;
     validate_process_identity(id)?;
-    let (word_bytes, entries) =
-        result.map_err(|e| anyhow::anyhow!(permission_help("/proc/PID/auxv", e)))?;
-    Ok(AuxVector {
-        process_id: id,
-        captured_at: timestamp_ms(),
-        word_bits: (word_bytes * 8) as u8,
-        entries,
-    })
+    let value =
+        serde_json::json!({"process_id":id,"captured_at":timestamp_ms(),"raw_environment":bytes});
+    #[cfg(test)]
+    let value = {
+        let mut value = value;
+        procinsh_protocol::analysis::details::complete(&mut value)?;
+        value
+    };
+    Ok(value)
 }
-
+pub(super) fn auxv(id: ProcessId) -> Result<serde_json::Value> {
+    validate_process_identity(id)?;
+    let mut ident = [0; 16];
+    File::open(format!("/proc/{}/exe", id.pid))?.read_exact(&mut ident)?;
+    let width = elf_word_bytes(&ident)?;
+    let bytes = read_limited(File::open(format!("/proc/{}/auxv", id.pid))?, MAX_AUXV)
+        .map_err(|e| anyhow::anyhow!(permission_help("/proc/PID/auxv", e)))?;
+    let mut strings = Vec::new();
+    let mut terminated = false;
+    for pair in bytes.chunks_exact(width * 2) {
+        let word = |part: &[u8]| {
+            if width == 8 {
+                u64::from_le_bytes(part.try_into().unwrap())
+            } else {
+                u32::from_le_bytes(part.try_into().unwrap()) as u64
+            }
+        };
+        let tag = word(&pair[..width]);
+        let address = word(&pair[width..]);
+        if tag == 0 {
+            ensure!(address == 0, "auxv: invalid AT_NULL value");
+            terminated = true;
+            break;
+        }
+        if matches!(tag, 15 | 24 | 31) && address != 0 {
+            let (text, error) = match read_string(id.pid, address) {
+                Ok(text) => (Some(text), None),
+                Err(error) => (None, Some(error.to_string())),
+            };
+            strings.push((tag, text, error));
+        }
+    }
+    ensure!(terminated, "Incomplete auxv (AT_NULL is missing).");
+    validate_process_identity(id)?;
+    let value = serde_json::json!({"process_id":id,"captured_at":timestamp_ms(),"word_bits":width*8,"raw_auxv":bytes,"raw_aux_strings":strings});
+    #[cfg(test)]
+    let value = {
+        let mut value = value;
+        procinsh_protocol::analysis::details::complete(&mut value)?;
+        value
+    };
+    Ok(value)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use procinsh_protocol::analysis::details::{parse_auxv, parse_environment};
 
     #[test]
     fn environment_preserves_duplicates_empty_values_and_equals() {

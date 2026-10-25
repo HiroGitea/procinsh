@@ -1,4 +1,11 @@
 //! Bounded background reverse lookup: snapshot collection never waits for DNS.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`ReverseDnsResolver`] | `pub` | `struct ReverseDnsResolver` |
+
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
@@ -11,12 +18,12 @@ struct Entry {
     pending: bool,
 }
 /// Queues background reverse DNS lookups and caches their results.
-pub(super) struct ReverseDnsResolver {
+pub struct ReverseDnsResolver {
     cache: Arc<Mutex<HashMap<IpAddr, Entry>>>,
     tx: mpsc::SyncSender<IpAddr>,
 }
 impl ReverseDnsResolver {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         let cache = Arc::new(Mutex::new(HashMap::<IpAddr, Entry>::new()));
         let (tx, rx) = mpsc::sync_channel::<IpAddr>(4096);
         let rx = Arc::new(Mutex::new(rx));
@@ -44,7 +51,7 @@ impl ReverseDnsResolver {
         Self { cache, tx }
     }
 
-    pub(super) fn lookup(&self, ip: IpAddr) -> Option<String> {
+    pub fn lookup(&self, ip: IpAddr) -> Option<String> {
         let mut cache = self.cache.lock().unwrap();
         if let Some(entry) = cache.get(&ip)
             && (entry.pending || entry.expires > Instant::now())
@@ -114,6 +121,12 @@ fn reverse(ip: IpAddr) -> Option<String> {
         .into_owned();
     (!name.is_empty() && name.parse::<IpAddr>().is_err()).then_some(name)
 }
+impl Default for ReverseDnsResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

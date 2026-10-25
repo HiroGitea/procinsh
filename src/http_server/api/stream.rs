@@ -19,6 +19,9 @@ pub(super) fn encode(
     delivery: &mut SnapshotEncoder,
 ) -> (Vec<(&'static str, String)>, Option<Arc<Value>>) {
     match event {
+        MonitorEvent::AcquiredSnapshot(_) | MonitorEvent::AcquisitionGap { .. } => {
+            unreachable!("acquisition snapshots must be processed before HTTP output")
+        }
         MonitorEvent::Observation(data) => (vec![("observation", data.to_string())], None),
         MonitorEvent::Activity(data) => (vec![("activity", data.to_string())], None),
         MonitorEvent::Snapshot(data) => {

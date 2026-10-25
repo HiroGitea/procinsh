@@ -1,8 +1,16 @@
+//! Unwind captured stack bytes using main-owned ELF metadata.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`StackUnwinder`] | `pub` | `struct StackUnwinder` |
+
 use super::{
     stack::StackFrame,
     symbol::{ElfCache, elf_address},
 };
-use crate::privileged_helper::process::{maps::MemoryMap, procfs};
+use crate::model::memory::MemoryMap;
 use framehop::{
     Module, Unwinder,
     x86_64::{CacheX86_64, UnwindRegsX86_64, UnwinderX86_64},
@@ -13,7 +21,7 @@ type Mapping = (u64, u64, u64, u64, u32, u32);
 
 #[derive(Default)]
 /// Unwinds sampled stacks using cached rules and executable mapping metadata.
-pub(super) struct StackUnwinder {
+pub struct StackUnwinder {
     unwinder: UnwinderX86_64<Arc<[u8]>>,
     cache: CacheX86_64<framehop::MayAllocateDuringUnwind>,
     mappings: Vec<Mapping>,
@@ -23,7 +31,7 @@ pub(super) struct StackUnwinder {
 impl StackUnwinder {
     /// Rebuild on executable-map changes, including unload/reload and ASLR.
     /// Failed acquisitions remain diagnostic until executable mappings change.
-    pub(super) fn refresh(&mut self, pid: i32, maps: &[MemoryMap], symbols: &mut ElfCache) {
+    pub fn refresh(&mut self, maps: &[MemoryMap], symbols: &ElfCache) {
         let mappings: Vec<_> = maps
             .iter()
             .filter(|m| m.executable)
@@ -46,10 +54,12 @@ impl StackUnwinder {
         self.modules.clear();
         self.mappings = mappings;
         for map in maps.iter().filter(|m| m.executable) {
-            let Some(elf) = symbols.get(pid, map) else {
+            let Some(elf) = symbols.get(map) else {
                 continue;
             };
-            let Some(svma) = elf_address(map.start, map, &elf, procfs::page_size()) else {
+            let Some(svma) = elf_address(map.start, map, &elf, unsafe {
+                libc::sysconf(libc::_SC_PAGESIZE) as u64
+            }) else {
                 continue;
             };
             let Some(base) = map.start.checked_sub(svma) else {
@@ -67,7 +77,7 @@ impl StackUnwinder {
     }
 
     /// Unwinds from the supplied register values and captured stack bytes.
-    pub(super) fn walk(
+    pub fn walk(
         &mut self,
         rip: u64,
         rsp: u64,
@@ -142,13 +152,13 @@ impl StackUnwinder {
         (frames, reason)
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::privileged_helper::process::{self, TestTarget};
+    use crate::analysis::test_support::process::{self, TestTarget};
     use iced_x86::{Decoder, DecoderOptions, Mnemonic, Register};
     use object::{Object, ObjectSection, ObjectSymbol};
+    use process::procfs;
 
     // Reproduce the fixture's call-site stack from its actual instructions and
     // unwind metadata. This exercises CFI even where perf privileges are absent.
@@ -162,11 +172,14 @@ mod tests {
             let target = TestTarget::new(name);
             let maps = process::maps::read_maps(target.id.pid).unwrap();
             let mut symbols = ElfCache::default();
+            for map in maps.iter().filter(|map| map.executable && map.inode != 0) {
+                let _ = process::load(&mut symbols, target.id.pid, map);
+            }
             let map = maps
                 .iter()
                 .find(|m| m.executable && m.pathname.as_deref().is_some_and(|p| p.ends_with(name)))
                 .unwrap();
-            let elf = symbols.get(target.id.pid, map).unwrap();
+            let elf = process::load(&mut symbols, target.id.pid, map).unwrap();
             let base = map.start - elf_address(map.start, map, &elf, procfs::page_size()).unwrap();
             let bytes = std::fs::read(format!("tests/targets/bin/{name}")).unwrap();
             let file = object::File::parse(bytes.as_slice()).unwrap();
@@ -216,7 +229,7 @@ mod tests {
                 .start;
             for indexed in [true, false] {
                 let mut state = StackUnwinder::default();
-                state.refresh(target.id.pid, &maps, &mut symbols);
+                state.refresh(&maps, &symbols);
                 if !indexed {
                     let mut sections = elf.unwind.clone();
                     sections.eh_frame_hdr = None;
@@ -253,9 +266,9 @@ mod tests {
                 );
             }
             let mut state = StackUnwinder::default();
-            state.refresh(target.id.pid, &maps, &mut symbols);
+            state.refresh(&maps, &symbols);
             assert!(!state.modules.is_empty());
-            state.refresh(target.id.pid, &[], &mut symbols);
+            state.refresh(&[], &symbols);
             assert!(state.modules.is_empty());
             target.assert_detached();
         }

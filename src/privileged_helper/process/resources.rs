@@ -1,6 +1,6 @@
 use super::{
-    ProcessId, details,
-    maps::{self, MemoryMap, SmapsEntry},
+    MemoryMap, ProcessId, details,
+    maps::{self, SmapsEntry},
     monitoring, procfs,
     sockets::{self, SocketInfo},
     validate_process_identity,
@@ -29,13 +29,23 @@ pub(in crate::privileged_helper) enum SubscribeError {
 }
 
 pub(in crate::privileged_helper) fn observation(id: ProcessId) -> Result<impl Serialize> {
-    Ok(monitoring::initial_observation(
-        &monitoring::capture_sample(id)?,
-    ))
+    let sample = monitoring::capture_sample(id)?;
+    #[cfg(test)]
+    return Ok(serde_json::to_value(monitoring::initial_observation(
+        &sample,
+    ))?);
+    #[cfg(not(test))]
+    Ok(serde_json::json!({"process_sample": sample}))
 }
 
 pub(in crate::privileged_helper) fn threads(id: ProcessId) -> Result<impl Serialize> {
-    Ok(monitoring::initial_observation(&monitoring::capture_sample(id)?).threads)
+    let sample = monitoring::capture_sample(id)?;
+    #[cfg(test)]
+    return Ok(serde_json::to_value(
+        monitoring::initial_observation(&sample).threads,
+    )?);
+    #[cfg(not(test))]
+    Ok(serde_json::json!({"process_sample": sample, "threads_only": true}))
 }
 #[derive(Serialize)]
 struct MemoryMaps {
@@ -81,6 +91,7 @@ pub(in crate::privileged_helper) fn memory_maps(pid: i32) -> Result<Vec<MemoryMa
     maps::read_maps(pid)
 }
 
+#[cfg(test)]
 pub(in crate::privileged_helper) fn ticks_per_second() -> f64 {
     procfs::ticks_per_second()
 }

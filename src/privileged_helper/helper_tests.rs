@@ -15,7 +15,16 @@ fn rejects_unbounded_truncated_and_unknown_requests() {
         drop(writer);
         assert!(transport::read::<MonitorRequest>(&mut reader, MAX_REQUEST).is_err());
     }
-    assert!(serde_json::from_str::<MonitorRequest>(r#"{"Process":{"id":{"pid":1,"start_time_ticks":1},"resource":"Maps","path":"/etc/shadow"}}"#).is_err());
+    let request = MonitorRequest::Process {
+        id: ProcessId {
+            pid: 1,
+            start_time_ticks: 1,
+        },
+        resource: ProcessResource::Maps,
+    };
+    let mut bytes = procinsh_protocol::ipc::codec::encode(&request, MAX_REQUEST).unwrap();
+    bytes.extend_from_slice(b"/etc/shadow");
+    assert!(procinsh_protocol::ipc::codec::decode::<MonitorRequest>(&bytes).is_err());
 }
 
 #[test]

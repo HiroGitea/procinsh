@@ -1,18 +1,26 @@
 //! Processes holding character devices of the hardware view, such as
 //! `/dev/nvidia0`, `/dev/dri/renderD128` or `/dev/infiniband/uverbs0`.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`DeviceHandleKind`] | `pub` | `enum DeviceHandleKind` |
+//! | [`DeviceHandle`] | `pub` | `struct DeviceHandle` |
+//! | [`DeviceHandleCollector`] | `pub` | `struct DeviceHandleCollector` |
 
 use super::pci::text;
-use crate::privileged_helper::process::ProcessId;
-use serde::Serialize;
+use crate::ipc::schema::ProcessId;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(in crate::privileged_helper::system) enum DeviceHandleKind {
+pub enum DeviceHandleKind {
     /// `/dev/nvidiaN`.
     Nvidia,
     DrmRender,
@@ -26,19 +34,19 @@ pub(in crate::privileged_helper::system) enum DeviceHandleKind {
 }
 
 /// One process's descriptors for one device and kind, coalesced.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub(in crate::privileged_helper::system) struct DeviceHandle {
-    pub(in crate::privileged_helper::system) id: String,
-    pub(in crate::privileged_helper::system) process_id: ProcessId,
-    pub(in crate::privileged_helper::system) device: String,
-    pub(in crate::privileged_helper::system) kind: DeviceHandleKind,
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceHandle {
+    pub id: String,
+    pub process_id: ProcessId,
+    pub device: String,
+    pub kind: DeviceHandleKind,
     /// The lowest descriptor number.
-    pub(in crate::privileged_helper::system) fd: u32,
-    pub(in crate::privileged_helper::system) fd_count: usize,
+    pub fd: u32,
+    pub fd_count: usize,
 }
 
 /// Resolves character device numbers once per snapshot and coalesces descriptors.
-pub(in crate::privileged_helper::system) struct DeviceHandleCollector {
+pub struct DeviceHandleCollector {
     sys: PathBuf,
     devices: HashSet<String>,
     nvidia_major: Option<u32>,
@@ -58,7 +66,7 @@ fn function_address(path: &Path) -> Option<String> {
 impl DeviceHandleCollector {
     /// `devices` are the hardware view's PCI addresses; `gpu_minors` maps NVIDIA
     /// device minors to them.
-    pub(in crate::privileged_helper::system) fn new(
+    pub fn new(
         sys: &Path,
         proc: &Path,
         devices: HashSet<String>,
@@ -108,12 +116,7 @@ impl DeviceHandleCollector {
     }
 
     /// Records descriptor `fd` of `process` for character device `rdev`.
-    pub(in crate::privileged_helper::system) fn observe(
-        &mut self,
-        process: ProcessId,
-        fd: u32,
-        rdev: u64,
-    ) {
+    pub fn observe(&mut self, process: ProcessId, fd: u32, rdev: u64) {
         if !self.resolved.contains_key(&rdev) {
             let resolved = self.resolve(rdev).filter(|(_, d)| self.devices.contains(d));
             self.resolved.insert(rdev, resolved);
@@ -130,10 +133,7 @@ impl DeviceHandleCollector {
     }
 
     /// Handles of `live` processes, ordered by process and device.
-    pub(in crate::privileged_helper::system) fn finish(
-        self,
-        live: &HashSet<ProcessId>,
-    ) -> Vec<DeviceHandle> {
+    pub fn finish(self, live: &HashSet<ProcessId>) -> Vec<DeviceHandle> {
         let mut handles: Vec<_> = self
             .handles
             .into_iter()
@@ -159,6 +159,16 @@ impl DeviceHandleCollector {
         handles
     }
 }
+
+crate::ipc::codec::wire_struct!(DeviceHandle {
+    id,
+    process_id,
+    device,
+    kind,
+    fd,
+    fd_count
+});
+crate::ipc::codec::wire_enum!(DeviceHandleKind { 0 => Nvidia, 1 => DrmRender, 2 => DrmCard, 3 => Uverbs, 4 => Umad, 5 => Accel });
 
 #[cfg(test)]
 mod tests {

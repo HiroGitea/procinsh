@@ -1,15 +1,15 @@
-//! Bounded structured-data framing over private Unix streams.
+//! Bounded native-endian binary framing over private Unix streams.
 //!
 //! # Interface
 //! - [`configure`] (`pub`): `fn configure(socket: &UnixStream) -> anyhow::Result<()>`.
-//! - [`fn@write`] (`pub`): `fn write<T: Serialize>(socket: &mut UnixStream, value: &T, limit: usize) -> anyhow::Result<()>`.
-//! - [`read`] (`pub`): `fn read<T: DeserializeOwned>(socket: &mut UnixStream, limit: usize) -> anyhow::Result<T>`.
-//! - [`read_timeout`] (`pub`): `fn read_timeout<T: DeserializeOwned>(socket: &mut UnixStream, limit: usize, timeout: Duration) -> anyhow::Result<T>`.
+//! - [`fn@write`] (`pub`): `fn write<T: Wire>(socket: &mut UnixStream, value: &T, limit: usize) -> anyhow::Result<()>`.
+//! - [`read`] (`pub`): `fn read<T: Wire>(socket: &mut UnixStream, limit: usize) -> anyhow::Result<T>`.
+//! - [`read_timeout`] (`pub`): `fn read_timeout<T: Wire>(socket: &mut UnixStream, limit: usize, timeout: Duration) -> anyhow::Result<T>`.
 //!
-//! Supporting types: [`UnixStream`], [`Serialize`], [`DeserializeOwned`], [`Duration`].
+//! Supporting types: [`UnixStream`], [`Wire`], [`Duration`].
+use super::codec::{self, Wire};
 use super::schema::TIMEOUT;
 use anyhow::{Context, Result, ensure};
-use serde::{Serialize, de::DeserializeOwned};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
@@ -20,41 +20,19 @@ pub fn configure(socket: &UnixStream) -> Result<()> {
     Ok(())
 }
 
-/// Limit serialized allocation as well as the transmitted frame size.
-struct BoundedBuffer {
-    bytes: Vec<u8>,
-    limit: usize,
-}
-impl Write for BoundedBuffer {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        if bytes.len() > self.limit.saturating_sub(self.bytes.len()) {
-            return Err(std::io::Error::other("monitor response exceeds size limit"));
-        }
-        self.bytes.extend_from_slice(bytes);
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-pub fn write<T: Serialize>(socket: &mut UnixStream, value: &T, limit: usize) -> Result<()> {
-    let mut buffer = BoundedBuffer {
-        bytes: Vec::new(),
-        limit,
-    };
-    serde_json::to_writer(&mut buffer, value)?;
+pub fn write<T: Wire>(socket: &mut UnixStream, value: &T, limit: usize) -> Result<()> {
+    let bytes = codec::encode(value, limit)?;
     let deadline = Instant::now() + TIMEOUT;
-    write_until(socket, &(buffer.bytes.len() as u32).to_be_bytes(), deadline)?;
-    write_until(socket, &buffer.bytes, deadline)?;
+    write_until(socket, &(bytes.len() as u32).to_ne_bytes(), deadline)?;
+    write_until(socket, &bytes, deadline)?;
     Ok(())
 }
 
-pub fn read<T: DeserializeOwned>(socket: &mut UnixStream, limit: usize) -> Result<T> {
+pub fn read<T: Wire>(socket: &mut UnixStream, limit: usize) -> Result<T> {
     read_timeout(socket, limit, TIMEOUT)
 }
 
-pub fn read_timeout<T: DeserializeOwned>(
+pub fn read_timeout<T: Wire>(
     socket: &mut UnixStream,
     limit: usize,
     timeout: Duration,
@@ -62,14 +40,21 @@ pub fn read_timeout<T: DeserializeOwned>(
     let deadline = Instant::now() + timeout;
     let mut header = [0; 4];
     read_until(socket, &mut header, deadline).context("monitor IPC disconnected or timed out")?;
-    let size = u32::from_be_bytes(header) as usize;
+    let size = u32::from_ne_bytes(header) as usize;
     ensure!(
-        size > 0 && size <= limit,
+        size >= codec::MAGIC.len() && size <= limit,
         "invalid monitor frame length: {size}"
     );
+    let mut magic = [0; 4];
+    read_until(socket, &mut magic, deadline).context("truncated monitor protocol header")?;
+    ensure!(
+        &magic == codec::MAGIC,
+        "unsupported monitor protocol version"
+    );
     let mut bytes = vec![0; size];
-    read_until(socket, &mut bytes, deadline).context("truncated monitor IPC frame")?;
-    serde_json::from_slice(&bytes).context("invalid monitor IPC message")
+    bytes[..4].copy_from_slice(&magic);
+    read_until(socket, &mut bytes[4..], deadline).context("truncated monitor IPC frame")?;
+    codec::decode(&bytes).context("invalid monitor IPC message")
 }
 
 fn remaining(deadline: Instant) -> std::io::Result<Duration> {
@@ -119,4 +104,55 @@ fn write_until(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        analysis::snapshot::symbol::ElfFile,
+        ipc::schema::{MAX_RESPONSE, MonitorResponse, WireResponse},
+    };
+    #[test]
+    fn typed_elf_reply_transfers_large_files() {
+        // This raw file exercises an IPC frame larger than 32 MiB.
+        let length = 33 * 1024 * 1024;
+        let (mut sender, mut receiver) = UnixStream::pair().unwrap();
+        let writer = std::thread::spawn(move || {
+            let reply: WireResponse = Ok(MonitorResponse::Elf(Some(ElfFile {
+                identity: (1, 2, length as u64, 3, 4),
+                bytes: (0..length).map(|index| index as u8).collect(),
+            })));
+            write(&mut sender, &reply, MAX_RESPONSE).unwrap();
+        });
+        let reply: WireResponse = read(&mut receiver, MAX_RESPONSE).unwrap();
+        let MonitorResponse::Elf(Some(file)) = reply.unwrap() else {
+            panic!("expected typed ELF reply")
+        };
+        assert_eq!(file.identity, (1, 2, length as u64, 3, 4));
+        assert_eq!(file.bytes.len(), length);
+        assert!(
+            file.bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| *byte == index as u8)
+        );
+        writer.join().unwrap();
+    }
+    #[test]
+    fn protocol_version_is_checked_before_allocating_a_large_frame() {
+        let (mut sender, mut receiver) = UnixStream::pair().unwrap();
+        sender
+            .write_all(&(MAX_RESPONSE as u32).to_ne_bytes())
+            .unwrap();
+        sender.write_all(b"OLD0").unwrap();
+        let error = read::<WireResponse>(&mut receiver, MAX_RESPONSE)
+            .err()
+            .unwrap();
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported monitor protocol version")
+        );
+    }
 }

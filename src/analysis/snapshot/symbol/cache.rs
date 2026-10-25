@@ -1,53 +1,38 @@
-use crate::privileged_helper::process::maps::MemoryMap;
+//! Parse bounded ELF/DWARF bytes and retain symbol and unwind data in main.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`ElfSymbols`] | `pub` | `struct ElfSymbols` |
+//! | [`ElfFileId`] | `pub` | `type ElfFileId = (u64, u64, u64, i64, i64)` |
+//! | [`ElfFile`] | `pub` | `struct ElfFile` |
+//! | [`ElfCache`] | `pub` | `struct ElfCache` |
+
+use crate::model::memory::MemoryMap;
 use object::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
-#[cfg(test)]
-use std::path::Path;
 use std::{
     collections::HashMap,
-    fs,
-    io::Read,
-    os::{
-        fd::AsRawFd,
-        unix::fs::{MetadataExt, OpenOptionsExt},
-    },
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
-
 type DwarfReader = gimli::EndianArcSlice<gimli::RunTimeEndian>;
 
-/// Parsed ELF data from one verified descriptor. The DWARF context uses owned,
+/// Parsed ELF data from verified bytes acquired by the helper. The DWARF context uses owned,
 /// bounded section bytes and never opens supplementary or split debug files.
-pub(in crate::privileged_helper::process::snapshot) struct ElfSymbols {
+pub struct ElfSymbols {
     /// Shared ELF section bytes used by the unwinder.
-    pub(in crate::privileged_helper::process::snapshot) unwind:
-        framehop::ExplicitModuleSectionInfo<Arc<[u8]>>,
-    pub(super) segments: Vec<(u64, u64, u64)>,
-    pub(super) symbols: Vec<(u64, u64, String)>,
-    pub(super) dwarf: Option<Mutex<addr2line::Context<DwarfReader>>>,
+    pub unwind: framehop::ExplicitModuleSectionInfo<Arc<[u8]>>,
+    pub segments: Vec<(u64, u64, u64)>,
+    pub symbols: Vec<(u64, u64, String)>,
+    pub dwarf: Option<Mutex<addr2line::Context<DwarfReader>>>,
 }
 
 impl ElfSymbols {
-    #[cfg(test)]
-    fn load(path: &Path) -> Option<Self> {
-        Self::load_file(&fs::File::open(path).ok()?)
-    }
-
-    fn load_file(descriptor: &fs::File) -> Option<Self> {
-        let before = descriptor.metadata().ok()?;
-        if !before.is_file() || before.len() > MAX_FILE_SIZE {
+    pub fn parse(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() as u64 > MAX_FILE_SIZE {
             return None;
         }
-        let mut bytes = Vec::new();
-        descriptor
-            .take(MAX_FILE_SIZE + 1)
-            .read_to_end(&mut bytes)
-            .ok()?;
-        let after = descriptor.metadata().ok()?;
-        if bytes.len() as u64 > MAX_FILE_SIZE || file_identity(&before) != file_identity(&after) {
-            return None;
-        }
-        let file = object::File::parse(bytes.as_slice()).ok()?;
+        let file = object::File::parse(bytes).ok()?;
         if file.format() != object::BinaryFormat::Elf {
             return None;
         }
@@ -169,7 +154,6 @@ impl ElfSymbols {
     }
 }
 
-type FileIdentity = (u64, u64, u64, i64, i64);
 const MAX_FILES: usize = 64;
 const MAX_FILE_SIZE: u64 = 128 * 1024 * 1024;
 const MAX_SECTION_SIZE: u64 = 32 * 1024 * 1024;
@@ -178,90 +162,105 @@ const MAX_SYMBOLS: usize = 262_144;
 const MAX_UNITS: usize = 16_384;
 const MAX_CACHE_BYTES: u64 = 128 * 1024 * 1024;
 
-fn file_identity(meta: &fs::Metadata) -> FileIdentity {
-    (
-        meta.dev(),
-        meta.ino(),
-        meta.len(),
-        meta.mtime(),
-        meta.mtime_nsec(),
-    )
-}
+/// Device, inode, length and nanosecond modification time of a verified file.
+pub type ElfFileId = (u64, u64, u64, i64, i64);
+type MappedFileId = (u32, u32, u64);
 
-/// Bounded cache keyed by device, inode, size, and nanosecond modification time.
+/// Verified file bytes transferred through IPC; no descriptor crosses the boundary.
+pub struct ElfFile {
+    pub identity: ElfFileId,
+    pub bytes: Vec<u8>,
+}
+/// Main-owned parsed modules keyed by verified file versions and mapping identities.
+/// The cache bounds source-file bytes to 128 MiB and parsed entries to 64;
+/// it also retains at most 64 rejected versions without their file bytes.
+/// Unwinder-held `Arc`s may outlive cache eviction.
 #[derive(Default)]
-pub(in crate::privileged_helper::process::snapshot) struct ElfCache {
-    entries: HashMap<FileIdentity, Arc<ElfSymbols>>,
+pub struct ElfCache {
+    entries: HashMap<ElfFileId, Arc<ElfSymbols>>,
+    mappings: HashMap<MappedFileId, ElfFileId>,
+    failures: HashMap<MappedFileId, ElfFileId>,
 }
-
-fn matching_file(pid: i32, map: &MemoryMap) -> Option<(fs::File, fs::Metadata)> {
-    let mut paths = vec![
-        PathBuf::from(format!(
-            "/proc/{pid}/map_files/{:x}-{:x}",
-            map.start, map.end
-        )),
-        PathBuf::from(format!("/proc/{pid}/exe")),
-    ];
-    if let Some(path) = map
-        .pathname
-        .as_deref()
-        .filter(|p| p.starts_with('/') && !p.ends_with(" (deleted)"))
-    {
-        paths.push(PathBuf::from(format!("/proc/{pid}/root{path}")));
-    }
-    paths.into_iter().find_map(|path| {
-        // O_PATH pins the selected inode without opening devices or blocking on
-        // FIFOs. Only verified regular files may then be opened for reading.
-        let pinned = fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_PATH | libc::O_CLOEXEC)
-            .open(&path)
-            .ok()?;
-        let meta = pinned.metadata().ok()?;
-        if !meta.is_file()
-            || meta.ino() != map.inode
-            || libc::major(meta.dev()) != map.device.major
-            || libc::minor(meta.dev()) != map.device.minor
-        {
-            return None;
-        }
-        let descriptor = fs::File::open(format!("/proc/self/fd/{}", pinned.as_raw_fd())).ok()?;
-        (file_identity(&descriptor.metadata().ok()?) == file_identity(&meta))
-            .then_some((descriptor, meta))
-    })
-}
-
 impl ElfCache {
-    /// Locate the mapped file by identity and reuse or load its ELF/DWARF data.
-    /// Performs I/O; call only after the target has resumed. Returned data may
-    /// outlive cache eviction.
-    pub(in crate::privileged_helper::process::snapshot) fn get(
-        &mut self,
-        pid: i32,
-        map: &MemoryMap,
-    ) -> Option<Arc<ElfSymbols>> {
-        let (descriptor, meta) = matching_file(pid, map)?;
-        let key = file_identity(&meta);
-        if let Some(elf) = self.entries.get(&key) {
-            return Some(Arc::clone(elf));
-        }
-        if meta.len() > MAX_FILE_SIZE {
+    pub fn insert(&mut self, map: &MemoryMap, file: ElfFile) -> Option<Arc<ElfSymbols>> {
+        let key = file.identity;
+        if key.1 != map.inode
+            || libc::major(key.0) != map.device.major
+            || libc::minor(key.0) != map.device.minor
+            || key.2 != file.bytes.len() as u64
+        {
             return None;
         }
-        let elf = Arc::new(ElfSymbols::load_file(&descriptor)?);
-        if self.entries.len() >= MAX_FILES
-            || self
-                .entries
-                .keys()
-                .map(|key| key.2)
-                .sum::<u64>()
-                .saturating_add(meta.len())
-                > MAX_CACHE_BYTES
-        {
-            self.entries.clear();
-        }
-        self.entries.insert(key, Arc::clone(&elf));
+        let elf = if let Some(elf) = self.entries.get(&key) {
+            Arc::clone(elf)
+        } else {
+            let Some(parsed) = ElfSymbols::parse(&file.bytes) else {
+                self.mappings
+                    .remove(&(map.device.major, map.device.minor, map.inode));
+                if self.failures.len() >= MAX_FILES {
+                    self.failures.clear();
+                }
+                self.failures
+                    .insert((map.device.major, map.device.minor, map.inode), key);
+                return None;
+            };
+            self.failures
+                .remove(&(map.device.major, map.device.minor, map.inode));
+            let elf = Arc::new(parsed);
+            if self.entries.len() >= MAX_FILES
+                || self
+                    .entries
+                    .keys()
+                    .map(|key| key.2)
+                    .sum::<u64>()
+                    .saturating_add(key.2)
+                    > MAX_CACHE_BYTES
+            {
+                self.entries.clear();
+                self.mappings.clear();
+            }
+            self.entries.insert(key, Arc::clone(&elf));
+            elf
+        };
+        self.mappings
+            .insert((map.device.major, map.device.minor, map.inode), key);
         Some(elf)
+    }
+    /// Version known to main, including unsupported files cached as failures.
+    pub fn identity(&self, map: &MemoryMap) -> Option<ElfFileId> {
+        let key = (map.device.major, map.device.minor, map.inode);
+        self.mappings
+            .get(&key)
+            .filter(|id| self.entries.contains_key(id))
+            .or_else(|| self.failures.get(&key))
+            .copied()
+    }
+    pub fn get(&self, map: &MemoryMap) -> Option<Arc<ElfSymbols>> {
+        self.entries
+            .get(
+                self.mappings
+                    .get(&(map.device.major, map.device.minor, map.inode))?,
+            )
+            .cloned()
+    }
+}
+
+impl crate::ipc::codec::Wire for ElfFile {
+    fn write(&self, output: &mut crate::ipc::codec::Encoder) -> anyhow::Result<()> {
+        self.identity.write(output)?;
+        output.blob(&self.bytes)
+    }
+    fn read(input: &mut crate::ipc::codec::Decoder<'_>) -> anyhow::Result<Self> {
+        let identity = crate::ipc::codec::Wire::read(input)?;
+        let bytes = input.blob()?;
+        anyhow::ensure!(
+            bytes.len() as u64 <= MAX_FILE_SIZE,
+            "ELF file size limit exceeded"
+        );
+        Ok(Self {
+            identity,
+            bytes: bytes.to_vec(),
+        })
     }
 }
 

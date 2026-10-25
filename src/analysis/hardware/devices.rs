@@ -1,52 +1,61 @@
 //! Serialized hardware devices, enriched with GPU and RDMA identity.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`GpuInfo`] | `pub` | `struct GpuInfo` |
+//! | [`RdmaDeviceInfo`] | `pub` | `struct RdmaDeviceInfo` |
+//! | [`HardwareDevice`] | `pub` | `struct HardwareDevice` |
+//! | [`device`] | `pub` | `fn device(node: &PciNode, proc: &Path) -> HardwareDevice` |
 
 use super::pci::{BarInfo, HardwareKind, HardwareRole, PciNode, PcieLinkInfo, names, text};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub(in crate::privileged_helper::system) struct GpuInfo {
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GpuInfo {
     /// `nvidia`, `amd`, `intel` or the PCI vendor ID.
-    pub(in crate::privileged_helper::system) vendor: String,
-    pub(in crate::privileged_helper::system) model: Option<String>,
-    pub(in crate::privileged_helper::system) uuid: Option<String>,
+    pub vendor: String,
+    pub model: Option<String>,
+    pub uuid: Option<String>,
     /// The NVIDIA device minor of `/dev/nvidiaN`.
-    pub(in crate::privileged_helper::system) minor: Option<u32>,
+    pub minor: Option<u32>,
     /// DRM nodes such as `card1` and `renderD128`.
-    pub(in crate::privileged_helper::system) drm: Vec<String>,
+    pub drm: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub(in crate::privileged_helper::system) struct RdmaDeviceInfo {
-    pub(in crate::privileged_helper::system) name: String,
-    pub(in crate::privileged_helper::system) hca_type: Option<String>,
-    pub(in crate::privileged_helper::system) fw_ver: Option<String>,
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RdmaDeviceInfo {
+    pub name: String,
+    pub hca_type: Option<String>,
+    pub fw_ver: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub(in crate::privileged_helper::system) struct HardwareDevice {
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HardwareDevice {
     /// A PCI function address such as `0000:85:00.0`, or a host bridge such as `pci0000:80`.
-    pub(in crate::privileged_helper::system) address: String,
-    pub(in crate::privileged_helper::system) parent: Option<String>,
-    pub(in crate::privileged_helper::system) role: HardwareRole,
-    pub(in crate::privileged_helper::system) kind: Option<HardwareKind>,
-    pub(in crate::privileged_helper::system) label: String,
+    pub address: String,
+    pub parent: Option<String>,
+    pub role: HardwareRole,
+    pub kind: Option<HardwareKind>,
+    pub label: String,
     /// The 24-bit class code as `0x030000`.
-    pub(in crate::privileged_helper::system) class: Option<String>,
-    pub(in crate::privileged_helper::system) vendor_id: Option<String>,
-    pub(in crate::privileged_helper::system) device_id: Option<String>,
-    pub(in crate::privileged_helper::system) driver: Option<String>,
-    pub(in crate::privileged_helper::system) numa_node: Option<u32>,
+    pub class: Option<String>,
+    pub vendor_id: Option<String>,
+    pub device_id: Option<String>,
+    pub driver: Option<String>,
+    pub numa_node: Option<u32>,
     /// Null for host bridges and runtime-suspended devices.
-    pub(in crate::privileged_helper::system) link: Option<PcieLinkInfo>,
-    pub(in crate::privileged_helper::system) power_state: Option<String>,
-    pub(in crate::privileged_helper::system) runtime_status: Option<String>,
-    pub(in crate::privileged_helper::system) iommu_group: Option<u32>,
-    pub(in crate::privileged_helper::system) bars: Vec<BarInfo>,
-    pub(in crate::privileged_helper::system) gpu: Option<GpuInfo>,
-    pub(in crate::privileged_helper::system) rdma: Vec<RdmaDeviceInfo>,
+    pub link: Option<PcieLinkInfo>,
+    pub power_state: Option<String>,
+    pub runtime_status: Option<String>,
+    pub iommu_group: Option<u32>,
+    pub bars: Vec<BarInfo>,
+    pub gpu: Option<GpuInfo>,
+    pub rdma: Vec<RdmaDeviceInfo>,
     /// Network interfaces of the device.
-    pub(in crate::privileged_helper::system) netdevs: Vec<String>,
+    pub netdevs: Vec<String>,
 }
 
 /// `Key: value` lines of `/proc/driver/nvidia/gpus/<address>/information`.
@@ -70,7 +79,7 @@ fn short(address: &str) -> &str {
     address.strip_prefix("0000:").unwrap_or(address)
 }
 
-pub(super) fn device(node: &PciNode, proc: &Path) -> HardwareDevice {
+pub fn device(node: &PciNode, proc: &Path) -> HardwareDevice {
     let hex = |value: Option<u32>, width: usize| value.map(|v| format!("0x{v:0width$x}"));
     let gpu = (node.kind == Some(HardwareKind::Gpu)).then(|| {
         let info = nvidia_information(proc, &node.address);
@@ -148,3 +157,36 @@ pub(super) fn device(node: &PciNode, proc: &Path) -> HardwareDevice {
         },
     }
 }
+
+crate::ipc::codec::wire_struct!(GpuInfo {
+    vendor,
+    model,
+    uuid,
+    minor,
+    drm
+});
+crate::ipc::codec::wire_struct!(RdmaDeviceInfo {
+    name,
+    hca_type,
+    fw_ver
+});
+crate::ipc::codec::wire_struct!(HardwareDevice {
+    address,
+    parent,
+    role,
+    kind,
+    label,
+    class,
+    vendor_id,
+    device_id,
+    driver,
+    numa_node,
+    link,
+    power_state,
+    runtime_status,
+    iommu_group,
+    bars,
+    gpu,
+    rdma,
+    netdevs
+});

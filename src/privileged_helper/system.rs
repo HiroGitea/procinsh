@@ -24,7 +24,6 @@ mod ipc;
 mod ipoib;
 mod model;
 mod rdma;
-mod resolver;
 mod sched;
 mod service;
 mod signals;

@@ -92,6 +92,11 @@ impl MonitorService {
         }
         ensure!(!self.state.monitoring.is_stopped(), "Server is stopping");
         match request {
+            MonitorRequest::MappedElf {
+                id,
+                mapping_start,
+                known_file,
+            } => process::mapped_elf(id, mapping_start, known_file),
             MonitorRequest::Processes => Ok(MonitorResponse::Data(to_value(
                 self.state.discovery.lock().unwrap().collect()?,
             )?)),
@@ -138,7 +143,7 @@ impl MonitorService {
                         }
                     )
                 })?;
-                let initial = MonitorEvent::Snapshot(to_value(&*subscription.initial)?);
+                let initial = MonitorEvent::AcquiredSnapshot(subscription.initial.clone());
                 self.start(Subscription::System(subscription), initial)
             }
             MonitorRequest::Poll { session } => {
@@ -170,15 +175,15 @@ impl MonitorService {
                     }
                     Subscription::System(subscription) => match subscription.receiver.try_recv() {
                         Ok(system::SystemMonitorEvent::Snapshot(data)) => {
-                            Some(MonitorEvent::Snapshot(to_value(&*data)?))
+                            Some(MonitorEvent::AcquiredSnapshot(data))
                         }
                         Ok(system::SystemMonitorEvent::Activity(data)) => {
                             Some(MonitorEvent::Activity(to_value(&*data)?))
                         }
                         Err(tokio::sync::broadcast::error::TryRecvError::Lagged(dropped)) => {
-                            Some(MonitorEvent::Gap {
+                            Some(MonitorEvent::AcquisitionGap {
                                 dropped,
-                                snapshot: to_value(&*self.state.system_monitor.snapshot())?,
+                                snapshot: self.state.system_monitor.snapshot(),
                             })
                         }
                         Err(tokio::sync::broadcast::error::TryRecvError::Empty) => None,
@@ -224,7 +229,7 @@ impl MonitorService {
             // Oversize replies return a bounded error rather than corrupting
             // framing or killing an otherwise usable observation connection.
             if let Err(error) = transport::write(&mut socket, &response, MAX_RESPONSE) {
-                if error.downcast_ref::<serde_json::Error>().is_some() {
+                if error.is::<procinsh_protocol::ipc::codec::LimitExceeded>() {
                     let response: WireResponse = Err("monitor response exceeds size limit".into());
                     transport::write(&mut socket, &response, MAX_RESPONSE)?;
                 } else {

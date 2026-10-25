@@ -1,13 +1,21 @@
 //! PCIe paths between devices, classified like `nvidia-smi topo -m`.
+//!
+//! # Interface
+//!
+//! | Definition | Visibility | Kind / signature |
+//! | --- | --- | --- |
+//! | [`PathClass`] | `pub` | `enum PathClass` |
+//! | [`HardwarePath`] | `pub` | `struct HardwarePath` |
+//! | [`paths`] | `pub` | `fn paths(nodes: &[PciNode], numa_nodes: usize) -> Vec<HardwarePath>` |
 
 use super::pci::{HardwareRole, PciNode, PcieLink};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// How a path crosses the topology, from the closest to the farthest.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(in crate::privileged_helper::system) enum PathClass {
+pub enum PathClass {
     /// At most one PCIe switch (or functions of one device).
     Pix,
     /// Several PCIe switches without the host bridge.
@@ -20,16 +28,16 @@ pub(in crate::privileged_helper::system) enum PathClass {
     Sys,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub(in crate::privileged_helper::system) struct HardwarePath {
-    pub(in crate::privileged_helper::system) id: String,
-    pub(in crate::privileged_helper::system) a: String,
-    pub(in crate::privileged_helper::system) b: String,
-    pub(in crate::privileged_helper::system) class: PathClass,
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HardwarePath {
+    pub id: String,
+    pub a: String,
+    pub b: String,
+    pub class: PathClass,
     /// Nodes between the ends, in order from `a` to `b`.
-    pub(in crate::privileged_helper::system) via: Vec<String>,
+    pub via: Vec<String>,
     /// The slowest negotiated link on the path; null when no link speed is known.
-    pub(in crate::privileged_helper::system) bottleneck: Option<PcieLink>,
+    pub bottleneck: Option<PcieLink>,
 }
 
 fn chain<'a>(node: &'a PciNode, nodes: &HashMap<&str, &'a PciNode>) -> Vec<&'a PciNode> {
@@ -49,10 +57,7 @@ fn chain<'a>(node: &'a PciNode, nodes: &HashMap<&str, &'a PciNode>) -> Vec<&'a P
 
 /// Paths between every pair of endpoints. With one online NUMA node, devices
 /// without a NUMA node share it.
-pub(in crate::privileged_helper::system) fn paths(
-    nodes: &[PciNode],
-    numa_nodes: usize,
-) -> Vec<HardwarePath> {
+pub fn paths(nodes: &[PciNode], numa_nodes: usize) -> Vec<HardwarePath> {
     let by_address: HashMap<&str, &PciNode> =
         nodes.iter().map(|n| (n.address.as_str(), n)).collect();
     let endpoints: Vec<_> = nodes
@@ -132,6 +137,16 @@ pub(in crate::privileged_helper::system) fn paths(
     }
     result
 }
+
+crate::ipc::codec::wire_struct!(HardwarePath {
+    id,
+    a,
+    b,
+    class,
+    via,
+    bottleneck
+});
+crate::ipc::codec::wire_enum!(PathClass { 0 => Pix, 1 => Pxb, 2 => Phb, 3 => Node, 4 => Sys });
 
 #[cfg(test)]
 mod tests {
