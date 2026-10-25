@@ -99,7 +99,7 @@ cache は64件・128 MiBを目安に clear するが、バイト計算は `entri
 
 さらに [StackUnwinder::refresh](../../src/privileged_helper/process/snapshot/unwind.rs) は全 executable mapping を巡回し、`elf.unwind.clone()` を module として保持する。Arc の共有データは cache の clear 後も module 側から参照されうる。したがって64件という cache 件数も、unwinder が保持する全 module 数や bytes の上限にはならない。圧縮 ELF を多数 map する対象などで、大きな保持量となる可能性がある。OOM は未実証である。
 
-[procfs.rs](../../src/privileged_helper/process/procfs.rs) は text を16 MiBに制限し、maps/smaps もこの経路を使う。environment は1 MiB、auxv は64 KiBまでである。一方、これらは入力単位の上限であり、全解析結果・セッション・履歴・JSON Value の合計 RSS 上限ではない。IPC の32 MiB response 上限も、`to_value` や snapshot 作成の**後**の framing に適用される。
+[procfs.rs](../../src/privileged_helper/process/procfs.rs) は text を16 MiBに制限し、maps/smaps もこの経路を使う。environment は1 MiB、auxv は64 KiBまでである。一方、これらは入力単位の上限であり、全解析結果・セッション・履歴・JSON Value の合計 RSS 上限ではない。IPC の1 GiB response 上限も、`to_value` や snapshot 作成の**後**の framing に適用される。
 
 **対策:** cache と unwinder をまたぐ保持 bytes/module 数の予算を導入し、展開後の容量を計上する。procfs・ELF の遅い filesystem I/O と解析時間を制限できる worker 設計を検討する。ELF/DWARF 解析を低権限プロセスへ移すと、解析器欠陥の影響も小さくできる。
 

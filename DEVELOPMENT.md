@@ -185,7 +185,7 @@ independently before acquisition and after resource reads. Namespace readers
 retain existing pinned-namespace validation. Only structured data/events cross
 IPC. System delta selection remains in the application.
 
-Four-byte frame lengths bound requests to 1 KiB and replies to 32 MiB, including
+Four-byte frame lengths bound requests to 1 KiB and replies to 1 GiB, including
 serialization allocation. Frame I/O and client exchanges have 30-second
 deadlines. One dispatcher bounds in-flight work, a 64-entry client queue bounds
 waiting requests, and monitors limit viewers to 32 per kind. Sessions expire

@@ -2,7 +2,7 @@
 //! arbitrary address, syscall number, file descriptor, or caller-selected limit.
 //!
 //! Frames have a four-byte big-endian length. Requests are at most 1 KiB,
-//! responses at most 32 MiB, and at most 64 requests may queue in the application.
+//! responses at most 1 GiB, and at most 64 requests may queue in the application.
 //! Socket I/O and application requests have 30-second deadlines. Each side
 //! treats an invalid/truncated frame or a timeout as a fatal connection error.
 //! Sessions expire after 15 seconds without polling and are capped at 32 per
@@ -27,7 +27,7 @@ use serde_json::Value;
 use std::time::Duration;
 
 pub const MAX_REQUEST: usize = 1024;
-pub const MAX_RESPONSE: usize = 32 * 1024 * 1024;
+pub const MAX_RESPONSE: usize = 1024 * 1024 * 1024;
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 pub const SESSION_LEASE: Duration = Duration::from_secs(15);
 
