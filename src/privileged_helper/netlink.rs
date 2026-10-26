@@ -24,6 +24,11 @@ const NLM_F_DUMP_INTR: u16 = 0x10;
 const DUMP_FLAGS: u16 = 0x301;
 const REPLY_LIMIT: usize = 8 * 1024 * 1024;
 
+/// The kernel's negative errno from an error or done message.
+fn kernel_error(code: i32) -> std::io::Error {
+    std::io::Error::from_raw_os_error(code.saturating_neg())
+}
+
 pub(super) fn open_socket(protocol: i32, name: &str) -> Result<OwnedFd> {
     let raw = unsafe {
         libc::socket(
@@ -174,19 +179,22 @@ impl NetlinkDumpRequest<'_> {
                 );
                 let body = &bytes[offset + HEADER..offset + length];
                 match kind {
+                    // Both carry a negative errno; keep it as an io::Error so callers
+                    // can tell an unsupported dump from a failed one.
                     NLMSG_DONE => {
                         if body.len() >= 4 {
-                            ensure!(u32_at(body, 0)? == 0, "{label} dump failed");
+                            let code = u32_at(body, 0)? as i32;
+                            if code != 0 {
+                                return Err(kernel_error(code))
+                                    .with_context(|| format!("{label} dump failed"));
+                            }
                         }
                         return Ok(());
                     }
                     NLMSG_ERROR => {
                         let code = u32_at(body, 0)? as i32;
                         if code != 0 {
-                            bail!(
-                                "{label}: {}",
-                                std::io::Error::from_raw_os_error(code.saturating_neg())
-                            );
+                            return Err(kernel_error(code)).with_context(|| label.to_owned());
                         }
                     }
                     kind if kind == self.reply_type => visit(body)?,
