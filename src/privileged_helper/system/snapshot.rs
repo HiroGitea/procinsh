@@ -137,10 +137,18 @@ pub(super) fn collect_from(
         captured_at: process::timestamp_ms(),
         ..Default::default()
     };
+    result.raw_hardware = super::hardware_capture::capture(&sources.sys, &sources.proc);
+    if result.raw_hardware.truncated {
+        result
+            .warnings
+            .push("Hardware acquisition size limit reached".into());
+    }
     #[cfg(test)]
-    let hardware = HardwareObservation::observe(sources);
+    let acquired = HardwareSources::acquired(result.raw_hardware.clone());
     #[cfg(test)]
-    let mut handles = hardware.handles(sources);
+    let hardware = HardwareObservation::observe(&acquired);
+    #[cfg(test)]
+    let mut handles = hardware.handles(&acquired);
     let summaries = match discovery.collect() {
         Ok(v) => v,
         Err(e) => {
@@ -376,6 +384,19 @@ pub(super) fn collect_from(
         }
     }
     result.raw_owners = owners.into_iter().collect();
+    let resolver = {
+        static RESOLVER: std::sync::OnceLock<super::resolver::ReverseDnsResolver> =
+            std::sync::OnceLock::new();
+        RESOLVER.get_or_init(super::resolver::ReverseDnsResolver::new)
+    };
+    let ips: HashSet<_> = infos
+        .values()
+        .filter_map(|socket| socket.remote.map(|address| address.ip()))
+        .collect();
+    result.raw_hostnames = ips
+        .into_iter()
+        .filter_map(|ip| resolver.lookup(ip).map(|name| (ip, name)))
+        .collect();
     result.raw_sockets = infos.into_iter().collect();
     result.raw_namespaces = inode_ns.iter().map(|(inode, ns)| (*inode, *ns)).collect();
     result.raw_connections = metadata

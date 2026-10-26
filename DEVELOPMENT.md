@@ -98,7 +98,7 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 | `src/http_server/model/`, `src/http_server/json/` | Main-only JSON representations of shared values |
 | `src/ipc/stack.rs` | Stack frame values |
 | `src/privileged_helper/system/` | Protected system snapshots, subscriptions and BPF collection |
-| `src/http_server/analysis/hardware/` | GPUs, RDMA NICs, accelerators, NVSwitches, PCIe bridges, inter-device paths, and processes holding devices open, using sysfs/procfs |
+| `src/http_server/analysis/hardware/` | Interpret helper-acquired hardware attributes into GPUs, RDMA NICs, accelerators, NVSwitches, PCIe paths, and device holders |
 | `src/privileged_helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
 | `src/main/http_server/hosts/` | Agent links, host registry, and cross-host connection matching |
 | `src/privileged_helper/system/rdma/` | RDMA acquisition through netlink and sysfs |
@@ -414,7 +414,7 @@ Switching network namespaces requires `CAP_SYS_ADMIN`. [dev_run.sh](scripts/dev_
 
 ### Hardware
 
-Main enriches system snapshots using [analysis/hardware](src/http_server/analysis/hardware.rs) to read GPUs, RDMA NICs, accelerators, NVSwitches, and their upstream PCIe bridges up to host bridges from sysfs. This requires no privileges.
+The privileged helper acquires fixed read-only sysfs/procfs hardware attributes, directory entries and resolved links using [hardware_capture](src/privileged_helper/system/hardware_capture.rs). IPC carries these bounded raw values. The HTTP server interprets them entirely in memory using [analysis/hardware](src/http_server/analysis/hardware.rs) to identify GPUs, RDMA NICs, accelerators, NVSwitches, their upstream PCIe bridges and device holders. It never opens sysfs/procfs files.
 
 - Discovery: upstream chains come from each device's real path under `/sys/bus/pci/devices`, such as `/sys/devices/pci0000:80/0000:80:03.4/0000:85:00.0`. Devices with `infiniband/` or class 0x0c06 are RDMA NICs; classes 0x0300/0x0302 are GPUs (excluding ASPEED/Matrox BMCs); class 0x12 denotes accelerators; NVIDIA class 0x0680 denotes NVSwitch. Only their upstream bridges are included.
 - Attributes: reads class, vendor, device, driver, numa_node, `current/max_link_speed`, `current/max_link_width`, power_state, `power/runtime_status`, iommu_group, and BARs from `resource`. It does not open `config` or BAR resize files, which could trigger runtime resume. Link speeds are not read for runtime-suspended devices. NVIDIA GPU model, UUID, and device minor come from `/proc/driver/nvidia/gpus/<address>/information`; vendor libraries such as NVML are not used.
@@ -992,15 +992,28 @@ The privileged helper owns protected reads and kernel resources. The HTTP proces
 clears capabilities and interprets acquired values before exposing the existing
 HTTP API. No file descriptor crosses IPC.
 
+During startup, the launcher locates and executes the sibling helper. After its
+handshake, the HTTP process sets `no_new_privs` and installs an architecture-checked
+seccomp filter before starting its worker threads. It rejects filesystem opens,
+pathname inspection and mutations, and further execs with `EPERM`. Embedded web
+assets, IPC data and in-memory analysis require no files. Logs continue through
+inherited stderr; inherited descriptors other than stdio are closed at startup.
+The helper reads `/etc/passwd` for account names and runs reverse DNS, including
+libc/NSS configuration reads. Neither operation runs in HTTP workers.
+
+Hardware acquisition reads fixed attribute names only, never PCI config space or
+BAR memory, and caps raw records at 16 MiB, directory lists at 4096 entries and
+individual text reads at 64 KiB. A truncated capture adds a snapshot warning.
+
 | Helper acquisition | Main interpretation |
 | --- | --- |
-| Protected procfs reads and process/FD identity checks | Process and thread rates, histories, usernames, environment/auxv formatting |
+| Protected procfs reads, process/FD identity checks and account-name acquisition | Process and thread rates, histories, environment/auxv formatting |
 | Raw executable-header bytes, ptrace/perf registers, stack bytes, instruction bytes and mapping metadata | Process architecture identification, register classification and roles, framehop unwinding and iced-x86 disassembly |
 | Open a currently executable mapped file, pin and verify its device/inode, read bounded bytes and recheck metadata | ELF/DWARF parsing, decompression, symbol/source lookup and caching |
 | FD ownership, socket metadata, namespace diagnostics and IPoIB neighbor observations | Peer/shared-holder relationships and destination enrichment |
 | BPF loading, attachment, bounded ring draining and map reads | File/IPC aggregation, CPU counter deltas and signal identity matching |
-| Character-device metadata from protected per-process FD scans | Unprivileged sysfs/procfs hardware topology, paths and device-handle grouping |
-| Observation sessions, acquisition cancellation and kernel resource cleanup | Reverse DNS workers and caches; response formatting |
+| Character-device metadata and bounded raw sysfs/procfs hardware attributes | In-memory hardware topology, paths and device-handle grouping |
+| Observation sessions, acquisition cancellation, kernel resource cleanup and bounded reverse DNS workers/caches | Response formatting and hostname attachment |
 
 Test containers give perf/BPF suites the required capabilities and an unlimited
 memlock allowance so concurrent perf rings are not rejected by Docker's default

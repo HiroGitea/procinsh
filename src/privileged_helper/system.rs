@@ -20,10 +20,15 @@ mod delivery;
 pub(super) use delivery::SnapshotEncoder;
 mod files;
 mod hardware;
+#[cfg(not(test))]
+mod hardware_capture;
+#[cfg(test)]
+use crate::http_server::analysis::hardware::capture_fixture as hardware_capture;
 mod ipc;
 mod ipoib;
 mod model;
 mod rdma;
+mod resolver;
 mod sched;
 mod service;
 mod signals;

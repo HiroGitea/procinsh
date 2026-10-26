@@ -15,10 +15,6 @@ use std::{
 
 fn validate_helper_path(path: &Path) -> Result<()> {
     ensure!(path.is_absolute(), "helper path must be absolute");
-    ensure!(
-        std::fs::metadata(path)?.is_file(),
-        "helper must be a regular file"
-    );
     Ok(())
 }
 
@@ -141,6 +137,9 @@ pub(crate) fn run(config: super::ServerConfig) -> Result<()> {
         );
         Ok((application, guard))
     })();
+    let workers = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1);
     privileges::seal_application()?;
     let (client, _helper) = match connection {
         Ok((socket, guard)) => (
@@ -155,6 +154,7 @@ pub(crate) fn run(config: super::ServerConfig) -> Result<()> {
         }
     };
     let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(workers)
         .enable_all()
         .build()?;
     let result = runtime.block_on(super::server::run(config, client));

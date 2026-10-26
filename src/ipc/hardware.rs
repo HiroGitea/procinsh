@@ -1,6 +1,7 @@
-//! Hardware observation values populated by main.
+//! Raw hardware attributes acquired by helper and interpreted by the HTTP server.
 //!
 //! # Interface
+//! - [`HardwareFiles`] (`pub`): `struct HardwareFiles`.
 //! - [`HardwareDevice`] (`pub`): `struct HardwareDevice`.
 //! - [`RdmaDeviceInfo`] (`pub`): `struct RdmaDeviceInfo`.
 //! - [`GpuInfo`] (`pub`): `struct GpuInfo`.
@@ -214,3 +215,18 @@ crate::ipc::codec::wire_struct!(BarInfo {
 });
 crate::ipc::codec::wire_enum!(HardwareRole { 0 => HostBridge, 1 => RootPort, 2 => SwitchPort, 3 => Endpoint });
 crate::ipc::codec::wire_enum!(HardwareKind { 0 => Gpu, 1 => Rdma, 2 => Accelerator, 3 => NvSwitch });
+
+/// Bounded text attributes, directory names and resolved links from fixed sysfs/procfs roots.
+#[derive(Clone, Debug, Default)]
+pub struct HardwareFiles {
+    pub truncated: bool,
+    pub texts: Vec<(String, String)>,
+    pub directories: Vec<(String, Vec<String>)>,
+    pub links: Vec<(String, String)>,
+}
+crate::ipc::codec::wire_struct!(HardwareFiles {
+    truncated,
+    texts,
+    directories,
+    links
+});

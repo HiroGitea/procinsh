@@ -25,7 +25,6 @@ struct ProcessHistory {
 /// IPC-only capture fields are consumed before any HTTP serialization.
 #[derive(Default)]
 pub(super) struct ObservationProcessor {
-    resolver: crate::http_server::analysis::resolver::ReverseDnsResolver,
     histories: HashMap<(u64, ProcessId), ProcessHistory>,
     activity: HashMap<u64, crate::http_server::analysis::activity::ActivityProcessor>,
     known: HashMap<i32, ProcessId>,
@@ -64,7 +63,9 @@ impl ObservationProcessor {
         if crate::http_server::analysis::relations::build(&mut snapshot) {
             snapshot.warnings.push("Scan, mapping, or connection limit reached. Some process or FD information is missing.".into());
         }
-        let sources = crate::http_server::analysis::hardware::HardwareSources::default();
+        let sources = crate::http_server::analysis::hardware::HardwareSources::acquired(
+            std::mem::take(&mut snapshot.raw_hardware),
+        );
         let hardware =
             crate::http_server::analysis::hardware::HardwareObservation::observe(&sources);
         let mut handles = hardware.handles(&sources);
@@ -79,6 +80,18 @@ impl ObservationProcessor {
         snapshot.device_handles = handles.finish(&live);
         snapshot.hardware_devices = hardware.devices;
         snapshot.hardware_paths = hardware.paths;
+        let hostnames: HashMap<_, _> = std::mem::take(&mut snapshot.raw_hostnames)
+            .into_iter()
+            .collect();
+        for relation in &mut snapshot.fd_relations {
+            if let Some(socket) = &mut relation.socket
+                && socket.network_peer
+            {
+                socket.remote_hostname = socket
+                    .remote
+                    .and_then(|address| hostnames.get(&address.ip).cloned());
+            }
+        }
         Ok(serde_json::to_value(snapshot)?)
     }
     pub(super) async fn process(
@@ -148,30 +161,8 @@ impl ObservationProcessor {
             _ => return Ok(()),
         };
         crate::http_server::analysis::details::complete(value)?;
-        let users: HashMap<u32, String> = std::fs::read_to_string("/etc/passwd")
-            .unwrap_or_default()
-            .lines()
-            .filter_map(|line| {
-                let parts: Vec<_> = line.split(':').collect();
-                Some((parts.get(2)?.parse().ok()?, parts.first()?.to_string()))
-            })
-            .collect();
         let name = |record: &mut Value| {
             if let Some(object) = record.as_object_mut() {
-                if object.contains_key("uid") {
-                    let username = object
-                        .get("uid")
-                        .and_then(Value::as_u64)
-                        .and_then(|uid| users.get(&(uid as u32)));
-                    object.insert("username".into(), serde_json::json!(username));
-                }
-                if object.contains_key("euid") {
-                    let username = object
-                        .get("euid")
-                        .and_then(Value::as_u64)
-                        .and_then(|uid| users.get(&(uid as u32)));
-                    object.insert("effective_username".into(), serde_json::json!(username));
-                }
                 object.remove("raw_ticks");
                 object.remove("raw_measured_ns");
             }
@@ -312,18 +303,6 @@ impl ObservationProcessor {
             && value.get("fd_relations").is_some()
         {
             *value = self.snapshot(serde_json::from_value(value.take())?)?;
-        }
-        if let Some(relations) = value.get_mut("fd_relations").and_then(Value::as_array_mut) {
-            for relation in relations {
-                let socket = &mut relation["socket"];
-                if socket["network_peer"] == true {
-                    let name = socket["remote"]["ip"]
-                        .as_str()
-                        .and_then(|ip| ip.parse().ok())
-                        .and_then(|ip| self.resolver.lookup(ip));
-                    socket["remote_hostname"] = serde_json::to_value(name)?;
-                }
-            }
         }
         let contexts: Vec<MappingSnapshot> = value
             .as_object_mut()

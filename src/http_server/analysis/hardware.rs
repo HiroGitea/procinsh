@@ -1,8 +1,8 @@
 //! GPUs, RDMA NICs, accelerators and NVSwitches with the PCIe bridges between them,
 //! the paths between devices, and the processes holding their character devices.
 //!
-//! Everything comes from sysfs and procfs without privileges; `config` space and
-//! vendor libraries are not used, so no device is woken or modified.
+//! Interprets helper-acquired sysfs/procfs text and links entirely in memory.
+//! This module opens no host files; PCI config space and vendor libraries are unused.
 //!
 //! # Interface
 //!
@@ -23,3 +23,6 @@ pub use devices::HardwareDevice;
 pub use handles::DeviceHandle;
 pub use observation::{HardwareObservation, HardwareSources};
 pub use paths::HardwarePath;
+
+#[cfg(test)]
+pub(crate) use observation::acquisition as capture_fixture;

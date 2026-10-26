@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn classes_match_nvidia_topology_and_find_the_bottleneck() {
         let f = fixture::workstation("paths");
-        let nodes = read_topology(&f.sys());
+        let nodes = read_topology(&f.sources(), &f.sys());
         let found = paths(&nodes, 1);
         // This machine: GPU and HCA under different host bridges of one NUMA node.
         let (class, via, bottleneck) = class_of(&found, "0000:01:00.0", "0000:85:00.0");
@@ -207,7 +207,7 @@ mod tests {
         );
 
         let f = fixture::switched("paths-switched");
-        let nodes = read_topology(&f.sys());
+        let nodes = read_topology(&f.sources(), &f.sys());
         let found = paths(&nodes, 2);
         // Two GPUs behind one switch.
         let (class, via, _) = class_of(&found, "0000:03:00.0", "0000:04:00.0");

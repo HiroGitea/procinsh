@@ -7,9 +7,10 @@
 //! | [`GpuInfo`] | `pub` | `struct GpuInfo` |
 //! | [`RdmaDeviceInfo`] | `pub` | `struct RdmaDeviceInfo` |
 //! | [`HardwareDevice`] | `pub` | `struct HardwareDevice` |
-//! | [`device`] | `pub` | `fn device(node: &PciNode, proc: &Path) -> HardwareDevice` |
+//! | [`device`] | `pub` | `fn device(sources: &HardwareSources, node: &PciNode, proc: &Path) -> HardwareDevice` |
 
-use super::pci::{BarInfo, HardwareKind, HardwareRole, PciNode, PcieLinkInfo, names, text};
+use super::observation::HardwareSources;
+use super::pci::{BarInfo, HardwareKind, HardwareRole, PciNode, PcieLinkInfo};
 pub use crate::ipc::hardware::{GpuInfo, HardwareDevice, RdmaDeviceInfo};
 use std::path::Path;
 
@@ -98,30 +99,35 @@ impl<'de> serde::Deserialize<'de> for crate::ipc::hardware::HardwareDevice {
 }
 
 /// `Key: value` lines of `/proc/driver/nvidia/gpus/<address>/information`.
-fn nvidia_information(proc: &Path, address: &str) -> Vec<(String, String)> {
-    text(
-        &proc
-            .join("driver/nvidia/gpus")
-            .join(address)
-            .join("information"),
-    )
-    .unwrap_or_default()
-    .lines()
-    .filter_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        Some((key.trim().to_owned(), value.trim().to_owned()))
-    })
-    .collect()
+fn nvidia_information(
+    sources: &HardwareSources,
+    proc: &Path,
+    address: &str,
+) -> Vec<(String, String)> {
+    sources
+        .text(
+            &proc
+                .join("driver/nvidia/gpus")
+                .join(address)
+                .join("information"),
+        )
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            Some((key.trim().to_owned(), value.trim().to_owned()))
+        })
+        .collect()
 }
 
 fn short(address: &str) -> &str {
     address.strip_prefix("0000:").unwrap_or(address)
 }
 
-pub fn device(node: &PciNode, proc: &Path) -> HardwareDevice {
+pub fn device(sources: &HardwareSources, node: &PciNode, proc: &Path) -> HardwareDevice {
     let hex = |value: Option<u32>, width: usize| value.map(|v| format!("0x{v:0width$x}"));
     let gpu = (node.kind == Some(HardwareKind::Gpu)).then(|| {
-        let info = nvidia_information(proc, &node.address);
+        let info = nvidia_information(sources, proc, &node.address);
         let field = |key: &str| info.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
         GpuInfo {
             vendor: match node.vendor_id {
@@ -133,20 +139,22 @@ pub fn device(node: &PciNode, proc: &Path) -> HardwareDevice {
             model: field("Model"),
             uuid: field("GPU UUID"),
             minor: field("Device Minor").and_then(|m| m.parse().ok()),
-            drm: names(&node.path.join("drm"))
+            drm: sources
+                .names(&node.path.join("drm"))
                 .into_iter()
                 .filter(|n| n.starts_with("card") || n.starts_with("renderD"))
                 .filter(|n| !n.contains('-'))
                 .collect(),
         }
     });
-    let rdma: Vec<_> = names(&node.path.join("infiniband"))
+    let rdma: Vec<_> = sources
+        .names(&node.path.join("infiniband"))
         .into_iter()
         .map(|name| {
             let dir = node.path.join("infiniband").join(&name);
             RdmaDeviceInfo {
-                hca_type: text(&dir.join("hca_type")),
-                fw_ver: text(&dir.join("fw_ver")),
+                hca_type: sources.text(&dir.join("hca_type")),
+                fw_ver: sources.text(&dir.join("fw_ver")),
                 name,
             }
         })
@@ -190,7 +198,7 @@ pub fn device(node: &PciNode, proc: &Path) -> HardwareDevice {
         gpu,
         rdma,
         netdevs: if node.role == HardwareRole::Endpoint {
-            names(&node.path.join("net"))
+            sources.names(&node.path.join("net"))
         } else {
             vec![]
         },

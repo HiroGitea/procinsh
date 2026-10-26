@@ -9,13 +9,12 @@
 //! | [`DeviceHandle`] | `pub` | `struct DeviceHandle` |
 //! | [`DeviceHandleCollector`] | `pub` | `struct DeviceHandleCollector` |
 
-use super::pci::text;
+use super::observation::HardwareSources;
 pub use crate::ipc::hardware::{DeviceHandle, DeviceHandleKind};
 use crate::ipc::schema::ProcessId;
 use std::{
     collections::{HashMap, HashSet},
-    fs,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -73,7 +72,7 @@ impl<'de> serde::Deserialize<'de> for crate::ipc::hardware::DeviceHandle {
 
 /// Resolves character device numbers once per snapshot and coalesces descriptors.
 pub struct DeviceHandleCollector {
-    sys: PathBuf,
+    sources: HardwareSources,
     devices: HashSet<String>,
     nvidia_major: Option<u32>,
     nvidia_minors: HashMap<u32, String>,
@@ -93,19 +92,20 @@ impl DeviceHandleCollector {
     /// `devices` are the hardware view's PCI addresses; `gpu_minors` maps NVIDIA
     /// device minors to them.
     pub fn new(
-        sys: &Path,
-        proc: &Path,
+        sources: &HardwareSources,
         devices: HashSet<String>,
         gpu_minors: HashMap<u32, String>,
     ) -> Self {
-        let nvidia_major = text(&proc.join("devices")).and_then(|devices| {
-            devices.lines().find_map(|line| {
-                let (major, name) = line.trim().split_once(' ')?;
-                (name == "nvidia" || name == "nvidia-frontend").then(|| major.parse().ok())?
-            })
-        });
+        let nvidia_major = sources
+            .text(&sources.proc.join("devices"))
+            .and_then(|devices| {
+                devices.lines().find_map(|line| {
+                    let (major, name) = line.trim().split_once(' ')?;
+                    (name == "nvidia" || name == "nvidia-frontend").then(|| major.parse().ok())?
+                })
+            });
         Self {
-            sys: sys.to_owned(),
+            sources: sources.clone(),
             devices,
             nvidia_major,
             nvidia_minors: gpu_minors,
@@ -123,7 +123,9 @@ impl DeviceHandleCollector {
                 self.nvidia_minors.get(&minor)?.clone(),
             ));
         }
-        let path = fs::canonicalize(self.sys.join(format!("dev/char/{major}:{minor}"))).ok()?;
+        let path = self
+            .sources
+            .link(&self.sources.sys.join(format!("dev/char/{major}:{minor}")))?;
         let text = path.to_string_lossy();
         let kind = if text.contains("/drm/renderD") {
             DeviceHandleKind::DrmRender
@@ -208,8 +210,7 @@ mod tests {
         );
         let devices = HashSet::from(["0000:01:00.0".to_owned(), "0000:85:00.0".to_owned()]);
         let mut collector = DeviceHandleCollector::new(
-            &f.sys(),
-            &f.proc(),
+            &f.sources(),
             devices,
             HashMap::from([(0, "0000:01:00.0".to_owned())]),
         );

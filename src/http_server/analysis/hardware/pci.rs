@@ -13,14 +13,12 @@
 //! | [`PcieLinkInfo`] | `pub` | `struct PcieLinkInfo` |
 //! | [`BarInfo`] | `pub` | `struct BarInfo` |
 //! | [`PciNode`] | `pub` | `struct PciNode` |
-//! | [`text`] | `pub` | `fn text(path: &Path) -> Option<String>` |
-//! | [`names`] | `pub` | `fn names(path: &Path) -> Vec<String>` |
-//! | [`read_topology`] | `pub` | `fn read_topology(sys: &Path) -> Vec<PciNode>` |
-//! | [`online_numa_nodes`] | `pub` | `fn online_numa_nodes(sys: &Path) -> usize` |
+//! | [`read_topology`] | `pub` | `fn read_topology(sources: &HardwareSources, sys: &Path) -> Vec<PciNode>` |
+//! | [`online_numa_nodes`] | `pub` | `fn online_numa_nodes(sources: &HardwareSources, sys: &Path) -> usize` |
 
+use super::observation::HardwareSources;
 use std::{
     collections::BTreeMap,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -166,25 +164,8 @@ pub struct PciNode {
     pub bars: Vec<BarInfo>,
 }
 
-pub fn text(path: &Path) -> Option<String> {
-    let value = fs::read_to_string(path).ok()?;
-    let value = value.trim();
-    (!value.is_empty()).then(|| value.to_owned())
-}
-
-fn hex(path: &Path) -> Option<u32> {
-    u32::from_str_radix(text(path)?.trim_start_matches("0x"), 16).ok()
-}
-
-pub fn names(path: &Path) -> Vec<String> {
-    let mut names: Vec<_> = fs::read_dir(path)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
+fn hex(sources: &HardwareSources, path: &Path) -> Option<u32> {
+    u32::from_str_radix(sources.text(path)?.trim_start_matches("0x"), 16).ok()
 }
 
 fn is_function_address(name: &str) -> bool {
@@ -205,8 +186,9 @@ fn is_host_bridge(name: &str) -> bool {
     })
 }
 
-fn link_speed(path: &Path) -> Option<f64> {
-    text(path)?
+fn link_speed(sources: &HardwareSources, path: &Path) -> Option<f64> {
+    sources
+        .text(path)?
         .split_whitespace()
         .next()?
         .parse()
@@ -214,20 +196,22 @@ fn link_speed(path: &Path) -> Option<f64> {
         .filter(|s: &f64| *s > 0.0)
 }
 
-fn link(dir: &Path, prefix: &str) -> Option<PcieLink> {
-    let width: u32 = text(&dir.join(format!("{prefix}_link_width")))?
+fn link(sources: &HardwareSources, dir: &Path, prefix: &str) -> Option<PcieLink> {
+    let width: u32 = sources
+        .text(&dir.join(format!("{prefix}_link_width")))?
         .parse()
         .ok()?;
     Some(PcieLink {
-        speed_gts: link_speed(&dir.join(format!("{prefix}_link_speed")))?,
+        speed_gts: link_speed(sources, &dir.join(format!("{prefix}_link_speed")))?,
         width: (width > 0).then_some(width)?,
     })
 }
 
-fn bars(dir: &Path) -> Vec<BarInfo> {
+fn bars(sources: &HardwareSources, dir: &Path) -> Vec<BarInfo> {
     const IORESOURCE_MEM: u64 = 0x200;
     const IORESOURCE_PREFETCH: u64 = 0x2000;
-    text(&dir.join("resource"))
+    sources
+        .text(&dir.join("resource"))
         .unwrap_or_default()
         .lines()
         .take(6)
@@ -250,11 +234,16 @@ fn bars(dir: &Path) -> Vec<BarInfo> {
 }
 
 /// The kind of a device worth showing; BMC display adapters are not GPUs.
-fn kind(dir: &Path, class: u32, vendor: Option<u32>) -> Option<HardwareKind> {
+fn kind(
+    sources: &HardwareSources,
+    dir: &Path,
+    class: u32,
+    vendor: Option<u32>,
+) -> Option<HardwareKind> {
     const ASPEED: u32 = 0x1a03;
     const MATROX: u32 = 0x102b;
     const NVIDIA: u32 = 0x10de;
-    if dir.join("infiniband").is_dir() || class >> 8 == 0x0c06 {
+    if sources.is_dir(&dir.join("infiniband")) || class >> 8 == 0x0c06 {
         return Some(HardwareKind::Rdma);
     }
     match class >> 8 {
@@ -266,13 +255,14 @@ fn kind(dir: &Path, class: u32, vendor: Option<u32>) -> Option<HardwareKind> {
 }
 
 fn node(
+    sources: &HardwareSources,
     address: &str,
     parent: Option<String>,
     dir: PathBuf,
     kind: Option<HardwareKind>,
 ) -> PciNode {
     let host = is_host_bridge(address);
-    let runtime_status = text(&dir.join("power/runtime_status"));
+    let runtime_status = sources.text(&dir.join("power/runtime_status"));
     // Link registers of a suspended device are not read; they would read as invalid.
     let awake = runtime_status.as_deref() != Some("suspended");
     PciNode {
@@ -285,37 +275,43 @@ fn node(
         },
         parent,
         kind,
-        class: (!host).then(|| hex(&dir.join("class"))).flatten(),
-        vendor_id: (!host).then(|| hex(&dir.join("vendor"))).flatten(),
-        device_id: (!host).then(|| hex(&dir.join("device"))).flatten(),
-        driver: fs::read_link(dir.join("driver"))
-            .ok()
+        class: (!host).then(|| hex(sources, &dir.join("class"))).flatten(),
+        vendor_id: (!host).then(|| hex(sources, &dir.join("vendor"))).flatten(),
+        device_id: (!host).then(|| hex(sources, &dir.join("device"))).flatten(),
+        driver: sources
+            .link(&dir.join("driver"))
             .and_then(|p| Some(p.file_name()?.to_string_lossy().into_owned())),
-        numa_node: text(&dir.join("numa_node")).and_then(|n| n.parse().ok()),
+        numa_node: sources
+            .text(&dir.join("numa_node"))
+            .and_then(|n| n.parse().ok()),
         link: (!host && awake).then(|| PcieLinkInfo {
-            current: link(&dir, "current"),
-            max: link(&dir, "max"),
+            current: link(sources, &dir, "current"),
+            max: link(sources, &dir, "max"),
         }),
-        power_state: text(&dir.join("power_state")),
+        power_state: sources.text(&dir.join("power_state")),
         runtime_status,
-        iommu_group: fs::read_link(dir.join("iommu_group"))
-            .ok()
+        iommu_group: sources
+            .link(&dir.join("iommu_group"))
             .and_then(|p| p.file_name()?.to_str()?.parse().ok()),
-        bars: if kind.is_some() { bars(&dir) } else { vec![] },
+        bars: if kind.is_some() {
+            bars(sources, &dir)
+        } else {
+            vec![]
+        },
         path: dir,
     }
 }
 
 /// Devices of interest and every bridge above them, parents before children.
-pub fn read_topology(sys: &Path) -> Vec<PciNode> {
+pub fn read_topology(sources: &HardwareSources, sys: &Path) -> Vec<PciNode> {
     let mut chains = Vec::new();
-    for name in names(&sys.join("bus/pci/devices")) {
-        let Ok(dir) = fs::canonicalize(sys.join("bus/pci/devices").join(&name)) else {
+    for name in sources.names(&sys.join("bus/pci/devices")) {
+        let Some(dir) = sources.link(&sys.join("bus/pci/devices").join(&name)) else {
             continue;
         };
-        let class = hex(&dir.join("class")).unwrap_or_default();
-        let vendor = hex(&dir.join("vendor"));
-        let Some(kind) = kind(&dir, class, vendor) else {
+        let class = hex(sources, &dir.join("class")).unwrap_or_default();
+        let vendor = hex(sources, &dir.join("vendor"));
+        let Some(kind) = kind(sources, &dir, class, vendor) else {
             continue;
         };
         // The chain from the host bridge: pci0000:80 / 0000:80:03.4 / 0000:85:00.0.
@@ -352,7 +348,13 @@ pub fn read_topology(sys: &Path) -> Vec<PciNode> {
             }
             nodes.insert(
                 address.clone(),
-                node(address, parent, dir.clone(), endpoint.then_some(kind)),
+                node(
+                    sources,
+                    address,
+                    parent,
+                    dir.clone(),
+                    endpoint.then_some(kind),
+                ),
             );
         }
     }
@@ -377,8 +379,9 @@ pub fn read_topology(sys: &Path) -> Vec<PciNode> {
 }
 
 /// Online NUMA node count, from `devices/system/node/online` such as `0` or `0-1`.
-pub fn online_numa_nodes(sys: &Path) -> usize {
-    text(&sys.join("devices/system/node/online"))
+pub fn online_numa_nodes(sources: &HardwareSources, sys: &Path) -> usize {
+    sources
+        .text(&sys.join("devices/system/node/online"))
         .map(|ranges| {
             ranges
                 .split(',')
@@ -409,6 +412,9 @@ pub mod fixture {
         }
     }
     impl SysfsFixture {
+        pub fn sources(&self) -> super::HardwareSources {
+            super::HardwareSources::fixture(self.sys(), self.proc())
+        }
         pub fn new(name: &str) -> Self {
             let root =
                 std::env::temp_dir().join(format!("procinsh-sysfs-{name}-{}", std::process::id()));
@@ -567,7 +573,7 @@ mod tests {
     #[test]
     fn topology_keeps_devices_of_interest_and_their_bridges() {
         let f = fixture::workstation("pci");
-        let nodes = read_topology(&f.sys());
+        let nodes = read_topology(&f.sources(), &f.sys());
         let summary: Vec<_> = nodes
             .iter()
             .map(|n| (n.address.as_str(), n.parent.as_deref(), n.role, n.kind))
@@ -634,7 +640,7 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(online_numa_nodes(&f.sys()), 1);
+        assert_eq!(online_numa_nodes(&f.sources(), &f.sys()), 1);
         assert!(
             (PcieLink {
                 speed_gts: 5.0,
@@ -646,7 +652,7 @@ mod tests {
                 < 1e-9
         );
         let switched = fixture::switched("pci-switched");
-        let nodes = read_topology(&switched.sys());
+        let nodes = read_topology(&switched.sources(), &switched.sys());
         assert_eq!(nodes.iter().filter(|n| n.kind.is_some()).count(), 6);
         assert_eq!(
             nodes
@@ -655,6 +661,6 @@ mod tests {
                 .count(),
             8
         );
-        assert_eq!(online_numa_nodes(&switched.sys()), 2);
+        assert_eq!(online_numa_nodes(&switched.sources(), &switched.sys()), 2);
     }
 }

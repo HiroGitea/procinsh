@@ -152,6 +152,10 @@ struct SystemSnapshotJson {
     pub raw_device_handles: Vec<(ProcessId, u32, u64)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_neighbors: Option<NeighborSnapshot>,
+    #[serde(skip)]
+    pub raw_hardware: crate::ipc::hardware::HardwareFiles,
+    #[serde(skip)]
+    pub raw_hostnames: Vec<(std::net::IpAddr, String)>,
 }
 impl serde::Serialize for crate::http_server::model::system::SystemSnapshot {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {

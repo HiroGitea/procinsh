@@ -105,6 +105,8 @@ pub struct SystemSnapshot {
     pub raw_connections: Vec<(IpcIdentity, SocketConnectionStatus)>,
     pub raw_device_handles: Vec<(ProcessId, u32, u64)>,
     pub raw_neighbors: Option<NeighborSnapshot>,
+    pub raw_hardware: crate::ipc::hardware::HardwareFiles,
+    pub raw_hostnames: Vec<(std::net::IpAddr, String)>,
 }
 
 /// Neighbor observations scoped to the collector network namespace.
@@ -174,7 +176,9 @@ crate::ipc::codec::wire_struct!(SystemSnapshot {
     raw_namespaces,
     raw_connections,
     raw_device_handles,
-    raw_neighbors
+    raw_neighbors,
+    raw_hardware,
+    raw_hostnames
 });
 
 crate::ipc::codec::wire_struct!(NeighborSnapshot { entries, namespace });

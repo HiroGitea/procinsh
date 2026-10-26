@@ -62,9 +62,6 @@ fn start_timestamp(boot_seconds: u64, ticks: u64, ticks_per_second: f64) -> Opti
 }
 
 pub(super) fn users() -> HashMap<u32, String> {
-    #[cfg(not(test))]
-    return HashMap::new();
-    #[cfg(test)]
     {
         fs::read_to_string("/etc/passwd")
             .unwrap_or_default()

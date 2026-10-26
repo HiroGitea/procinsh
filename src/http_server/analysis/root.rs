@@ -5,7 +5,6 @@
 //! | Definition | Visibility | Kind / signature |
 //! | --- | --- | --- |
 //! | [`snapshot`] | `pub` | `mod snapshot` |
-//! | [`resolver`] | `pub` | `mod resolver` |
 //! | [`history`] | `pub` | `mod history` |
 //! | [`hardware`] | `pub` | `mod hardware` |
 //! | [`relations`] | `pub` | `mod relations` |
@@ -14,8 +13,6 @@
 //! | [`details`] | `pub` | `mod details` |
 
 pub mod snapshot;
-
-pub mod resolver;
 
 pub mod history;
 

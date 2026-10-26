@@ -16,20 +16,67 @@ use std::{
     path::PathBuf,
 };
 
-/// Where sysfs and procfs are mounted; tests use temporary trees.
+/// Logical roots and an in-memory view of helper-acquired attributes.
 #[derive(Clone)]
 pub struct HardwareSources {
     pub sys: PathBuf,
     pub proc: PathBuf,
+    texts: HashMap<PathBuf, String>,
+    directories: HashMap<PathBuf, Vec<String>>,
+    links: HashMap<PathBuf, PathBuf>,
 }
 impl Default for HardwareSources {
     fn default() -> Self {
-        Self {
-            sys: "/sys".into(),
-            proc: "/proc".into(),
-        }
+        Self::acquired(crate::ipc::hardware::HardwareFiles::default())
     }
 }
+impl HardwareSources {
+    pub fn acquired(files: crate::ipc::hardware::HardwareFiles) -> Self {
+        Self::at("/sys".into(), "/proc".into(), files)
+    }
+    fn at(sys: PathBuf, proc: PathBuf, files: crate::ipc::hardware::HardwareFiles) -> Self {
+        Self {
+            sys,
+            proc,
+            texts: files
+                .texts
+                .into_iter()
+                .map(|(p, v)| (p.into(), v))
+                .collect(),
+            directories: files
+                .directories
+                .into_iter()
+                .map(|(p, v)| (p.into(), v))
+                .collect(),
+            links: files
+                .links
+                .into_iter()
+                .map(|(p, v)| (p.into(), v.into()))
+                .collect(),
+        }
+    }
+    pub(super) fn text(&self, path: &std::path::Path) -> Option<String> {
+        let value = self.texts.get(path)?.trim();
+        (!value.is_empty()).then(|| value.to_owned())
+    }
+    pub(super) fn names(&self, path: &std::path::Path) -> Vec<String> {
+        self.directories.get(path).cloned().unwrap_or_default()
+    }
+    pub(super) fn link(&self, path: &std::path::Path) -> Option<PathBuf> {
+        self.links.get(path).cloned()
+    }
+    pub(super) fn is_dir(&self, path: &std::path::Path) -> bool {
+        self.directories.contains_key(path)
+    }
+    #[cfg(test)]
+    pub(super) fn fixture(sys: PathBuf, proc: PathBuf) -> Self {
+        let files = super::capture_fixture::capture(&sys, &proc);
+        Self::at(sys, proc, files)
+    }
+}
+#[cfg(test)]
+#[path = "../../../privileged_helper/system/hardware_capture.rs"]
+pub(crate) mod acquisition;
 
 #[derive(Default)]
 pub struct HardwareObservation {
@@ -40,10 +87,13 @@ pub struct HardwareObservation {
 impl HardwareObservation {
     /// Reads GPUs, RDMA NICs, accelerators and NVSwitches with their bridges and paths.
     pub fn observe(sources: &HardwareSources) -> Self {
-        let nodes = read_topology(&sources.sys);
+        let nodes = read_topology(sources, &sources.sys);
         Self {
-            paths: paths(&nodes, online_numa_nodes(&sources.sys)),
-            devices: nodes.iter().map(|n| device(n, &sources.proc)).collect(),
+            paths: paths(&nodes, online_numa_nodes(sources, &sources.sys)),
+            devices: nodes
+                .iter()
+                .map(|n| device(sources, n, &sources.proc))
+                .collect(),
         }
     }
 
@@ -55,22 +105,46 @@ impl HardwareObservation {
             .iter()
             .filter_map(|d| Some((d.gpu.as_ref()?.minor?, d.address.clone())))
             .collect();
-        DeviceHandleCollector::new(&sources.sys, &sources.proc, addresses, minors)
+        DeviceHandleCollector::new(sources, addresses, minors)
     }
 }
 
 #[cfg(test)]
 pub fn observe_at(root: &std::path::Path) -> HardwareObservation {
-    HardwareObservation::observe(&HardwareSources {
-        sys: root.join("sys"),
-        proc: root.join("proc"),
-    })
+    HardwareObservation::observe(&HardwareSources::fixture(
+        root.join("sys"),
+        root.join("proc"),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::pci::fixture;
     use super::*;
+
+    #[test]
+    fn captured_hardware_survives_removal_of_all_source_files() {
+        let f = fixture::workstation("captured-only");
+        let sys = f.sys();
+        let proc = f.proc();
+        let files = super::super::capture_fixture::capture(&sys, &proc);
+        assert!(!files.truncated);
+        let encoded = crate::ipc::codec::encode(&files, 16 * 1024 * 1024).unwrap();
+        let captured = crate::ipc::codec::decode(&encoded).unwrap();
+        std::fs::remove_dir_all(&f.root).unwrap();
+        let sources = HardwareSources::at(sys, proc, captured);
+        let observation = HardwareObservation::observe(&sources);
+        let gpu = observation
+            .devices
+            .iter()
+            .find(|d| d.address == "0000:01:00.0")
+            .unwrap();
+        assert_eq!(
+            gpu.gpu.as_ref().unwrap().model.as_deref(),
+            Some("NVIDIA GeForce RTX 5070 Ti")
+        );
+        assert!(!observation.paths.is_empty());
+    }
 
     #[test]
     fn devices_carry_gpu_and_rdma_identity_as_json() {
