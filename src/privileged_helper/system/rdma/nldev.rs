@@ -202,6 +202,14 @@ fn parse_device(body: &[u8]) -> Result<(u32, String)> {
 }
 
 /// Reads queue pairs and CM IDs of every RDMA device visible in this network namespace.
+/// Whether a dump failed because the device does not implement it.
+fn unsupported(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<std::io::Error>()
+        .and_then(std::io::Error::raw_os_error)
+        .is_some_and(|code| code == libc::EOPNOTSUPP || code == libc::ENOTSUP)
+}
+
 pub(super) fn read_resources(deadline: Instant) -> Result<NldevResources> {
     let fd = netlink::open_socket(NETLINK_RDMA, "NETLINK_RDMA")?;
     let mut sequence = 1;
@@ -256,7 +264,13 @@ pub(super) fn read_resources(deadline: Instant) -> Result<NldevResources> {
             });
             if let Err(error) = dumped {
                 ensure!(Instant::now() < deadline, "{error:#}");
-                result.errors.push(format!("{name}: {error:#}"));
+                // Some drivers, such as Microsoft MANA, cannot report queue pairs or
+                // CM IDs; that is an empty table, not a failed observation.
+                if unsupported(&error) {
+                    log::debug!("{name}: {error:#}");
+                } else {
+                    result.errors.push(format!("{name}: {error:#}"));
+                }
             }
         }
     }
@@ -266,6 +280,21 @@ pub(super) fn read_resources(deadline: Instant) -> Result<NldevResources> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unsupported_dumps_are_recognized_through_context() {
+        use anyhow::Context;
+        let failed = |code| -> anyhow::Error {
+            Err::<(), _>(std::io::Error::from_raw_os_error(code))
+                .context("RDMA QP dump dump failed")
+                .unwrap_err()
+        };
+        assert!(unsupported(&failed(libc::EOPNOTSUPP)));
+        assert!(!unsupported(&failed(libc::EPERM)));
+        assert!(!unsupported(&anyhow::anyhow!(
+            "truncated RDMA QP dump packet"
+        )));
+    }
 
     fn attribute(kind: u16, data: &[u8]) -> Vec<u8> {
         let mut bytes = Vec::new();
