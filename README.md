@@ -75,8 +75,8 @@ procinsh --connect 100.64.0.1:9190 --host-name gpu-node-1 \
 ```
 
 The hub can read everything its agents can, including process memory and
-environment variables. The agent link has no TLS; use it only over a trusted
-network such as Tailscale or WireGuard.
+environment variables. The agent link is not encrypted; run hubs and agents
+only on a secure network.
 
 ### Self build on Linux
 
