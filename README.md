@@ -52,6 +52,32 @@ sudo setcap \
 "$HOME/.cargo/bin/procinsh" --listen 127.0.0.1:9090
 ```
 
+### Multiple hosts
+
+One procinsh can show several machines, such as bare-metal servers, VMs and
+containers. Run a hub that accepts agents, and run procinsh on each other
+machine with `--connect`. Every agent needs its own privileged helper, like a
+standalone procinsh. Agents collect only while someone views them on the hub.
+Pick a host in the list, process, or space view; the space view also offers
+"All hosts (layers)" to stack every host and draw connections between them,
+including TCP/UDP connections and RDMA (InfiniBand/RoCE) queue pairs.
+
+```sh
+# hub (its own web UI on 127.0.0.1:9090)
+echo "$SHARED_SECRET" > ~/procinsh-token
+procinsh --listen 127.0.0.1:9090 \
+  --accept-agents 100.64.0.1:9190 --allow-non-loopback \
+  --agent-token-file ~/procinsh-token
+
+# each agent
+procinsh --connect 100.64.0.1:9190 --host-name gpu-node-1 \
+  --agent-token-file ~/procinsh-token
+```
+
+The hub can read everything its agents can, including process memory and
+environment variables. The agent link has no TLS; use it only over a trusted
+network such as Tailscale or WireGuard.
+
 ### Self build on Linux
 
 #### Ubuntu
