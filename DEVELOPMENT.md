@@ -993,11 +993,10 @@ clears capabilities and interprets acquired values before exposing the existing
 HTTP API. No file descriptor crosses IPC.
 
 During startup, the launcher locates and executes the sibling helper. After its
-handshake, the HTTP process sets `no_new_privs` and installs an architecture-checked
-seccomp filter before starting its worker threads. It rejects filesystem opens,
-pathname inspection and mutations, and further execs with `EPERM`. Embedded web
-assets, IPC data and in-memory analysis require no files. Logs continue through
-inherited stderr; inherited descriptors other than stdio are closed at startup.
+handshake, the HTTP process sets `no_new_privs` before starting its worker threads.
+Embedded web assets, IPC data and in-memory analysis require no file reads.
+Logs continue through inherited stderr; inherited descriptors other than stdio
+are closed at startup.
 The helper reads `/etc/passwd` for account names and runs reverse DNS, including
 libc/NSS configuration reads. Neither operation runs in HTTP workers.
 

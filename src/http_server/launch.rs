@@ -137,9 +137,6 @@ pub(crate) fn run(config: super::ServerConfig) -> Result<()> {
         );
         Ok((application, guard))
     })();
-    let workers = std::thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1);
     privileges::seal_application()?;
     let (client, _helper) = match connection {
         Ok((socket, guard)) => (
@@ -154,7 +151,6 @@ pub(crate) fn run(config: super::ServerConfig) -> Result<()> {
         }
     };
     let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(workers)
         .enable_all()
         .build()?;
     let result = runtime.block_on(super::server::run(config, client));
