@@ -2,6 +2,7 @@
 //!
 //! # Interface
 //! - [`RegisterSet`] (`pub`): `struct RegisterSet`.
+//! - [`RegisterRole`] (`pub`): `enum RegisterRole`.
 //! - [`Register`] (`pub`): `struct Register`.
 //! - [`RegisterMapping`] (`pub`): `struct RegisterMapping`.
 use crate::ipc::model::memory::MemoryKind;
@@ -9,9 +10,22 @@ use crate::ipc::model::memory::MemoryKind;
 #[derive(Clone, Debug)]
 pub struct RegisterSet(pub [u64; 24]);
 
+/// Architecture-independent register purpose, separate from its memory mapping kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegisterRole {
+    Pc,
+    Sp,
+    Fp,
+    Lr,
+    Flags,
+    General,
+}
+crate::ipc::codec::wire_enum!(RegisterRole{0=>Pc,1=>Sp,2=>Fp,3=>Lr,4=>Flags,5=>General});
+
 #[derive(Clone, Debug)]
 pub struct Register {
     pub name: String,
+    pub role: RegisterRole,
     pub value: u64,
     pub decimal: String,
     pub kind: MemoryKind,
@@ -39,6 +53,7 @@ impl crate::ipc::codec::Wire for RegisterSet {
 
 crate::ipc::codec::wire_struct!(Register {
     name,
+    role,
     value,
     decimal,
     kind,

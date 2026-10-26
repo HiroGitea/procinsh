@@ -3,6 +3,16 @@
 //! # Interface
 //! Serde implementations for IPC acquisition types; no named types or functions are exported.
 use crate::ipc::acquisition::*;
+fn serialize_architecture<S: serde::Serializer>(
+    header: &Option<[u8; 20]>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let architecture = header.as_ref().and_then(
+        crate::http_server::analysis::snapshot::architecture::Architecture::from_elf_header,
+    );
+    serde::Serialize::serialize(&architecture, serializer)
+}
+
 use crate::ipc::{
     activity::{CpuActivity, FileActivity, IpcActivity, RawActivity, SignalEvent},
     model::{
@@ -97,6 +107,8 @@ impl serde::Serialize for crate::ipc::acquisition::InstructionBytes {
 #[serde(remote = "crate::ipc::acquisition::LiveSample")]
 struct LiveSampleJson {
     pub tid: i32,
+    #[serde(rename = "architecture", serialize_with = "serialize_architecture")]
+    pub executable_header: Option<[u8; 20]>,
     pub sampled_at: Option<u64>,
     pub sample_time_ns: Option<u64>,
     #[cfg(test)]

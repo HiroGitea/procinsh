@@ -1,7 +1,7 @@
 #[cfg(test)]
 use super::sample::SampleSource;
 use super::sample::monotonic_ns;
-use super::{arch::{Architecture, native}, instruction_bytes::InstructionBytes, perf::PerfEventReader};
+use super::{arch::native, instruction_bytes::InstructionBytes, perf::PerfEventReader};
 #[cfg(test)]
 use super::{registers, stack::StackFrame};
 #[cfg(test)]
@@ -21,16 +21,25 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn executable_header(pid: i32) -> Option<[u8; 20]> {
+    use std::io::Read;
+    let mut header = [0; 20];
+    std::fs::File::open(format!("/proc/{pid}/exe"))
+        .and_then(|mut file| file.read_exact(&mut header))
+        .ok()?;
+    Some(header)
+}
+
 const PTRACE_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Latest thread sample with loss and error diagnostics.
 /// `sampled_at` is Unix milliseconds; `sample_age_ms` uses monotonic time.
 pub(super) use crate::ipc::acquisition::LiveSample as ThreadSample;
 impl ThreadSample {
-    fn waiting(tid: i32, architecture: Option<Architecture>) -> Self {
+    fn waiting(tid: i32, executable_header: Option<[u8; 20]>) -> Self {
         Self {
             tid,
-            architecture,
+            executable_header,
             sampled_at: None,
             sample_time_ns: None,
             #[cfg(test)]
@@ -61,7 +70,7 @@ struct Thread {
 }
 pub(in crate::privileged_helper::process) struct Sampler {
     id: ProcessId,
-    architecture: Option<Architecture>,
+    executable_header: Option<[u8; 20]>,
     threads: BTreeMap<i32, Thread>,
     #[cfg(test)]
     symbols: ElfCache,
@@ -74,7 +83,7 @@ impl Sampler {
     pub(in crate::privileged_helper::process) fn new(id: ProcessId) -> Self {
         Self {
             id,
-            architecture: Architecture::of_process(id.pid),
+            executable_header: executable_header(id.pid),
             threads: BTreeMap::new(),
             #[cfg(test)]
             symbols: ElfCache::default(),
@@ -105,7 +114,6 @@ impl Sampler {
             match super::ptrace::capture(tid, maps) {
                 Ok(sample) => process_sample(
                     self.id.pid,
-                    self.architecture,
                     #[cfg(test)]
                     &mut self.unwind,
                     #[cfg(test)]
@@ -164,7 +172,7 @@ impl Sampler {
                 self.threads.remove(&tid);
             }
             let thread = self.threads.entry(tid).or_insert_with(|| {
-                let mut latest = ThreadSample::waiting(tid, self.architecture);
+                let mut latest = ThreadSample::waiting(tid, self.executable_header);
                 let event = match PerfEventReader::open(tid) {
                     Ok(event) => Some(event),
                     Err(e) => {
@@ -225,7 +233,6 @@ impl Sampler {
             {
                 process_sample(
                     self.id.pid,
-                    self.architecture,
                     #[cfg(test)]
                     &mut self.unwind,
                     #[cfg(test)]
@@ -276,7 +283,6 @@ impl Sampler {
 }
 fn process_sample(
     pid: i32,
-    architecture: Option<Architecture>,
     #[cfg(test)] unwind: &mut StackUnwinder,
     #[cfg(test)] symbols: &mut ElfCache,
     thread: &mut Thread,
@@ -287,12 +293,19 @@ fn process_sample(
     if thread.sampled_ns.is_some_and(|time| sample.time_ns <= time) {
         return;
     }
+    let executable_header = thread.latest.executable_header;
     let tid = sample.tid;
     let lost = thread.latest.lost_samples;
     let r = &sample.registers;
     #[cfg(test)]
     let (frames, reason) = {
-        let (mut frames, reason) = unwind.walk(r.0[native::PC], r.0[native::SP], r.0[native::FP], maps, &sample.stack);
+        let (mut frames, reason) = unwind.walk(
+            r.0[native::PC],
+            r.0[native::SP],
+            r.0[native::FP],
+            maps,
+            &sample.stack,
+        );
         for (index, frame) in frames.iter_mut().enumerate() {
             let address = instruction_address(frame.address, index > 0);
             let info = maps
@@ -313,7 +326,7 @@ fn process_sample(
     thread.sampled_ns = Some(sample.time_ns);
     thread.latest = ThreadSample {
         tid,
-        architecture,
+        executable_header,
         sampled_at: Some(process::timestamp_ms().saturating_sub(age)),
         sample_time_ns: Some(sample.time_ns),
         #[cfg(test)]
@@ -466,7 +479,10 @@ mod live_tests {
         sampler.bootstrap(&maps).unwrap();
         let first = sampler.latest()[0].clone();
         assert_eq!(first.sample_source, Some(SampleSource::Ptrace), "{first:?}");
-        assert_eq!(first.architecture, Some(Architecture::X86_64));
+        assert_eq!(
+            serde_json::to_value(&first).unwrap()["architecture"],
+            "x86_64"
+        );
         assert_eq!(first.registers.len(), 18);
         assert!(first.cpu.is_none());
         assert!(
@@ -654,7 +670,6 @@ mod live_tests {
         };
         process_sample(
             target.id.pid,
-            sampler.architecture,
             &mut sampler.unwind,
             &mut sampler.symbols,
             thread,
@@ -674,7 +689,6 @@ mod live_tests {
         };
         process_sample(
             target.id.pid,
-            sampler.architecture,
             &mut sampler.unwind,
             &mut sampler.symbols,
             thread,

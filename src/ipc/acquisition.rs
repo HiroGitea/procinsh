@@ -71,6 +71,8 @@ pub struct InstructionBytes {
 #[derive(Clone, Debug)]
 pub struct LiveSample {
     pub tid: i32,
+    /// Raw executable header; interpreted only by the HTTP server.
+    pub executable_header: Option<[u8; 20]>,
     pub sampled_at: Option<u64>,
     pub sample_time_ns: Option<u64>,
     #[cfg(test)]
@@ -209,6 +211,7 @@ crate::ipc::codec::wire_struct!(InstructionBytes {
 impl crate::ipc::codec::Wire for LiveSample {
     fn write(&self, o: &mut crate::ipc::codec::Encoder) -> anyhow::Result<()> {
         crate::ipc::codec::Wire::write(&self.tid, o)?;
+        crate::ipc::codec::Wire::write(&self.executable_header, o)?;
         crate::ipc::codec::Wire::write(&self.sampled_at, o)?;
         crate::ipc::codec::Wire::write(&self.sample_time_ns, o)?;
         crate::ipc::codec::Wire::write(&self.sample_age_ms, o)?;
@@ -227,6 +230,7 @@ impl crate::ipc::codec::Wire for LiveSample {
     fn read(i: &mut crate::ipc::codec::Decoder<'_>) -> anyhow::Result<Self> {
         Ok(Self {
             tid: crate::ipc::codec::Wire::read(i)?,
+            executable_header: crate::ipc::codec::Wire::read(i)?,
             sampled_at: crate::ipc::codec::Wire::read(i)?,
             sample_time_ns: crate::ipc::codec::Wire::read(i)?,
             sample_age_ms: crate::ipc::codec::Wire::read(i)?,

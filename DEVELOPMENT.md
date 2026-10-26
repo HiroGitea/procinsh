@@ -995,7 +995,7 @@ HTTP API. No file descriptor crosses IPC.
 | Helper acquisition | Main interpretation |
 | --- | --- |
 | Protected procfs reads and process/FD identity checks | Process and thread rates, histories, usernames, environment/auxv formatting |
-| Ptrace/perf registers, stack bytes, instruction bytes and mapping metadata | Register classification, framehop unwinding and iced-x86 disassembly |
+| Raw executable-header bytes, ptrace/perf registers, stack bytes, instruction bytes and mapping metadata | Process architecture identification, register classification and roles, framehop unwinding and iced-x86 disassembly |
 | Open a currently executable mapped file, pin and verify its device/inode, read bounded bytes and recheck metadata | ELF/DWARF parsing, decompression, symbol/source lookup and caching |
 | FD ownership, socket metadata, namespace diagnostics and IPoIB neighbor observations | Peer/shared-holder relationships and destination enrichment |
 | BPF loading, attachment, bounded ring draining and map reads | File/IPC aggregation, CPU counter deltas and signal identity matching |
