@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { bytes, byteRate, Display, percent, rate } from "../src/shared/display";
-import type { SocketProtocol } from "../src/shared/api-types.js";
+import type {
+  RdmaCmState,
+  RdmaPortSpace,
+  RdmaQpState,
+  RdmaQpType,
+  SocketProtocol,
+} from "../src/shared/api-types.js";
 import { readFileSync } from "node:fs";
 
 const socketProtocols = JSON.parse(
@@ -12,8 +18,49 @@ const socketProtocols = JSON.parse(
     "utf8",
   ),
 ) as { value: SocketProtocol; label: string }[];
+const rdmaCodes = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../src/privileged_helper/test_support/rdma-codes.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+) as {
+  group: "qp_type" | "qp_state" | "cm_state" | "port_space";
+  code: number;
+  value: RdmaQpType & RdmaQpState & RdmaCmState & RdmaPortSpace;
+  label: string;
+}[];
 
 describe("shared formatting", () => {
+  test.each(rdmaCodes)(
+    "formats RDMA $group $code as $label",
+    ({ group, value, label }) => {
+      const format = {
+        qp_type: Display.rdmaQpType,
+        qp_state: Display.rdmaState,
+        cm_state: Display.rdmaState,
+        port_space: Display.rdmaPortSpace,
+      }[group];
+      expect(format(value)).toBe(label);
+    },
+  );
+  test("formats RDMA CM addresses like the server", () => {
+    expect(
+      Display.rdmaAddress({ kind: "inet", ip: "10.10.10.1", port: 20049 }),
+    ).toBe("10.10.10.1:20049");
+    expect(
+      Display.rdmaAddress({
+        kind: "ib",
+        gid: "fe80:0000:0000:0000:0000:0000:0000:0051",
+        service_id: "0x0000000001064e51",
+        pkey: 65535,
+      }),
+    ).toBe("fe80:0000:0000:0000:0000:0000:0000:0051 SID 0x0000000001064e51");
+    expect(Display.rdmaAddress({ kind: "unknown", family: 42 })).toBe("AF 42");
+    expect(Display.rdmaAddress(null)).toBe("");
+  });
   test.each(socketProtocols)(
     "formats $label with no peer information",
     ({ value, label }) => {

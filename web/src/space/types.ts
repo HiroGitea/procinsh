@@ -12,6 +12,8 @@ import type {
   SignalEvent,
   HardwareDevice,
   HardwarePath,
+  RdmaPortInfo,
+  RdmaRelation,
 } from "../shared/api-types.js";
 export interface Position {
   x: number;
@@ -29,6 +31,34 @@ export interface NetworkGroup {
   endpoint: FdEndpoint;
   socket: SocketEndpoint;
   members: FdRelation[];
+  label: string;
+}
+/** Unpaired queue pairs of one anchor, consumer, type and remote address. */
+export interface RdmaGroup {
+  id: string;
+  /** A process key, or a device anchor ID for kernel and unresolved owners. */
+  anchor: string;
+  /** The device of a device anchor; null for a process anchor. */
+  device: string | null;
+  consumer: string;
+  remote: string | null;
+  members: RdmaRelation[];
+  label: string;
+}
+/** Two connected queue pairs, on this host or, in the merged view, on two hosts. */
+export interface RdmaLink {
+  id: string;
+  relation: RdmaRelation;
+  from: string;
+  to: string;
+}
+/** An RDMA device that anchors kernel queue pairs and lists its ports. */
+export interface RdmaDevice {
+  id: string;
+  /** The host of the merged multi-host view. */
+  host?: string;
+  device: string;
+  ports: RdmaPortInfo[];
   label: string;
 }
 export interface NetlinkSocketInfo {
@@ -115,19 +145,23 @@ export interface SelectionState {
   readonly netlink: string | null;
   /** A hardware bay device by PCI address. */
   readonly hardware?: string | null;
+  /** An RDMA group, link or device ID. */
+  readonly rdma?: string | null;
 }
 export interface HoverState {
   readonly hoveredNetwork: string | null;
   readonly hoveredFile: string | null;
   readonly hoveredNetlink: string | null;
   readonly hoveredHardware?: string | null;
+  readonly hoveredRdma?: string | null;
 }
 export type ConnectionPick = FdRelation & { networkId?: string };
 export type PickResult =
   | ConnectionPick
   | { fileId: string }
   | { netlinkId: string }
-  | { hardwareId: string };
+  | { hardwareId: string }
+  | { rdmaId: string };
 export interface RenderNode extends Process {
   pos: T.Vector3;
   regions: Region[];
@@ -144,11 +178,31 @@ export interface NetworkView {
   pos: T.Vector3;
   curve: T.CubicBezierCurve3;
 }
+export interface RdmaView {
+  group: RdmaGroup;
+  pos: T.Vector3;
+  curve: T.CubicBezierCurve3;
+}
+export interface RdmaLinkView {
+  link: RdmaLink;
+  curve: T.QuadraticBezierCurve3 | T.CubicBezierCurve3;
+}
+export interface RdmaDeviceView {
+  device: RdmaDevice;
+  pos: T.Vector3;
+}
 /** A hardware bay device and the number of processes holding it. */
 export interface HardwareView {
   device: HardwareDevice;
   pos: T.Vector3;
   users: number;
+}
+/** One host's floor in the merged multi-host view. */
+export interface HostLayerView {
+  host: string;
+  label: string;
+  /** The floor corner where the host label is drawn. */
+  pos: T.Vector3;
 }
 /** A highlighted PCIe path of the selected device, labeled at its far end. */
 export interface HardwarePathView {

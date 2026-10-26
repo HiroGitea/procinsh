@@ -39,6 +39,30 @@ function ipcPortVisuals() {
       normal:normal.toArray()};
   });
 }
+function rdmaVisuals() {
+  const view = scene.renderView();
+  const project = (point: T.Vector3) => point.clone().project(camera.camera).toArray();
+  return {
+    groups: (view.rdmaViews ?? []).map(v => ({
+      id: v.group.id,
+      label: v.group.label,
+      anchor: v.group.anchor,
+      screen: project(v.pos),
+      start: v.curve.getPoint(0).toArray(),
+    })),
+    links: (view.rdmaLinkViews ?? []).map(v => ({
+      id: v.link.id,
+      screen: project(v.curve.getPoint(0.5)),
+    })),
+    // The plate corner nearest the default camera, clear of the marker curves that
+    // start at its center and of QP links arriving from processes on its left.
+    devices: (view.rdmaDeviceViews ?? []).map(v => ({
+      id: v.device.id,
+      label: v.device.label,
+      screen: project(v.pos.clone().add(new T.Vector3(0.85, -0.85, 0.25))),
+    })),
+  };
+}
 function connectionVisual(id: string) {
   const view = scene.renderView().edgeViews.find(view => view.e.id === id);
   return view && {
@@ -63,6 +87,8 @@ export {
   selectProcess,
   selectConnection,
   selectNetwork,
+  selectRdma,
+  rdmaVisuals,
   networkVisuals,
   networkParticles,
   signalVisuals,

@@ -21,6 +21,13 @@ import type {
   HoverState,
   HardwarePathView,
   HardwareView,
+  HostLayerView,
+  RdmaDevice,
+  RdmaDeviceView,
+  RdmaGroup,
+  RdmaLink,
+  RdmaLinkView,
+  RdmaView,
 } from "./types.js";
 
 export interface SelectionActions {
@@ -30,6 +37,7 @@ export interface SelectionActions {
   file(id: string | null): void;
   netlink(id: string | null): void;
   hardware?(id: string | null): void;
+  rdma?(id: string | null): void;
   clear(): void;
 }
 export interface SelectionTargets {
@@ -39,6 +47,13 @@ export interface SelectionTargets {
   files: ReadonlySet<string>;
   netlink: ReadonlySet<string>;
   hardware?: ReadonlySet<string>;
+  rdma?: ReadonlySet<string>;
+}
+/** RDMA groups, QP links and device anchors. */
+export interface RdmaInput {
+  groups: ReadonlyMap<string, RdmaGroup>;
+  links: readonly RdmaLink[];
+  devices: ReadonlyMap<string, RdmaDevice>;
 }
 /** Devices, paths and descriptor holders of the hardware bay. */
 export interface HardwareInput {
@@ -59,6 +74,14 @@ export interface SceneInput extends FileSceneInput {
   network: ReadonlyMap<string, NetworkGroup>;
   networkPositions: ReadonlyMap<string, Position>;
   hardware?: HardwareInput & { positions: ReadonlyMap<string, Position> };
+  rdma?: RdmaInput & {
+    /** Marker positions by group ID. */
+    positions: ReadonlyMap<string, Position>;
+    /** Device plate positions by device ID. */
+    devicePositions: ReadonlyMap<string, Position>;
+  };
+  /** Floor labels of the merged multi-host view, by host. */
+  hostLabels?: ReadonlyMap<string, string>;
 }
 export interface WorldPositions {
   processes: Iterable<Position>;
@@ -68,7 +91,10 @@ export interface WorldPositions {
 }
 export interface DetailsInput {
   nodes: ReadonlyMap<string, PlacedProcess>;
+  /** The host of process pages for identities without `host`; null for this machine. */
+  host?: string | null;
   hardware?: HardwareInput;
+  rdma?: RdmaInput;
   snapshot: SystemSnapshot;
   network: ReadonlyMap<string, NetworkGroup>;
   edgeStats: ReadonlyMap<string, EdgeStat>;
@@ -85,6 +111,7 @@ export interface PickingView {
 export interface PickingInput {
   view: PickingView;
   hardware?: HardwareInput;
+  rdma?: RdmaInput;
   edgeStats: ReadonlyMap<string, EdgeStat>;
   files: ReadonlyMap<string, RecentFile>;
   netlink: ReadonlyMap<string, NetlinkSocketStats>;
@@ -104,6 +131,11 @@ export interface RenderView {
   netlinkViews: ReadonlyMap<string, NetlinkView>;
   hardwareViews?: readonly HardwareView[];
   hardwarePathViews?: readonly HardwarePathView[];
+  rdmaViews?: readonly RdmaView[];
+  rdmaLinkViews?: readonly RdmaLinkView[];
+  rdmaDeviceViews?: readonly RdmaDeviceView[];
+  /** Host floors of the merged view; absent or empty for a single host. */
+  layerViews?: readonly HostLayerView[];
   edgeViews: readonly EdgeView[];
   baseGlow: T.InstancedMesh | null;
   haloGlow: T.InstancedMesh | null;

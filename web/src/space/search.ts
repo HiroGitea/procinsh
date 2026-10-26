@@ -8,7 +8,9 @@ function visibleIds(snapshot: SystemSnapshot, term: string): Set<string> {
       .filter(
         (n) =>
           !normalized ||
-          `${n.identity.pid} ${n.name}`.toLowerCase().includes(normalized),
+          `${n.identity.host ?? ""} ${n.identity.pid} ${n.name}`
+            .toLowerCase()
+            .includes(normalized),
       )
       .map((n) => key(n.identity)),
   );

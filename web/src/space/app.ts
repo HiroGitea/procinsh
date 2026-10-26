@@ -12,7 +12,7 @@ import type { ActivityUpdate } from "./types.js";
 import type { SystemSnapshot, SpaceActivity } from "../shared/api-types.js";
 import { createSpaceScene } from "./scene.js";
 import { createSpaceRenderer } from "./renderer.js";
-import { createSpaceCamera } from "./camera.js";
+import { createSpaceCamera, type LayerBounds } from "./camera.js";
 import { TourCamera } from "./tour-camera.js";
 import { tourScene } from "./tour-scene.js";
 import { createSpaceSearch } from "./search.js";
@@ -24,6 +24,13 @@ import type {
   WorldPositions,
 } from "./contracts.js";
 import { createSpaceDetails } from "./details.js";
+import { ALL_HOSTS, addressHost } from "./hosts.js";
+import {
+  hostUrl,
+  mountHostControls,
+  readHostParam,
+  withHost,
+} from "../shared/hosts.js";
 import { spaceElement as $ } from "./dom-types.js";
 
 const replayMode = document.body.dataset.mode === "replay";
@@ -77,6 +84,14 @@ const search = createSpaceSearch(
 );
 const scene = createSpaceScene();
 const camera = createSpaceCamera($("world"));
+camera.setLayers(layerBounds);
+/** Whether the viewer moved the camera since the last automatic or explicit fit. */
+let cameraMoved = false;
+/** Host layers framed by the last automatic fit. */
+let fittedLayers = 0;
+camera.controls.addEventListener("start", () => {
+  cameraMoved = true;
+});
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 let prefersReducedMotion = reducedMotion.matches;
 const tour = new TourCamera(
@@ -121,6 +136,7 @@ const actions: SelectionActions = {
   file: selectFile,
   netlink: selectNetlink,
   hardware: selectHardware,
+  rdma: selectRdma,
   clear: clearSelection,
 };
 const details = createSpaceDetails(actions);
@@ -132,6 +148,7 @@ bindSelection($("world"), $("hover"), {
     files: data.recentFiles.entries,
     netlink: data.netlinkSockets.entries,
     hardware: hardwareInput(),
+    rdma: rdmaInput(),
   }),
   actions,
   hover(state) {
@@ -149,9 +166,31 @@ function hardwareInput() {
     handles: data.displaySnapshot.device_handles ?? [],
   };
 }
+function rdmaInput() {
+  return {
+    groups: data.rdma,
+    links: data.rdmaLinks,
+    devices: data.rdmaDevices,
+  };
+}
+/** Host floor labels of the merged view. */
+function hostLabels() {
+  return new Map(
+    data.hosts.map((h) => [
+      h.name,
+      `${h.name}${h.local ? " · local" : ""}${h.status.state === "offline" ? " · offline" : ""}`,
+    ]),
+  );
+}
 function sceneInput(): SceneInput {
   return {
+    hostLabels: hostLabels(),
     hardware: { ...hardwareInput(), positions: data.hardwarePositions },
+    rdma: {
+      ...rdmaInput(),
+      positions: data.rdmaPositions,
+      devicePositions: data.rdmaDevicePositions,
+    },
     snapshot: data.displaySnapshot,
     nodes: data.nodes,
     network: data.network,
@@ -166,6 +205,9 @@ function sceneInput(): SceneInput {
 function detailsInput(): DetailsInput {
   return {
     hardware: hardwareInput(),
+    rdma: rdmaInput(),
+    // Merged identities carry their host; a single remote host is named here.
+    host: data.host === ALL_HOSTS ? null : data.host,
     nodes: data.nodes,
     snapshot: data.displaySnapshot,
     network: data.network,
@@ -180,10 +222,97 @@ function worldPositions(): WorldPositions {
     networks: [
       ...data.networkPositions.values(),
       ...data.hardwarePositions.values(),
+      ...data.rdmaPositions.values(),
+      ...data.rdmaDevicePositions.values(),
     ],
     files: data.filePositions.values(),
     netlink: data.netlinkPositions.values(),
   };
+}
+/** The processes and hardware of one host layer, for framing that layer. */
+function layerPositions(host: string): WorldPositions {
+  return {
+    processes: [...data.nodes.values()]
+      .filter((n) => n.identity.host === host)
+      .map((n) => n.pos),
+    networks: [
+      ...[...data.hardwarePositions]
+        .filter(([address]) => addressHost(address) === host)
+        .map(([, p]) => p),
+      ...[...data.rdmaDevicePositions]
+        .filter(([id]) => data.rdmaDevices.get(id)?.host === host)
+        .map(([, p]) => p),
+    ],
+    files: [],
+    netlink: [],
+  };
+}
+/** Host layers top to bottom; rotations pivot halfway up their processes. */
+function layerBounds(): LayerBounds[] {
+  return [...data.hostLayerZ].flatMap(([host, z]) => {
+    const { processes, networks } = layerPositions(host);
+    const points = [...processes, ...networks];
+    if (!points.length) return [];
+    const xs = points.map((p) => p.x),
+      ys = points.map((p) => p.y);
+    return [
+      {
+        z: z + 4,
+        min: { x: Math.min(...xs), y: Math.min(...ys) },
+        max: { x: Math.max(...xs), y: Math.max(...ys) },
+      },
+    ];
+  });
+}
+/** The host layer entered with the layer picker or 1-9; null shows every layer. */
+let activeLayer: string | null = null;
+/** The rendered picker state; rebuilding only on change keeps button focus. */
+let pickerState = "";
+/** Frames host layer `index` from the top, or every layer for -1. */
+function focusLayer(index: number) {
+  const hosts = [...data.hostLayerZ.keys()];
+  if (index >= hosts.length) return;
+  stopTour();
+  camera.fit(index < 0 ? worldPositions() : layerPositions(hosts[index]));
+  cameraMoved = true;
+  activeLayer = index < 0 ? null : hosts[index];
+  renderLayerPicker();
+}
+/** A floor picker like an indoor map's: All, then layers 1, 2, … top to bottom. */
+function renderLayerPicker() {
+  const picker = $("layer-picker");
+  const hosts = [...data.hostLayerZ.keys()];
+  if (activeLayer !== null && !hosts.includes(activeLayer)) activeLayer = null;
+  const state = JSON.stringify([hosts, activeLayer]);
+  if (state === pickerState) return;
+  pickerState = state;
+  picker.hidden = hosts.length < 2;
+  if (picker.hidden) return;
+  const button = (
+    text: string,
+    label: string,
+    active: boolean,
+    index: number,
+  ) => {
+    const element = document.createElement("button");
+    element.textContent = text;
+    element.title = label;
+    element.setAttribute("aria-label", label);
+    element.setAttribute("aria-pressed", String(active));
+    element.onclick = () => focusLayer(index);
+    return element;
+  };
+  picker.replaceChildren(
+    button("ALL", "All layers (0)", activeLayer === null, -1),
+    ...hosts.map((host, index) =>
+      button(
+        String(index + 1),
+        `Layer ${index + 1}: ${host}${index < 9 ? ` (${index + 1})` : ""}`,
+        activeLayer === host,
+        index,
+      ),
+    ),
+  );
 }
 function retainSelection() {
   selection.retain({
@@ -197,6 +326,11 @@ function retainSelection() {
     files: new Set(data.recentFiles.entries.keys()),
     netlink: new Set(data.netlinkSockets.entries.keys()),
     hardware: new Set(data.hardwarePositions.keys()),
+    rdma: new Set([
+      ...data.rdma.keys(),
+      ...data.rdmaLinks.map((l) => l.id),
+      ...data.rdmaDevices.keys(),
+    ]),
   });
 }
 function retainParticles() {
@@ -253,7 +387,19 @@ function updateSnapshot() {
   if (firstView && data.nodes.size) {
     if (!tour.active) camera.fit(worldPositions());
     firstView = false;
+    cameraMoved = false;
+    fittedLayers = data.hostLayerZ.size;
+  } else if (
+    // Hosts of the merged view arrive one by one; frame each new layer until
+    // the viewer takes over the camera.
+    data.hostLayerZ.size > fittedLayers &&
+    !cameraMoved &&
+    !tour.active
+  ) {
+    camera.fit(worldPositions());
+    fittedLayers = data.hostLayerZ.size;
   }
+  renderLayerPicker();
   updateDetails();
   syncTourFromUrl();
 }
@@ -277,6 +423,10 @@ function selectHardware(id: string | null) {
   selection.choose("hardware", id);
   updateSelection();
 }
+function selectRdma(id: string | null) {
+  selection.choose("rdma", id);
+  updateSelection();
+}
 function updateActivity(update: ActivityUpdate) {
   if (update.filesChanged || update.netlinkChanged) refreshFiles();
   renderer.activity(update);
@@ -291,6 +441,9 @@ function pruneFiles(now = spaceNow()) {
 function fitScene() {
   stopTour();
   if (data.nodes.size) camera.fit(worldPositions());
+  cameraMoved = false;
+  activeLayer = null;
+  renderLayerPicker();
 }
 
 function rearrangeScene() {
@@ -391,11 +544,16 @@ addEventListener("keydown", (event) => {
     // Movement starts at the key press, not the next frame, so taps move too.
     if (!heldKeys.size) lastMove = performance.now();
     heldKeys.add(event.code);
+    cameraMoved = true;
     event.preventDefault();
   } else if (event.code === "Comma" || event.code === "Period") {
     // The keys right of M zoom in and out, like a wheel step.
     stopTour();
     camera.zoom(event.code === "Comma" ? 0.8 : 1.25);
+    cameraMoved = true;
+  } else if (/^Digit[0-9]$/.test(event.code) && data.hostLayerZ.size > 1) {
+    // 1-9 enter that host layer of the merged view; 0 shows every layer.
+    focusLayer(Number(event.code.slice(5)) - 1);
   }
 });
 addEventListener("keyup", (event) => {
@@ -443,21 +601,51 @@ addEventListener("pagehide", stop);
 addEventListener("pageshow", (event) => {
   if (event.persisted) start();
 });
+/** Forgets displayed state before showing an unrelated snapshot source. */
+function resetView() {
+  renderer.clearParticles();
+  data.cpuGlows.clear();
+  data.edgeStats.clear();
+  data.recentFiles.clear();
+  data.netlinkSockets.clear();
+  data.nodes.clear();
+  data.displaySnapshot = { processes: [], fd_relations: [] };
+  data.networkPositions.clear();
+  data.hardwarePositions.clear();
+  data.rdmaPositions.clear();
+  data.rdmaDevicePositions.clear();
+  data.filePositions.clear();
+  data.netlinkPositions.clear();
+  lastFilePrune = 0;
+}
+/** The list view shows one host; the merged view links to this machine's list. */
+function syncListLink() {
+  $("back").href = withHost(
+    "/list",
+    data.host === ALL_HOSTS ? null : data.host,
+  );
+}
+/** Shows another host, or every host as layers, from the live server. */
+function switchHost(host: string | null) {
+  if (host === data.host) return;
+  stopTour();
+  data.stop();
+  clearSelection();
+  resetView();
+  data.host = host;
+  data.hosts = [];
+  data.localHost = null;
+  renderSystemSnapshot({ processes: [], fd_relations: [] }, true);
+  history.replaceState(history.state, "", hostUrl(host));
+  syncListLink();
+  firstView = true;
+  fittedLayers = 0;
+  if (!document.hidden) data.start();
+}
 if (replayMode) {
   tickReplay = mountReplayControls(
     (snapshot) => {
-      renderer.clearParticles();
-      data.cpuGlows.clear();
-      data.edgeStats.clear();
-      data.recentFiles.clear();
-      data.netlinkSockets.clear();
-      data.nodes.clear();
-      data.displaySnapshot = { processes: [], fd_relations: [] };
-      data.networkPositions.clear();
-      data.hardwarePositions.clear();
-      data.filePositions.clear();
-      data.netlinkPositions.clear();
-      lastFilePrune = 0;
+      resetView();
       renderSystemSnapshot(snapshot, true);
     },
     (event) => {
@@ -469,10 +657,18 @@ if (replayMode) {
     },
   );
 } else {
+  data.host = readHostParam();
+  syncListLink();
   mountRecordingControls(
     recorder,
     () => data.snapshot,
     () => liveReady,
+  );
+  mountHostControls(
+    document.querySelector(".tools")!,
+    () => data.host,
+    switchHost,
+    { all: true },
   );
 }
 start();

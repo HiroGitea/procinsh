@@ -732,6 +732,7 @@ test("space-components regression", async () => {
         hoveredFile: "file",
         hoveredNetlink: null,
         hoveredHardware: null,
+        hoveredRdma: null,
       },
     ]);
     assert.match(hover.textContent!, /READ 8 bytes · WRITE 12 bytes/);
@@ -745,6 +746,7 @@ test("space-components regression", async () => {
         hoveredFile: null,
         hoveredNetlink: null,
         hoveredHardware: null,
+        hoveredRdma: null,
       },
     ]);
     unbind();

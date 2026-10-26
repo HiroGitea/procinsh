@@ -174,7 +174,7 @@ export class IpcPortAllocator {
       const position = new T.Vector3(
         owner.pos.x,
         owner.pos.y,
-        roof ? 8 + IPC_STEM_LENGTH : port.height,
+        owner.pos.z + (roof ? 8 + IPC_STEM_LENGTH : port.height),
       );
       if (roof) position.add(new T.Vector3(u * span, v * span, 0));
       else
