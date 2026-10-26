@@ -46,5 +46,7 @@ header a.github-link{order:1}
 header a.view-link{order:2}}
 .process-link,.pointer{text-decoration:none}
 
+#host-picker{flex:none}
+#host-picker select{padding:3px 8px;font:inherit;letter-spacing:0}
 header .brand{display:flex;align-items:center;gap:6px;flex:none;white-space:nowrap;letter-spacing:0}
 header #build-commit{text-decoration:underline;text-underline-offset:3px;font-size:10px;letter-spacing:0}

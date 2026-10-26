@@ -1,6 +1,7 @@
 // Own list requests, observations, polling, and cancellation across page visits.
 import { api } from "../shared/api.js";
 import type { ProcessSummary } from "../shared/api-types.js";
+import { withHost } from "../shared/hosts.js";
 
 export interface ListDataEvents {
   changed(): void;
@@ -10,6 +11,8 @@ const quietEvents: ListDataEvents = { changed() {}, error() {} };
 
 export class ListDataStore {
   processes: ProcessSummary[] = [];
+  /** The remote host whose processes are listed; null lists this machine. */
+  host: string | null = null;
   private active = false;
   private generation = 0;
   private request: AbortController | null = null;
@@ -25,9 +28,10 @@ export class ListDataStore {
     const current = new AbortController();
     this.request = current;
     try {
-      const next = await this.read<ProcessSummary[]>("/api/processes", {
-        signal: current.signal,
-      });
+      const next = await this.read<ProcessSummary[]>(
+        withHost("/api/processes", this.host),
+        { signal: current.signal },
+      );
       if (!this.active || this.request !== current) return;
       this.processes = next;
       this.events.changed();
@@ -45,6 +49,14 @@ export class ListDataStore {
     this.timer = null;
     this.request?.abort();
     this.request = null;
+  }
+  /** Lists `host` from now on, without the previous host's processes. */
+  setHost(host: string | null) {
+    if (host === this.host) return;
+    this.host = host;
+    this.processes = [];
+    this.events.changed();
+    if (this.active) void this.start();
   }
   async start() {
     this.stop();

@@ -27,7 +27,7 @@ export function createProcessRenderer(data: ProcessDataStore) {
       o = target.observation;
     $("target-name").textContent = p.name;
     $("identity").textContent =
-      `PID ${p.identity.pid} / START ${formatStartTime(p.started_at)} / ${p.username ?? p.uid ?? "N/A"}`;
+      `${data.host ? `HOST ${data.host} / ` : ""}PID ${p.identity.pid} / START ${formatStartTime(p.started_at)} / ${p.username ?? p.uid ?? "N/A"}`;
     $("command").textContent =
       p.command_line?.join(" ") || p.executable || "N/A";
     $("target-status").hidden = !target.exited;

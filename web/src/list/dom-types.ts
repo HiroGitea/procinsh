@@ -1,6 +1,8 @@
 // Element IDs in the process list template.
 export interface ListElements {
   brand: HTMLAnchorElement;
+  "host-picker": HTMLElement;
+  "space-link": HTMLAnchorElement;
   error: HTMLElement;
   explorer: HTMLElement;
   search: HTMLInputElement;

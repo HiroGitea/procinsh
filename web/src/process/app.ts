@@ -1,5 +1,6 @@
 // Compose process data, rendering, and user actions; own page lifecycle events.
 import { processUrl } from "../shared/navigation.js";
+import { hostUrl, mountHostControls, withHost } from "../shared/hosts.js";
 import { ProcessDataStore } from "./data.js";
 import { createProcessRenderer } from "./renderer.js";
 import { ThreadSelection, createThreadSelectionView } from "./selection.js";
@@ -11,7 +12,8 @@ import { processElement as $ } from "./dom-types.js";
 const selection = new ThreadSelection();
 const data = new ProcessDataStore({
   identity(id) {
-    history.replaceState(null, "", processUrl(id));
+    history.replaceState(null, "", processUrl(id, data.host));
+    links();
   },
   reset() {
     selection.reset();
@@ -35,6 +37,18 @@ const threads = createThreadSelectionView(data, selection, render);
 const samples = createProcessSamples(data, selection);
 const details = createProcessDetails(data);
 bindProcessSearch(details.render);
+/** View links keep the host of this process. */
+function links() {
+  $("back").href = withHost("/list", data.host);
+  $("space-link").href = withHost("/space", data.host);
+}
+// Another host has other processes; switching hosts goes to its list.
+mountHostControls(
+  $("host-picker"),
+  () => data.host,
+  (host) =>
+    location.assign(hostUrl(host, new URL("/list", location.href).href)),
+);
 function renderHistory() {
   drawHistory($("history"), $("history-scale"), data.target?.history ?? []);
 }
@@ -51,3 +65,4 @@ addEventListener("pageshow", (event) => {
 });
 addEventListener("resize", renderHistory);
 void data.start(location.pathname, location.search);
+links();

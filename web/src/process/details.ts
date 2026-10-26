@@ -105,7 +105,7 @@ export function createProcessDetails(store: ProcessDataStore) {
             `PID ${p.process_id.pid} · ${p.name}`,
             "pointer",
           );
-          link.href = processUrl(p.process_id);
+          link.href = processUrl(p.process_id, store.host);
           link.dataset.pid = String(p.process_id.pid);
           div.append(
             link,

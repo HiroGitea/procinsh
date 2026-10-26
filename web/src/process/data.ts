@@ -1,6 +1,7 @@
 // Own process identity resolution, SSE observations, and additional panel reads.
 import { api, errorMessage } from "../shared/api.js";
 import { same, query } from "../shared/navigation.js";
+import { readHostParam, withHost } from "../shared/hosts.js";
 import type {
   ProcessId,
   ProcessSummary,
@@ -48,11 +49,17 @@ function processRequest(pathname: string, search: string) {
       (!/^\d+$/.test(ticks[0]) || !Number.isSafeInteger(Number(ticks[0]))))
   )
     throw new Error("Invalid process start time");
-  return { pid, startTime: ticks.length ? Number(ticks[0]) : null };
+  return {
+    pid,
+    startTime: ticks.length ? Number(ticks[0]) : null,
+    host: readHostParam(`http://page${search}`),
+  };
 }
 
 export class ProcessDataStore {
   target: Target | null = null;
+  /** The remote host of the process; null is this machine. */
+  host: string | null = null;
   readonly details: DetailViews = {
     environment: { data: null, busy: false, error: null },
     auxv: { data: null, busy: false, error: null },
@@ -128,7 +135,7 @@ export class ProcessDataStore {
     this.events.detail(kind);
     try {
       const data = await this.read<DetailData[K]>(
-        `/api/processes/${kind}?${query(id)}`,
+        `/api/processes/${kind}?${query(id, this.host)}`,
       );
       if (
         epoch !== this.detailEpoch ||
@@ -162,7 +169,9 @@ export class ProcessDataStore {
     this.events.loading(true);
     this.events.error(null);
     const generation = this.sourceGeneration;
-    const events = this.openEvents(`/api/processes/events?${query(id)}`);
+    const events = this.openEvents(
+      `/api/processes/events?${query(id, this.host)}`,
+    );
     this.source = events;
     let disconnected = false;
     events.addEventListener("observation", (event) => {
@@ -219,8 +228,11 @@ export class ProcessDataStore {
     this.active = true;
     const generation = ++this.startupGeneration;
     try {
-      const { pid, startTime } = processRequest(pathname, search);
-      const all = await this.read<ProcessSummary[]>("/api/processes");
+      const { pid, startTime, host } = processRequest(pathname, search);
+      this.host = host;
+      const all = await this.read<ProcessSummary[]>(
+        withHost("/api/processes", host),
+      );
       if (!this.active || generation !== this.startupGeneration) return;
       const process = all.find((p) => p.identity.pid === pid);
       if (
@@ -249,7 +261,12 @@ if (import.meta.vitest) {
     assert.deepEqual(processRequest("/process/10", "?start_time_ticks=100"), {
       pid: 10,
       startTime: 100,
+      host: null,
     });
+    assert.deepEqual(
+      processRequest("/process/10", "?start_time_ticks=100&host=node-b"),
+      { pid: 10, startTime: 100, host: "node-b" },
+    );
     for (const [path, search] of [
       ["/process/0", ""],
       ["/list", ""],
