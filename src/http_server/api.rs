@@ -6,6 +6,8 @@
 //! | --- | --- | --- |
 //! | [`fn@router`] | `pub(super)` | `fn router() -> `[`Router`](axum::Router)`<`[`Arc`](std::sync::Arc)`<`[`AppState`](super::state::AppState)`>>` |
 //!
+mod hosts;
+mod merged;
 mod process;
 mod router;
 mod stream;

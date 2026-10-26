@@ -1,4 +1,4 @@
-use super::{process, system};
+use super::{hosts, process, system};
 use crate::http_server::AppState;
 use axum::{Router, routing::get};
 use std::sync::Arc;
@@ -7,6 +7,7 @@ pub(in crate::http_server) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/system/events", get(system::events))
         .route("/api/config", get(process::config))
+        .route("/api/hosts", get(hosts::hosts))
         .route("/api/processes", get(process::list_processes))
         .route("/api/processes/observation", get(process::stats))
         .route("/api/processes/threads", get(process::threads))

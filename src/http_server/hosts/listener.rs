@@ -1,0 +1,202 @@
+//! The hub side of agent links.
+
+use super::identity::HostInfo;
+use super::link::AgentLink;
+use super::registry::HostRegistry;
+use super::wire::{self, Message};
+use anyhow::{Context, Result, bail};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::watch,
+    time::{Instant, timeout},
+};
+
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const PING_INTERVAL: Duration = Duration::from_secs(10);
+/// A link without any message for this long is closed.
+pub(super) const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Accepts agent links until `shutdown` changes. `token`, when set, must match each
+/// agent's hello.
+pub(in crate::http_server) async fn run_agent_listener(
+    listener: TcpListener,
+    registry: Arc<HostRegistry>,
+    token: Option<Arc<str>>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    loop {
+        let (stream, peer) = tokio::select! {
+            accepted = listener.accept() => match accepted {
+                Ok(accepted) => accepted,
+                Err(error) => {
+                    log::warn!("agent accept failed: {error}");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+            },
+            _ = shutdown.changed() => return,
+        };
+        let (registry, token, shutdown) = (registry.clone(), token.clone(), shutdown.clone());
+        tokio::spawn(async move {
+            if let Err(error) = serve_agent(stream, peer, &registry, token, shutdown).await {
+                log::warn!("agent link from {peer} closed: {error:#}");
+            }
+        });
+    }
+}
+
+async fn handshake(
+    stream: &mut TcpStream,
+    registry: &HostRegistry,
+    token: Option<&str>,
+    link: Arc<AgentLink>,
+) -> Result<(String, u64)> {
+    let hello = timeout(HANDSHAKE_TIMEOUT, wire::read(stream))
+        .await
+        .context("agent hello timed out")??;
+    let Message::Hello {
+        protocol,
+        host,
+        machine_id,
+        version,
+        kernel,
+        arch,
+        token: offered,
+    } = hello
+    else {
+        bail!("agent did not start with hello");
+    };
+    let admitted = if protocol != wire::PROTOCOL {
+        Err(format!(
+            "agent protocol {protocol} is not supported (hub protocol {})",
+            wire::PROTOCOL
+        ))
+    } else if let Some(expected) = token
+        && !wire::same_secret(expected, offered.as_deref().unwrap_or_default())
+    {
+        Err("agent token mismatch".into())
+    } else {
+        registry.admit(
+            HostInfo {
+                name: host.clone(),
+                machine_id,
+                version,
+                kernel,
+                arch,
+            },
+            link,
+        )
+    };
+    match admitted {
+        Ok(id) => {
+            wire::write(
+                stream,
+                Message::Welcome {
+                    protocol: wire::PROTOCOL,
+                    version: env!("CARGO_PKG_VERSION").into(),
+                },
+            )
+            .await?;
+            Ok((host, id))
+        }
+        Err(reason) => {
+            wire::write(
+                stream,
+                Message::Reject {
+                    reason: reason.clone(),
+                },
+            )
+            .await?;
+            bail!("rejected agent: {reason}");
+        }
+    }
+}
+
+async fn serve_agent(
+    mut stream: TcpStream,
+    peer: SocketAddr,
+    registry: &HostRegistry,
+    token: Option<Arc<str>>,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<()> {
+    stream.set_nodelay(true)?;
+    let (link, outgoing) = AgentLink::new();
+    let link = Arc::new(link);
+    let (name, id) = handshake(&mut stream, registry, token.as_deref(), link.clone()).await?;
+    log::info!("agent {name} connected from {peer}");
+    let result = relay(stream, &link, outgoing, &mut shutdown, || {
+        registry.is_current(&name, id)
+    })
+    .await;
+    registry.disconnected(&name, id);
+    link.close();
+    log::info!("agent {name} disconnected");
+    result
+}
+
+/// Moves requests to the agent and its responses back until the link fails,
+/// idles, is replaced, or the hub shuts down.
+async fn relay(
+    stream: TcpStream,
+    link: &AgentLink,
+    mut outgoing: tokio::sync::mpsc::Receiver<Message>,
+    shutdown: &mut watch::Receiver<bool>,
+    current: impl Fn() -> bool,
+) -> Result<()> {
+    let (mut reader, mut writer) = stream.into_split();
+    // Dedicated tasks keep partially read or written frames intact across select branches.
+    let (messages, mut incoming) = tokio::sync::mpsc::channel(8);
+    let reading = tokio::spawn(async move {
+        loop {
+            let message = wire::read(&mut reader).await;
+            let failed = message.is_err();
+            if messages.send(message).await.is_err() || failed {
+                break;
+            }
+        }
+    });
+    let (written, mut write_failed) = tokio::sync::oneshot::channel();
+    let writing = tokio::spawn(async move {
+        while let Some(message) = outgoing.recv().await {
+            if let Err(error) = wire::write(&mut writer, message).await {
+                let _ = written.send(error);
+                return;
+            }
+        }
+    });
+    let mut ping = tokio::time::interval(PING_INTERVAL);
+    let mut last_message = Instant::now();
+    let result = loop {
+        tokio::select! {
+            message = incoming.recv() => {
+                let Some(message) = message else { break Ok(()) };
+                last_message = Instant::now();
+                match message {
+                    Ok(Message::Response { id, response }) => link.complete(id, response),
+                    // A full queue is already traffic; a lost pong only delays idleness.
+                    Ok(Message::Ping) => drop(link.send(Message::Pong)),
+                    Ok(Message::Pong) => {}
+                    Ok(_) => break Err(anyhow::anyhow!("unexpected message from agent")),
+                    Err(error) => break Err(error),
+                }
+            }
+            error = &mut write_failed => {
+                break Err(error.unwrap_or_else(|_| anyhow::anyhow!("agent link writer stopped")));
+            }
+            _ = ping.tick() => {
+                if !current() {
+                    break Ok(());
+                }
+                if last_message.elapsed() > IDLE_TIMEOUT {
+                    break Err(anyhow::anyhow!("agent link idle for {IDLE_TIMEOUT:?}"));
+                }
+                drop(link.send(Message::Ping));
+            }
+            _ = shutdown.changed() => break Ok(()),
+        }
+    };
+    reading.abort();
+    writing.abort();
+    result
+}
