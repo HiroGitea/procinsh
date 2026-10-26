@@ -211,7 +211,7 @@ try {
   );
   assert.match(
     await evaluate<string>("document.querySelector('header').textContent"),
-    /DRAG · ORBIT/,
+    /DRAG ARROWS · ORBIT\s+RIGHT DRAG WASD · PAN\s+SCROLL , \. · ZOOM/,
   );
   assert.ok(
     await evaluate(
@@ -293,6 +293,55 @@ try {
       ) < 1e-8,
       "exit preserves camera pose within floating-point precision",
     );
+  }
+  {
+    // Keyboard camera: keys match physical positions, so AZERTY's "z" on KeyW moves.
+    const view = () =>
+      evaluate<CameraView>(
+        `import('${spaceModule}').then(m => m.cameraView())`,
+      );
+    const hold = async (key: string, code: string, ms: number) => {
+      await cdp("Input.dispatchKeyEvent", { type: "keyDown", key, code });
+      await delay(ms);
+      await cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code });
+      await delay(100);
+    };
+    const distance = (v: CameraView) =>
+      Math.hypot(...v.position.map((value, index) => value - v.target[index]));
+    await evaluate("document.activeElement?.blur()");
+    const start = await view();
+    await hold("z", "KeyW", 400);
+    const forward = await view();
+    assert.ok(
+      Math.hypot(
+        forward.target[0] - start.target[0],
+        forward.target[1] - start.target[1],
+      ) > 1,
+      "held KeyW moves the target over the ground",
+    );
+    assert.ok(Math.abs(forward.target[2] - start.target[2]) < 1e-6);
+    await hold("ArrowRight", "ArrowRight", 400);
+    const turned = await view();
+    assert.deepEqual(turned.target, forward.target, "arrows orbit the target");
+    assert.ok(Math.abs(distance(turned) - distance(forward)) < 1e-3);
+    assert.notDeepEqual(turned.position, forward.position);
+    await hold(",", "Comma", 30);
+    assert.ok(
+      distance(await view()) < distance(turned) * 0.9,
+      "Comma zooms in",
+    );
+    await evaluate("document.getElementById('search').focus()");
+    const typing = await view();
+    await hold("w", "KeyW", 300);
+    const typed = await view();
+    for (const field of ["position", "target"] as const)
+      assert.ok(
+        Math.hypot(
+          ...typed[field].map((value, index) => value - typing[field][index]),
+        ) < 1e-8,
+        "typing in search does not move the camera",
+      );
+    await evaluate("document.activeElement?.blur()");
   }
   await delay(1000);
   assert.ok(snapshot.processes.length > 2);

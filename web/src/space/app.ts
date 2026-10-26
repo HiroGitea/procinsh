@@ -105,6 +105,7 @@ const renderer = createSpaceRenderer({
     tickReplay?.();
     const now = spaceNow();
     tour.update(performance.now());
+    moveWithKeys(performance.now());
     camera.controls.update();
     if (data.pruneRetention(now)) updateSnapshot();
     if (now - lastFilePrune >= 1000) {
@@ -339,9 +340,72 @@ function syncMotionPreference(event?: MediaQueryListEvent) {
 reducedMotion.addEventListener("change", syncMotionPreference);
 syncMotionPreference();
 $("search").addEventListener("input", stopTour);
+/**
+ * Physical keys held down, moving the camera each frame: W/A/S/D slide over the
+ * ground plane, arrows orbit. Codes name key positions, so AZERTY's Z/Q/S/D work too.
+ */
+const heldKeys = new Set<string>();
+const heldCodes = [
+  "KeyW",
+  "KeyA",
+  "KeyS",
+  "KeyD",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+];
+let fastKeys = false;
+let lastMove: number | null = null;
+function moveWithKeys(now: number) {
+  const elapsed =
+    lastMove === null ? 0 : Math.min(0.25, (now - lastMove) / 1000);
+  lastMove = heldKeys.size ? now : null;
+  if (!heldKeys.size || !elapsed) return;
+  const axis = (plus: string, minus: string) =>
+    Number(heldKeys.has(plus)) - Number(heldKeys.has(minus));
+  // About the target distance per second, so close-ups stay precise; Shift is faster.
+  const step = Math.max(5, camera.distance()) * (fastKeys ? 3 : 1) * elapsed;
+  camera.move(axis("KeyW", "KeyS") * step, axis("KeyD", "KeyA") * step);
+  // A quarter turn per second around the target, turning like a drag in that
+  // direction; Up raises the camera towards a top view.
+  const turn = (Math.PI / 2) * (fastKeys ? 2 : 1) * elapsed;
+  camera.orbit(
+    axis("ArrowLeft", "ArrowRight") * turn,
+    axis("ArrowUp", "ArrowDown") * turn,
+  );
+}
+function typingIn(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    !!target.closest("input, select, textarea, [contenteditable]")
+  );
+}
 addEventListener("keydown", (event) => {
+  fastKeys = event.shiftKey;
   if (event.key === "Escape") stopTour();
+  if (event.ctrlKey || event.metaKey || event.altKey || typingIn(event.target))
+    return;
+  if (heldCodes.includes(event.code)) {
+    stopTour();
+    // Movement starts at the key press, not the next frame, so taps move too.
+    if (!heldKeys.size) lastMove = performance.now();
+    heldKeys.add(event.code);
+    event.preventDefault();
+  } else if (event.code === "Comma" || event.code === "Period") {
+    // The keys right of M zoom in and out, like a wheel step.
+    stopTour();
+    camera.zoom(event.code === "Comma" ? 0.8 : 1.25);
+  }
 });
+addEventListener("keyup", (event) => {
+  // Apply the time held since the last frame before the key stops counting.
+  if (heldKeys.has(event.code)) moveWithKeys(performance.now());
+  fastKeys = event.shiftKey;
+  heldKeys.delete(event.code);
+});
+// Keys released while the page is in the background never send keyup.
+addEventListener("blur", () => heldKeys.clear());
 $("close").onclick = clearSelection;
 $("reset").onclick = () => {
   search.clear();

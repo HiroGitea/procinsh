@@ -595,7 +595,7 @@ Interactions run in the browser. Selection does not call detail APIs; retained s
 |---|---|---|
 | PID/process-name search | Filters rendered targets; Enter selects the first match and focuses the camera | [`visibleIds`](web/src/space/search.ts#L4), [search events](web/src/space/search.ts#L19) |
 | Click/hover | Selects/describes processes, connection lines, network peers, Netlink plates, files; double-clicking a process focuses the camera | [`hit`, `edgeHit`](web/src/space/selection.ts#L75), [pointer events](web/src/space/selection.ts#L60), [`details`](web/src/space/details.ts#L138) |
-| Drag/right-drag/scroll | Rotate/pan/zoom camera | [OrbitControls configuration](web/src/space/camera.ts#L6) |
+| Drag/right-drag/scroll, keys | Rotate/pan/zoom camera. Keys are matched by physical position (`KeyboardEvent.code`), so AZERTY's Z/Q/S/D act as W/A/S/D. Held W/A/S/D move over the ground plane at about the target distance per second (Shift is three times faster); held ←/→ orbit like a drag in that direction and ↑/↓ raise or lower the camera, a quarter turn per second (Shift doubles it); the two keys right of M (`,` and `.` on QWERTY) zoom in and out | [OrbitControls configuration](web/src/space/camera.ts#L6), [`move`, `zoom`](web/src/space/camera.ts), [key events](web/src/space/app.ts) |
 | Fit all | Clears search/selection and fits the whole scene | [`fit`](web/src/space/camera.ts#L57), [button events](web/src/space/app.ts#L214) |
 | Rearrange | Clears particles, rearranges processes/network peers/Netlink plates/files, and fits the scene | [`SpaceDataStore.replaceSnapshot`](web/src/space/data.ts), [button events](web/src/space/app.ts#L208) |
 

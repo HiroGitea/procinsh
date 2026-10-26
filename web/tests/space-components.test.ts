@@ -786,6 +786,60 @@ test("space-components regression", async () => {
       before,
       "empty bounds leave the camera in place",
     );
+    // Keyboard zoom keeps the view direction; WASD slides camera and target together.
+    camera.focus({ x: 0, y: 0, z: 0 });
+    camera.camera.lookAt(camera.controls.target);
+    const distance = camera.distance();
+    camera.zoom(0.5);
+    assert.ok(Math.abs(camera.distance() - distance * 0.5) < 1e-9);
+    assert.deepEqual(camera.view().target, [0, 0, 4]);
+    camera.zoom(1e9);
+    assert.ok(Math.abs(camera.distance() - camera.controls.maxDistance) < 1e-6);
+    camera.zoom(0.5);
+    camera.camera.lookAt(camera.controls.target);
+    const [x, y, z] = camera.view().position;
+    camera.move(10, 0);
+    const [tx, ty, tz] = camera.view().target;
+    // Forward is the view direction on the ground: from the camera towards the target.
+    const ahead = Math.hypot(-x, -y);
+    assert.equal(tz, 4);
+    assert.ok(Math.abs(tx - (-x / ahead) * 10) < 1e-9);
+    assert.ok(Math.abs(ty - (-y / ahead) * 10) < 1e-9);
+    const moved = camera.view().position;
+    assert.deepEqual(
+      [moved[0] - x, moved[1] - y, moved[2] - z].map((v) => +v.toFixed(9)),
+      [tx, ty, 0].map((v) => +v.toFixed(9)),
+    );
+    camera.move(0, 5);
+    const [sx, sy] = camera.view().target;
+    // Right is perpendicular to forward on the ground.
+    assert.ok(Math.abs((sx - tx) * tx + (sy - ty) * ty) < 1e-6);
+    assert.ok(Math.abs(Math.hypot(sx - tx, sy - ty) - 5) < 1e-9);
+    // Arrow orbit keeps the target and distance; positive azimuth is counterclockwise
+    // seen from above, and elevation stops at the controls' polar limit.
+    camera.controls.target.set(0, 0, 0);
+    camera.camera.position.set(0, -10, 10);
+    camera.orbit(Math.PI / 2, 0);
+    const east = camera.view().position;
+    assert.ok(
+      Math.abs(east[0] - 10) < 1e-6 &&
+        Math.abs(east[1]) < 1e-6 &&
+        Math.abs(east[2] - 10) < 1e-6,
+    );
+    assert.deepEqual(camera.view().target, [0, 0, 0]);
+    camera.orbit(0, Math.PI / 8);
+    const raised = new T.Vector3(...camera.view().position);
+    assert.ok(Math.abs(raised.length() - Math.SQRT2 * 10) < 1e-6);
+    assert.ok(
+      Math.abs(raised.angleTo(new T.Vector3(0, 0, 1)) - Math.PI / 8) < 1e-6,
+    );
+    camera.orbit(0, -Math.PI);
+    const lowest = new T.Vector3(...camera.view().position);
+    assert.ok(
+      Math.abs(
+        lowest.angleTo(new T.Vector3(0, 0, 1)) - camera.controls.maxPolarAngle,
+      ) < 1e-6,
+    );
     camera.dispose();
   }
 
