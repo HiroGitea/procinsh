@@ -20,6 +20,7 @@ export interface SpaceElements {
   "connection-state": HTMLElement;
   "connection-facts": HTMLElement;
   "connection-endpoints": HTMLElement;
+  "layer-picker": HTMLElement;
   hover: HTMLElement;
   failure: HTMLElement;
 }

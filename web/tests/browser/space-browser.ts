@@ -20,6 +20,7 @@ import { checkNetlinkSpace } from "./space-netlink.js";
 import { checkFileSpace } from "./space-files.js";
 import { checkNetworkSpace } from "./space-network.js";
 import { checkSocketVisibility } from "./space-socket-visibility.js";
+import { checkRdmaSpace } from "./space-rdma.js";
 import { processEventRecording } from "./process-events.js";
 import { checkSpaceRecording } from "./space-recording.js";
 import { checkSpaceTour, checkSpaceTourUrl } from "./space-tour.js";
@@ -251,6 +252,7 @@ try {
       "Array.from(document.querySelector('.tools').children,e=>e.id)",
     ),
     [
+      "host-controls",
       "search",
       "reset",
       "tour",
@@ -261,6 +263,11 @@ try {
       "open-recording",
       "demo-controls",
     ],
+  );
+  assert.equal(
+    await evaluate("document.getElementById('host-controls').hidden"),
+    true,
+    "the host selector stays hidden while this machine is the only host",
   );
   await checkSpaceTour(cdp, evaluate);
   await evaluate("document.querySelector('#tour').click()");
@@ -829,6 +836,7 @@ try {
   await checkFileSpace(evaluate, delay, cdp);
   await checkNetlinkSpace(evaluate, delay, cdp);
   await checkSocketVisibility(evaluate);
+  await checkRdmaSpace(evaluate, delay, cdp);
   await checkNetworkSpace(evaluate, delay, cdp);
   // A close-up right drag should travel as far in world space as a focused drag.
   await evaluate(

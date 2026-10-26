@@ -45,6 +45,8 @@ class AdaptiveRenderScale {
   }
 }
 
+const HOST_LABEL_COLOR = "#ffd98a";
+const RDMA_LABEL_COLOR = "#c9b0ff";
 const HARDWARE_LABEL_COLORS = {
   gpu: "#ffd27a",
   rdma: "#c9b0ff",
@@ -307,6 +309,10 @@ export function createSpaceRenderer({
       netlinkViews,
       hardwareViews = [],
       hardwarePathViews = [],
+      rdmaViews = [],
+      rdmaLinkViews = [],
+      rdmaDeviceViews = [],
+      layerViews = [],
     } = readView();
     const {
       process: selected,
@@ -315,10 +321,12 @@ export function createSpaceRenderer({
       file: selectedFile,
       netlink: selectedNetlink,
       hardware: selectedHardware,
+      rdma: selectedRdma,
       hoveredNetwork,
       hoveredFile,
       hoveredNetlink,
       hoveredHardware,
+      hoveredRdma,
     } = readSelection();
     labelContext.clearRect(0, 0, innerWidth, innerHeight);
     labelContext.font =
@@ -373,7 +381,12 @@ export function createSpaceRenderer({
     for (const id of hullIds) {
       const n = nodes.get(id);
       if (n)
-        add(`process:${id}`, n.name, n.pos.clone().setZ(8.55), id === selected);
+        add(
+          `process:${id}`,
+          n.name,
+          n.pos.clone().setZ(n.pos.z + 8.55),
+          id === selected,
+        );
     }
     for (const v of networkViews)
       add(
@@ -406,6 +419,45 @@ export function createSpaceRenderer({
         true,
       );
     }
+    const rdmaActive = (id: string) =>
+      id === selectedRdma || id === hoveredRdma;
+    for (const v of rdmaViews)
+      add(
+        `rdma:${v.group.id}`,
+        v.group.label,
+        v.pos.clone().add(new graphics.Vector3(0, 0, 1)),
+        rdmaActive(v.group.id),
+        true,
+        RDMA_LABEL_COLOR,
+      );
+    for (const v of rdmaLinkViews)
+      add(
+        `rdma:${v.link.id}`,
+        v.link.relation.label,
+        v.curve.getPoint(0.5).add(new graphics.Vector3(0, 0, 0.6)),
+        rdmaActive(v.link.id),
+        true,
+        RDMA_LABEL_COLOR,
+      );
+    for (const v of rdmaDeviceViews)
+      add(
+        `rdma:${v.device.id}`,
+        v.device.label,
+        v.pos.clone().add(new graphics.Vector3(0, 0, 0.8)),
+        rdmaActive(v.device.id),
+        true,
+        RDMA_LABEL_COLOR,
+      );
+    for (const v of layerViews)
+      add(
+        `host:${v.host}`,
+        v.label,
+        v.pos,
+        false,
+        true,
+        HOST_LABEL_COLOR,
+        true,
+      );
     for (const v of hardwarePathViews)
       add(`hardware-path:${v.path.id}`, v.label, v.pos, true, true);
     for (const v of fileViews.values())
@@ -517,8 +569,8 @@ export function createSpaceRenderer({
         !view.hullIds.includes(destination)
       )
         continue;
-      const start = src.pos.clone().setZ(6),
-        end = dst.pos.clone().setZ(6);
+      const start = src.pos.clone().setZ(src.pos.z + 6),
+        end = dst.pos.clone().setZ(dst.pos.z + 6);
       const mid = start.clone().lerp(end, 0.5);
       mid.z += Math.min(8, 2 + start.distanceTo(end) * 0.12);
       if (source === destination) mid.x += 3;

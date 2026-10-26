@@ -3,6 +3,40 @@ import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Position } from "./types.js";
 import type { WorldPositions } from "./contracts.js";
+
+/** A host layer of the merged view: its rotation plane and floor extent. */
+export interface LayerBounds {
+  z: number;
+  min: { x: number; y: number };
+  max: { x: number; y: number };
+}
+
+/**
+ * Where the view ray from `origin` towards `target` meets the layer being
+ * looked at: the nearest layer whose floor it crosses, else the closest floor.
+ */
+export function layerPivot(
+  origin: T.Vector3,
+  target: T.Vector3,
+  layers: readonly LayerBounds[],
+) {
+  const direction = target.clone().sub(origin).normalize();
+  if (Math.abs(direction.z) < 1e-3) return undefined;
+  let best: { point: T.Vector3; miss: number; t: number } | undefined;
+  for (const layer of layers) {
+    const t = (layer.z - origin.z) / direction.z;
+    if (t <= 0) continue;
+    const point = origin.clone().addScaledVector(direction, t);
+    const miss = Math.hypot(
+      Math.max(layer.min.x - point.x, 0, point.x - layer.max.x),
+      Math.max(layer.min.y - point.y, 0, point.y - layer.max.y),
+    );
+    if (!best || miss < best.miss || (miss === best.miss && t < best.t))
+      best = { point, miss, t };
+  }
+  return best?.point;
+}
+
 export function createSpaceCamera(canvas: HTMLCanvasElement) {
   const camera = new T.PerspectiveCamera(
     45,
@@ -31,12 +65,26 @@ export function createSpaceCamera(canvas: HTMLCanvasElement) {
   }
   controls.addEventListener("start", updatePanSpeed);
   controls.addEventListener("change", updatePanSpeed);
+  // Stacked layers rotate around the one in view. The pivot moves only along the
+  // view ray, so the picture does not jump when a rotation starts.
+  let layers: () => readonly LayerBounds[] = () => [];
+  canvas.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.button !== 0 || !controls.enabled) return;
+      const bounds = layers();
+      if (bounds.length < 2) return;
+      const pivot = layerPivot(camera.position, controls.target, bounds);
+      if (pivot) controls.target.copy(pivot);
+    },
+    { capture: true },
+  );
 
   function worldBounds(positions: WorldPositions) {
     const box = new T.Box3();
     for (const pos of positions.processes) {
       box.expandByPoint(new T.Vector3(pos.x, pos.y, pos.z));
-      box.expandByPoint(new T.Vector3(pos.x, pos.y, 8));
+      box.expandByPoint(new T.Vector3(pos.x, pos.y, pos.z + 8));
     }
     for (const p of positions.networks)
       box.expandByPoint(new T.Vector3(p.x, p.y, p.z + 1));
@@ -82,6 +130,10 @@ export function createSpaceCamera(canvas: HTMLCanvasElement) {
     adaptWorld,
     fit,
     view: cameraView,
+    /** Supplies the host layers that rotations pivot on; fewer than two disables it. */
+    setLayers(source: () => readonly LayerBounds[]) {
+      layers = source;
+    },
     /** Moves towards the orbit target by `factor` < 1, or away by > 1. */
     zoom(factor: number) {
       const offset = camera.position.clone().sub(controls.target);

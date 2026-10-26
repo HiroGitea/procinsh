@@ -118,6 +118,31 @@ export namespace Display {
   export function access(a: import("./api-types.js").FdAccess): string {
     return a === "unknown" ? "N/A" : a === "read_write" ? "read/write" : a;
   }
+  export function rdmaQpType(t: import("./api-types.js").RdmaQpType): string {
+    return t.kind === "unknown" ? `TYPE ${t.code}` : t.kind.toUpperCase();
+  }
+  export function rdmaState(
+    s:
+      | import("./api-types.js").RdmaQpState
+      | import("./api-types.js").RdmaCmState,
+  ): string {
+    return s.kind === "unknown" ? `STATE ${s.code}` : s.kind.toUpperCase();
+  }
+  export function rdmaPortSpace(
+    p: import("./api-types.js").RdmaPortSpace,
+  ): string {
+    return p.kind === "unknown"
+      ? `PS 0x${p.code.toString(16).padStart(4, "0")}`
+      : p.kind.toUpperCase();
+  }
+  export function rdmaAddress(
+    a: import("./api-types.js").RdmaAddress | null | undefined,
+  ): string {
+    if (!a) return "";
+    if (a.kind === "inet") return address(a);
+    if (a.kind === "ib") return `${a.gid} SID ${a.service_id}`;
+    return `AF ${a.family}`;
+  }
   /** PCIe generation from the per-lane rate: 2.5 GT/s is Gen1, 64 GT/s Gen6. */
   export function pcieGeneration(speedGts: number): number {
     return Math.max(1, Math.round(Math.log2(speedGts / 2.5)) + 1);

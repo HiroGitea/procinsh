@@ -6,6 +6,9 @@ import type {
   Process,
   ProcessObservation,
   ProcessSummary,
+  RdmaEndpoint,
+  RdmaPortInfo,
+  RdmaRelation,
   SocketEndpoint,
   SpaceActivity,
   Target,
@@ -202,6 +205,46 @@ export function targetInfo(extra: Partial<Target> = {}): Target {
     history: [],
     live_samples: [],
     sampling_error: null,
+    ...extra,
+  };
+}
+
+export function rdmaEndpoint(extra: Partial<RdmaEndpoint> = {}): RdmaEndpoint {
+  return {
+    owner: { kind: "kernel", name: "rdma_cm" },
+    device: "ib0",
+    port: 1,
+    qpn: 524,
+    qp_type: { kind: "rc" },
+    state: { kind: "rts" },
+    ...extra,
+  };
+}
+
+export function rdmaRelation(extra: Partial<RdmaRelation> = {}): RdmaRelation {
+  const endpoint = extra.endpoint ?? rdmaEndpoint();
+  return {
+    id: `rdma:${endpoint.device}/${endpoint.port}:${endpoint.qpn}`,
+    endpoint,
+    peer: null,
+    remote_qpn: 650,
+    cm: null,
+    remote_gid: null,
+    remote_hostname: null,
+    label: `RDMA RC QP ${endpoint.qpn}`,
+    ...extra,
+  };
+}
+
+export function rdmaPort(extra: Partial<RdmaPortInfo> = {}): RdmaPortInfo {
+  return {
+    device: "ib0",
+    port: 1,
+    link_layer: "InfiniBand",
+    state: "ACTIVE",
+    lid: 2,
+    gid: "fe80:0000:0000:0000:0002:c903:0028:45c7",
+    rate: "40 Gb/sec (4X QDR)",
     ...extra,
   };
 }

@@ -15,6 +15,16 @@ import {
 export { layoutMaps };
 import { treeLayout, stableLayout } from "./process-layout.js";
 import { hardwareLayout } from "./hardware.js";
+import { rdmaDeviceLayout, rdmaModel } from "./rdma.js";
+import {
+  ALL_HOSTS,
+  addressHost,
+  composeHosts,
+  hostLayers,
+  qualifyActivity,
+  qualifySnapshot,
+} from "./hosts.js";
+import { withHost } from "../shared/hosts.js";
 import { emptyActivityRetention } from "./types.js";
 import type {
   Position,
@@ -27,8 +37,14 @@ import type {
   ActivityUpdate,
   ActivityRetention,
   DataEvents,
+  RdmaDevice,
+  RdmaGroup,
+  RdmaLink,
 } from "./types.js";
 import type {
+  CrossHostLinks,
+  HostSummary,
+  HostsResponse,
   ProcessId,
   SpaceActivity,
   FdRelation,
@@ -69,9 +85,19 @@ function networkGroups(fd_relations: FdRelation[]) {
   return groups;
 }
 
+/** Marker cells above each owner; owners on lower host layers carry their `z`. */
+/** Height of an RDMA device plate above the base of its NIC in the hardware bay. */
+const RDMA_ON_NIC = 0.5;
+
+/** Markers anchored to a process, or to an explicit anchor such as an RDMA device. */
+type LayoutAnchor =
+  { endpoint: { process_id: ProcessId } } | { anchor: string };
+const anchorOf = (group: LayoutAnchor) =>
+  "anchor" in group ? group.anchor : key(group.endpoint.process_id);
+
 function networkLayout(
-  groups: ReadonlyMap<string, { endpoint: { process_id: ProcessId } }>,
-  positions: ReadonlyMap<string, Pick<Position, "x" | "y">>,
+  groups: ReadonlyMap<string, LayoutAnchor>,
+  positions: ReadonlyMap<string, Pick<Position, "x" | "y"> & { z?: number }>,
   previous: ReadonlyMap<string, Position> = new Map(),
 ) {
   const result = new Map<string, Position>(),
@@ -88,7 +114,7 @@ function networkLayout(
     a.localeCompare(b),
   )) {
     if (result.has(id)) continue;
-    const origin = positions.get(key(group.endpoint.process_id));
+    const origin = positions.get(anchorOf(group));
     if (!origin) continue;
     let placed = false;
     for (let layer = 0; !placed; layer++)
@@ -96,7 +122,7 @@ function networkLayout(
         const p = {
           x: Math.round(origin.x / 3) * 3 + ((slot % 3) - 1) * 3,
           y: Math.round(origin.y / 3) * 3 + (Math.floor(slot / 3) - 1) * 3,
-          z: 18 + layer * 3,
+          z: (origin.z ?? 0) + 18 + layer * 3,
         };
         if (occupied.has(cell(p))) continue;
         result.set(id, p);
@@ -208,9 +234,10 @@ class RecentFiles {
     return changed;
   }
 }
+/** File and Netlink cells below each owner, mirrored from the marker lattice. */
 function fileLayout(
   files: ReadonlyMap<string, Pick<RecentFile, "process_id">>,
-  positions: ReadonlyMap<string, Pick<Position, "x" | "y">>,
+  positions: ReadonlyMap<string, Pick<Position, "x" | "y"> & { z?: number }>,
   previous: ReadonlyMap<string, Position> = new Map(),
 ) {
   const groups = new Map(
@@ -219,13 +246,20 @@ function fileLayout(
       { endpoint: { process_id: f.process_id } },
     ]),
   );
+  // Reflect around 4.5 above the owner's base, which is 0 except on lower host layers.
+  const mirror = (id: string, p: Position) => {
+    const base = positions.get(key(files.get(id)!.process_id))?.z ?? 0;
+    return { ...p, z: 2 * base + 9 - p.z };
+  };
   const prior = new Map(
-    [...previous].map(([id, p]) => [id, { ...p, z: 9 - p.z }]),
+    [...previous]
+      .filter(([id]) => files.has(id))
+      .map(([id, p]) => [id, mirror(id, p)]),
   );
   return new Map(
     [...networkLayout(groups, positions, prior)].map(([id, p]) => [
       id,
-      { ...p, z: 9 - p.z },
+      mirror(id, p),
     ]),
   );
 }
@@ -261,10 +295,26 @@ function mergeSnapshot(
     for (const id of update.device_handles_delta.remove) handles.delete(id);
     for (const h of update.device_handles_delta.upsert) handles.set(h.id, h);
   }
-  const { device_handles_delta: _handles, ...rest } = update;
+  const rdma = new Map(
+    (update.kind === "full" ? [] : (previous.rdma_relations ?? [])).map((r) => [
+      r.id,
+      r,
+    ]),
+  );
+  if (update.rdma_relations_delta) {
+    for (const id of update.rdma_relations_delta.remove) rdma.delete(id);
+    for (const r of update.rdma_relations_delta.upsert) rdma.set(r.id, r);
+  }
+  const {
+    device_handles_delta: _handles,
+    rdma_relations_delta: _rdma,
+    ...rest
+  } = update;
   return {
     ...rest,
     fd_relations: update.fd_relations ?? [...relations.values()],
+    rdma_relations: update.rdma_relations ?? [...rdma.values()],
+    rdma_ports: update.rdma_ports ?? previous.rdma_ports ?? [],
     hardware_devices:
       update.hardware_devices ?? previous.hardware_devices ?? [],
     hardware_paths: update.hardware_paths ?? previous.hardware_paths ?? [],
@@ -320,8 +370,25 @@ export class SpaceDataStore {
   networkPositions = new Map<string, Position>();
   /** Hardware bay positions by PCI address, in front of the processes. */
   hardwarePositions = new Map<string, Position>();
+  rdma = new Map<string, RdmaGroup>();
+  rdmaLinks: RdmaLink[] = [];
+  rdmaDevices = new Map<string, RdmaDevice>();
+  /** RDMA device plates, on their NIC in the hardware bay when it is shown. */
+  rdmaDevicePositions = new Map<string, Position>();
+  rdmaPositions = new Map<string, Position>();
   filePositions = new Map<string, Position>();
   netlinkPositions = new Map<string, Position>();
+  /** `null` for this machine, a remote host name, or `ALL_HOSTS` for the merged view. */
+  host: string | null = null;
+  /** Hosts of the merged view in layer order, from its `hosts` events. */
+  hosts: HostSummary[] = [];
+  /** This machine's name in the merged view. */
+  localHost: string | null = null;
+  /** Layer height of each host in the merged view; empty for a single host. */
+  hostLayerZ = new Map<string, number>();
+  private hostSnapshots = new Map<string, SystemSnapshot>();
+  private qualified = new Map<string, SystemSnapshot>();
+  private links: CrossHostLinks = { sockets: [] };
   private source: EventSource | null = null;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private running = false;
@@ -405,43 +472,118 @@ export class SpaceDataStore {
     const edges = new Set(relations.map((e) => e.id));
     for (const id of this.edgeStats.keys())
       if (!edges.has(id)) this.edgeStats.delete(id);
-    const layout = rearrange
-      ? treeLayout(processes, undefined, undefined, relations)
-      : stableLayout(
-          processes,
-          this.positions(),
-          undefined,
-          undefined,
-          relations,
-        );
+    // Hosts of the merged view are stacked layers, each laid out on its own.
+    const multiHost = processes.some((p) => p.identity.host !== undefined);
+    this.hostLayerZ = multiHost
+      ? hostLayers(
+          // Hosts without processes, such as offline ones, leave no empty layer.
+          this.hosts
+            .map((h) => h.name)
+            .filter((name) => processes.some((p) => p.identity.host === name)),
+          { processes },
+        )
+      : new Map();
+    const previous = this.positions();
+    const layout = new Map<string, Pick<Position, "x" | "y">>();
+    for (const host of multiHost ? this.hostLayerZ.keys() : [undefined]) {
+      const group = processes.filter((p) => p.identity.host === host);
+      if (!group.length) continue;
+      const hostRelations = relations.filter(
+        (r) => r.endpoint.process_id.host === host,
+      );
+      const part = rearrange
+        ? treeLayout(group, undefined, undefined, hostRelations)
+        : stableLayout(group, previous, undefined, undefined, hostRelations);
+      for (const [id, place] of part) layout.set(id, place);
+    }
     this.nodes.clear();
     for (const p of processes) {
       const place = layout.get(key(p.identity));
       this.nodes.set(key(p.identity), {
         ...p,
-        pos: { x: place?.x ?? 0, y: place?.y ?? 0, z: 0 },
+        pos: {
+          x: place?.x ?? 0,
+          y: place?.y ?? 0,
+          z: this.hostLayerZ.get(p.identity.host ?? "") ?? 0,
+        },
         regions: layoutMaps(p.maps),
       });
     }
     this.recentFiles.prune(now, this.liveIds, retained.files);
     this.netlinkSockets.sync(currentRelations, this.liveIds, retained.netlink);
     this.network = networkGroups(relations);
-    // The bay sits left of the init process, the lowest PID shown.
-    const init = [...this.nodes.values()].reduce<PlacedProcess | undefined>(
-      (lowest, n) =>
-        !lowest || n.identity.pid < lowest.identity.pid ? n : lowest,
-      undefined,
+    // Each host's bay sits left of its init process, the lowest PID shown, on its layer.
+    const devices = this.snapshot.hardware_devices ?? [];
+    const hardwarePositions = new Map<string, Position>();
+    for (const host of new Set(devices.map((d) => addressHost(d.address)))) {
+      const z = this.hostLayerZ.get(host ?? "") ?? 0;
+      const placed = [...this.nodes.values()].filter(
+        (n) => n.identity.host === host,
+      );
+      const init = placed.reduce<PlacedProcess | undefined>(
+        (lowest, n) =>
+          !lowest || n.identity.pid < lowest.identity.pid ? n : lowest,
+        undefined,
+      );
+      const bay = hardwareLayout(
+        devices.filter((d) => addressHost(d.address) === host),
+        placed.map((n) => n.pos),
+        rearrange ? new Map() : this.hardwarePositions,
+        init?.pos,
+      );
+      for (const [address, p] of bay)
+        hardwarePositions.set(address, { ...p, z });
+    }
+    this.hardwarePositions = hardwarePositions;
+    // RDMA has no per-QP activity to retain, so only the current snapshot is shown.
+    const rdma = rdmaModel(
+      this.snapshot.rdma_relations ?? [],
+      this.snapshot.rdma_ports ?? [],
+      new Set(this.nodes.keys()),
     );
-    this.hardwarePositions = hardwareLayout(
-      this.snapshot.hardware_devices ?? [],
-      [...this.nodes.values()].map((n) => n.pos),
-      rearrange ? new Map() : this.hardwarePositions,
-      init?.pos,
+    this.rdma = rdma.groups;
+    this.rdmaLinks = rdma.links;
+    this.rdmaDevices = rdma.devices;
+    const positions = this.positions();
+    const devicePositions = new Map<string, Position>();
+    const unplaced: RdmaDevice[] = [];
+    for (const device of rdma.devices.values()) {
+      // A device plate rests on its NIC, so kernel QPs rise from the hardware bay.
+      const nic = devices.find(
+        (d) =>
+          addressHost(d.address) === device.host &&
+          d.rdma.some((r) => r.name === device.device),
+      );
+      const p = nic && hardwarePositions.get(nic.address);
+      if (p) devicePositions.set(device.id, { ...p, z: p.z + RDMA_ON_NIC });
+      else unplaced.push(device);
+    }
+    for (const host of new Set(unplaced.map((d) => d.host))) {
+      const placed = rdmaDeviceLayout(
+        unplaced.filter((d) => d.host === host).map((d) => d.id),
+        [...this.nodes.values()]
+          .filter((n) => n.identity.host === host)
+          .map((n) => n.pos),
+        rearrange ? new Map() : this.rdmaDevicePositions,
+        this.hostLayerZ.get(host ?? "") ?? 0,
+      );
+      for (const [id, p] of placed) devicePositions.set(id, p);
+    }
+    this.rdmaDevicePositions = devicePositions;
+    for (const [id, p] of devicePositions) positions.set(id, p);
+    // One lattice keeps network and RDMA markers above an anchor apart.
+    const markers = networkLayout(
+      new Map<string, LayoutAnchor>([...this.network, ...this.rdma]),
+      positions,
+      rearrange
+        ? new Map()
+        : new Map([...this.networkPositions, ...this.rdmaPositions]),
     );
-    this.networkPositions = networkLayout(
-      this.network,
-      this.positions(),
-      rearrange ? new Map() : this.networkPositions,
+    this.networkPositions = new Map(
+      [...markers].filter(([id]) => this.network.has(id)),
+    );
+    this.rdmaPositions = new Map(
+      [...markers].filter(([id]) => this.rdma.has(id)),
     );
     if (rearrange) {
       this.filePositions.clear();
@@ -647,7 +789,7 @@ export class SpaceDataStore {
   private connect() {
     if (!this.running || this.source) return;
     clearTimeout(this.retry);
-    const current = this.openEvents("/api/system/events");
+    const current = this.openEvents(withHost("/api/system/events", this.host));
     this.source = current;
     current.onopen = () => {
       if (this.source === current) this.events.status(null);
@@ -655,9 +797,17 @@ export class SpaceDataStore {
     current.onerror = () => {
       if (this.source !== current) return;
       this.close();
-      this.events.status("Connection lost. Retrying…");
+      this.events.status(
+        this.host === null || this.host === ALL_HOSTS
+          ? "Connection lost. Retrying…"
+          : `Host ${this.host} is unavailable. Retrying…`,
+      );
       if (this.running) this.retry = setTimeout(() => this.connect(), 3000);
     };
+    if (this.host === ALL_HOSTS) {
+      this.listenMerged(current);
+      return;
+    }
     current.addEventListener("snapshot", (event) => {
       if (this.source !== current) return;
       let merged: SystemSnapshot;
@@ -683,8 +833,76 @@ export class SpaceDataStore {
       if (this.source === current) this.events.gap();
     });
   }
+  /** Merged view: per-host baselines composed into one layered snapshot. */
+  private listenMerged(current: EventSource) {
+    const compose = () => {
+      const ordered = new Map<string, SystemSnapshot>();
+      for (const host of [
+        ...this.hosts.map((h) => h.name),
+        ...this.qualified.keys(),
+      ])
+        if (this.qualified.has(host))
+          ordered.set(host, this.qualified.get(host)!);
+      const composed = composeHosts(ordered, this.links);
+      this.replaceSnapshot(composed);
+      this.observe({ type: "snapshot", at_ms: 0, data: composed });
+      this.events.snapshot();
+    };
+    current.addEventListener("hosts", (event) => {
+      if (this.source !== current) return;
+      const hosts = JSON.parse(event.data) as HostsResponse;
+      this.hosts = hosts.hosts;
+      this.localHost = hosts.local;
+      // A host that went offline keeps no stale processes.
+      for (const host of this.hosts)
+        if (host.status.state === "offline") {
+          this.hostSnapshots.delete(host.name);
+          this.qualified.delete(host.name);
+        }
+      compose();
+    });
+    current.addEventListener("links", (event) => {
+      if (this.source !== current) return;
+      this.links = JSON.parse(event.data) as CrossHostLinks;
+      compose();
+    });
+    current.addEventListener("snapshot", (event) => {
+      if (this.source !== current) return;
+      const { host, ...update } = JSON.parse(
+        event.data,
+      ) as SystemSnapshotUpdate & { host: string };
+      let merged: SystemSnapshot;
+      try {
+        merged = mergeSnapshot(
+          this.hostSnapshots.get(host) ?? { processes: [], fd_relations: [] },
+          update,
+        );
+      } catch {
+        this.close();
+        this.connect();
+        return;
+      }
+      this.hostSnapshots.set(host, merged);
+      this.qualified.set(host, qualifySnapshot(host, merged));
+      compose();
+    });
+    current.addEventListener("activity", (event) => {
+      if (this.source !== current) return;
+      const { host, ...activity } = JSON.parse(event.data) as SpaceActivity & {
+        host: string;
+      };
+      const qualified = qualifyActivity(host, activity);
+      this.observe({ type: "activity", at_ms: 0, data: qualified });
+      this.events.activity(this.ingestActivity(qualified));
+    });
+    current.addEventListener("gap", () => {
+      if (this.source === current) this.events.gap();
+    });
+  }
   private close() {
     clearTimeout(this.retry);
+    this.hostSnapshots.clear();
+    this.qualified.clear();
     this.source?.close();
     this.source = null;
     this.cpuGlows.clear();

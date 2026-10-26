@@ -393,9 +393,98 @@ export interface DeviceHandle {
   fd: number;
   fd_count: number;
 }
+/** A kernel enumeration: a known `kind`, or `unknown` with its numeric code. */
+export type Coded<K extends string> =
+  { kind: K; code?: never } | { kind: "unknown"; code: number };
+/** `enum ib_qp_type`; unknown codes are preserved. */
+export type RdmaQpType = Coded<
+  | "smi"
+  | "gsi"
+  | "rc"
+  | "uc"
+  | "ud"
+  | "raw_ipv6"
+  | "raw_ethertype"
+  | "raw_packet"
+  | "xrc_ini"
+  | "xrc_tgt"
+  | "driver"
+>;
+export type RdmaQpState = Coded<
+  "reset" | "init" | "rtr" | "rts" | "sqd" | "sqe" | "err"
+>;
+export type RdmaCmState = Coded<
+  | "idle"
+  | "addr_query"
+  | "addr_resolved"
+  | "route_query"
+  | "route_resolved"
+  | "connect"
+  | "disconnect"
+  | "addr_bound"
+  | "listen"
+  | "device_removal"
+  | "destroying"
+>;
+export type RdmaPortSpace = Coded<"ipoib" | "tcp" | "udp" | "ib">;
+/** A connection manager address; the IB service ID is a 64-bit hex string. */
+export type RdmaAddress =
+  | { kind: "inet"; ip: string; port: number }
+  | { kind: "ib"; gid: string; service_id: string; pkey: number }
+  | { kind: "unknown"; family: number };
+export type RdmaEndpointOwner =
+  | { kind: "process"; process_id: ProcessId }
+  | { kind: "kernel"; name: string }
+  | { kind: "unknown"; pid: number | null };
+export interface RdmaEndpoint {
+  owner: RdmaEndpointOwner;
+  /** Set by the browser in the merged multi-host view. */
+  host?: string;
+  device: string;
+  port: number | null;
+  qpn: number;
+  qp_type: RdmaQpType;
+  state: RdmaQpState;
+}
+export interface RdmaCmInfo {
+  id: number | null;
+  /** The CM consumer, which can differ from the QP owner. */
+  owner: RdmaEndpointOwner;
+  state: RdmaCmState;
+  port_space: RdmaPortSpace;
+  source: RdmaAddress | null;
+  destination: RdmaAddress | null;
+}
+/** A queue pair; `peer` is set only for a connected QP on the same host. */
+export interface RdmaRelation {
+  id: string;
+  endpoint: RdmaEndpoint;
+  peer: RdmaEndpoint | null;
+  remote_qpn: number | null;
+  cm: RdmaCmInfo | null;
+  /** Remote port GID, from an IB CM address or the IPoIB neighbor table. */
+  remote_gid: string | null;
+  remote_hostname: string | null;
+  label: string;
+}
+export interface RdmaPortInfo {
+  /** Set by the browser in the merged multi-host view. */
+  host?: string;
+  device: string;
+  port: number;
+  link_layer: string | null;
+  state: string | null;
+  lid: number | null;
+  gid: string | null;
+  rate: string | null;
+}
 export interface SystemSnapshot {
   processes: Process[];
   fd_relations: FdRelation[];
+  /** Absent on older servers and recordings. */
+  rdma_relations?: RdmaRelation[];
+  /** Absent on older servers and recordings. */
+  rdma_ports?: RdmaPortInfo[];
   /** Absent on older servers and recordings. */
   hardware_devices?: HardwareDevice[];
   hardware_paths?: HardwarePath[];
@@ -416,6 +505,9 @@ export interface SystemSnapshotUpdate {
   })[];
   fd_relations?: FdRelation[];
   fd_relations_delta?: EntryDelta<FdRelation>;
+  rdma_relations?: RdmaRelation[];
+  rdma_relations_delta?: EntryDelta<RdmaRelation>;
+  rdma_ports?: RdmaPortInfo[];
   hardware_devices?: HardwareDevice[];
   hardware_paths?: HardwarePath[];
   device_handles?: DeviceHandle[];
@@ -484,4 +576,10 @@ export interface CrossHostLinkEnd {
 /** `links` events of the merged stream: connections observed on two hosts. */
 export interface CrossHostLinks {
   sockets: { a: CrossHostLinkEnd; b: CrossHostLinkEnd }[];
+  /** Absent on servers without RDMA support. */
+  rdma?: {
+    a: CrossHostLinkEnd;
+    b: CrossHostLinkEnd;
+    evidence: { gid: boolean; cm: boolean };
+  }[];
 }

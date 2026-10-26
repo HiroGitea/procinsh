@@ -3,5 +3,6 @@
 <header><div class="brand"><a href="/" id="brand">procinsh v{{PROCINSH_VERSION}}</a>{{PROCINSH_BUILD_REVISION}}</div><a href="/list" id="back" class="view-link">Go to list view</a><div class="view-help">DRAG ARROWS · ORBIT　 RIGHT DRAG WASD · PAN　 SCROLL , . · ZOOM <span id="fps"></span></div><a href="https://github.com/akawashiro/procinsh" class="github-link" target="_blank" rel="noopener noreferrer">GitHub</a></header>
 <div class="left-hud"><nav class="tools"><input id="search" type="search" placeholder="Find PID / process…" aria-label="Find process"><button id="reset">Fit all</button><button id="tour" aria-pressed="false">Tour mode</button><button id="rearrange">Rearrange</button></nav></div>
 <aside id="details" hidden><button id="close" aria-label="Clear selection">×</button><div id="process-details"><h2><a id="name" class="process-link"></a></h2><p id="pid"></p><p id="cmdline" aria-label="Command line"></p></div><div id="connection-details" hidden><h2 id="connection-label"></h2><p id="connection-state"></p><div id="connection-facts"></div><div id="connection-endpoints"></div></div></aside>
+<nav id="layer-picker" aria-label="Host layers" hidden></nav>
 <div id="hover" hidden></div><div id="failure" role="alert" hidden></div>
 </body></html>
