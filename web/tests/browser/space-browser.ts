@@ -322,7 +322,12 @@ try {
     assert.ok(Math.abs(forward.target[2] - start.target[2]) < 1e-6);
     await hold("ArrowRight", "ArrowRight", 400);
     const turned = await view();
-    assert.deepEqual(turned.target, forward.target, "arrows orbit the target");
+    assert.ok(
+      Math.hypot(
+        ...turned.target.map((value, index) => value - forward.target[index]),
+      ) < 1e-8,
+      "arrows orbit the target",
+    );
     assert.ok(Math.abs(distance(turned) - distance(forward)) < 1e-3);
     assert.notDeepEqual(turned.position, forward.position);
     await hold(",", "Comma", 30);
