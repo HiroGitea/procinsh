@@ -71,7 +71,8 @@ impl SnapshotEncoder {
                 epochs.insert(id, p["maps_epoch"].clone());
             }
         }
-        for field in ["fd_relations", "device_handles"] {
+        // RDMA ports are small and always sent whole.
+        for field in ["fd_relations", "rdma_relations", "device_handles"] {
             if !full
                 && let Some(change) = delta(entries(&old[field]), entries(&output[field]), "id")
             {
@@ -140,5 +141,36 @@ mod tests {
             )["kind"],
             "full"
         );
+    }
+
+    #[test]
+    fn rdma_relations_use_id_deltas_and_ports_are_sent_whole() {
+        let now = Instant::now();
+        let relation = |qpn: u32, label: &str| json!({"id": format!("rdma:ib0/1:{qpn}"), "label": label, "padding": "x".repeat(40)});
+        let snapshot = |relations: Vec<Value>| {
+            Arc::new(
+                json!({"processes": [], "fd_relations": [], "device_handles": [],
+                "rdma_ports": [{"device": "ib0", "port": 1}], "rdma_relations": relations}),
+            )
+        };
+        let initial: Vec<_> = (0..20).map(|q| relation(q, "a")).collect();
+        let mut encoder = SnapshotEncoder::default();
+        let parse = |s: String| serde_json::from_str::<Value>(&s).unwrap();
+        let full = parse(
+            encoder
+                .encode(snapshot(initial.clone()), false, now)
+                .unwrap(),
+        );
+        assert_eq!(full["rdma_relations"].as_array().unwrap().len(), 20);
+        let mut current = initial.clone();
+        current.remove(3);
+        current[0] = relation(0, "changed");
+        let delta = parse(encoder.encode(snapshot(current), false, now).unwrap());
+        assert!(delta.get("rdma_relations").is_none());
+        assert_eq!(
+            delta["rdma_relations_delta"],
+            json!({"upsert": [relation(0, "changed")], "remove": ["rdma:ib0/1:3"]})
+        );
+        assert_eq!(delta["rdma_ports"], full["rdma_ports"]);
     }
 }

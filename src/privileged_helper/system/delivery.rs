@@ -1,4 +1,5 @@
 use super::hardware::{DeviceHandle, HardwareDevice, HardwarePath};
+use super::rdma::{RdmaPortInfo, RdmaRelation};
 use super::snapshot::{FdRelation, SystemSnapshot};
 use crate::privileged_helper::process::{MemoryMap, ProcessId};
 use serde::Serialize;
@@ -46,6 +47,11 @@ struct SnapshotPayload<'a> {
     fd_relations: Option<&'a [FdRelation]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fd_relations_delta: Option<EntryDelta<'a, FdRelation, String>>,
+    rdma_ports: &'a [RdmaPortInfo],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rdma_relations: Option<&'a [RdmaRelation]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rdma_relations_delta: Option<EntryDelta<'a, RdmaRelation, String>>,
     hardware_devices: &'a [HardwareDevice],
     hardware_paths: &'a [HardwarePath],
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -180,6 +186,15 @@ impl SnapshotEncoder {
                 )
             })
             .flatten();
+        let rdma_delta = (!full)
+            .then(|| {
+                entry_delta(
+                    baseline.map(|s| s.rdma_relations.as_slice()),
+                    &snapshot.rdma_relations,
+                    |r| &r.id,
+                )
+            })
+            .flatten();
         let handles_delta = (!full)
             .then(|| {
                 entry_delta(
@@ -199,6 +214,11 @@ impl SnapshotEncoder {
                 .is_none()
                 .then_some(snapshot.fd_relations.as_slice()),
             fd_relations_delta: relations_delta,
+            rdma_ports: &snapshot.rdma_ports,
+            rdma_relations: rdma_delta
+                .is_none()
+                .then_some(snapshot.rdma_relations.as_slice()),
+            rdma_relations_delta: rdma_delta,
             hardware_devices: &snapshot.hardware_devices,
             hardware_paths: &snapshot.hardware_paths,
             device_handles: handles_delta
@@ -517,5 +537,40 @@ mod tests {
         let forced = payload(&mut delivery, Arc::new(current), true, now);
         assert_eq!(forced["kind"], "full");
         assert!(forced.get("base_sequence").is_none());
+    }
+    #[test]
+    fn rdma_relations_use_id_deltas_and_ports_are_always_sent() {
+        let now = Instant::now();
+        let mut initial = (*fixture(1, false, 1)).clone();
+        initial.rdma_relations = (0..50).map(super::super::rdma::test_relation).collect();
+        initial.rdma_ports = vec![RdmaPortInfo {
+            device: "ib0".into(),
+            port: 1,
+            link_layer: Some("InfiniBand".into()),
+            state: Some("ACTIVE".into()),
+            lid: Some(2),
+            gid: None,
+            rate: None,
+        }];
+        let mut delivery = SnapshotEncoder::default();
+        let full = payload(&mut delivery, Arc::new(initial.clone()), false, now);
+        assert_eq!(full["rdma_relations"].as_array().unwrap().len(), 50);
+        assert!(full.get("rdma_relations_delta").is_none());
+        let mut current = initial.clone();
+        current.rdma_relations.remove(3);
+        current.rdma_relations[0].label = "changed".into();
+        let delta = payload(&mut delivery, Arc::new(current), false, now);
+        assert_eq!(delta["kind"], "delta");
+        assert!(delta.get("rdma_relations").is_none());
+        let mut changed = super::super::rdma::test_relation(0);
+        changed.label = "changed".into();
+        assert_eq!(
+            delta["rdma_relations_delta"],
+            serde_json::json!({
+                "upsert": [serde_json::to_value(&changed).unwrap()],
+                "remove": ["rdma:ib0/1:3"],
+            })
+        );
+        assert_eq!(delta["rdma_ports"], full["rdma_ports"]);
     }
 }

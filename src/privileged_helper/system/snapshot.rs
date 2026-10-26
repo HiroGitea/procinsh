@@ -1,5 +1,5 @@
-//! Collect process structure, descriptor relations and hardware, retaining kinds
-//! without peers.
+//! Collect process structure, descriptor relations, RDMA queue pairs and hardware,
+//! retaining kinds without peers.
 //!
 //! # Interface
 //!
@@ -17,6 +17,7 @@
 use super::hardware::{
     DeviceHandle, HardwareDevice, HardwareObservation, HardwarePath, HardwareSources,
 };
+use super::rdma::{self, RdmaPortInfo, RdmaRelation};
 use crate::privileged_helper::process::{
     self, MemoryMap, ProcessId, ProcessScanner, ProcessSummary, SocketInfo,
 };
@@ -111,6 +112,8 @@ pub(in crate::privileged_helper) struct SystemSnapshot {
     pub(super) captured_at: u64,
     pub(super) processes: Vec<ProcessSnapshot>,
     pub(super) fd_relations: Vec<FdRelation>,
+    pub(super) rdma_ports: Vec<RdmaPortInfo>,
+    pub(super) rdma_relations: Vec<RdmaRelation>,
     pub(super) hardware_devices: Vec<HardwareDevice>,
     pub(super) hardware_paths: Vec<HardwarePath>,
     pub(super) device_handles: Vec<DeviceHandle>,
@@ -613,6 +616,19 @@ pub(super) fn collect_from(
         }
     }
     add_remote_gids(&mut result, &inode_ns, sources);
+    let pids = result
+        .processes
+        .iter()
+        .map(|p| (p.identity.pid, p.identity))
+        .collect();
+    let observed = rdma::observe(
+        &sources.sys,
+        &pids,
+        Instant::now() + Duration::from_millis(300),
+    );
+    result.rdma_ports = observed.ports;
+    result.rdma_relations = observed.relations;
+    result.warnings.extend(observed.warnings);
     let live = result.processes.iter().map(|p| p.identity).collect();
     result.device_handles = handles.finish(&live);
     result.hardware_devices = hardware.devices;
