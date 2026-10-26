@@ -45,6 +45,10 @@ Each page header shows the binary's version and, when available, a seven-charact
 |---|---|
 | `--listen ADDRESS` | Listen address. Repeat to listen on multiple addresses. Default: `127.0.0.1:8080` |
 | `--allow-non-loopback` | Explicitly allow listening on non-loopback addresses. This exposes process memory and environment variables without authentication or TLS |
+| `--accept-agents ADDRESS` | Accept agent links as a hub (repeatable). Non-loopback addresses require both `--allow-non-loopback` and an agent token |
+| `--connect HOST:PORT` | Link to a hub's agent address as an agent and answer its requests with this host's helper |
+| `--host-name NAME` | Host name shown by a hub. Default: the kernel host name. 1-63 letters, digits, `.`, `_` or `-`; not `all` |
+| `--agent-token-file PATH` | File holding the token shared by a hub and its agents. The token is never taken from arguments or the environment, because procinsh shows every process's command line and environment |
 | `--help` / `--version` | Show help / version |
 
 SIGINT (Ctrl+C) or SIGTERM stops collection and shuts down the HTTP server. Fatal startup or server failures exit with a nonzero status.
@@ -84,12 +88,14 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 | `src/ipc/` | Message schema and bounded transport shared by both executables |
 | `src/http_server/api/` | HTTP input/responses, domain error to status conversion, JSON and SSE (Server-Sent Events) |
 | `src/http_server/web.rs` | Static web UI serving |
+| `src/http_server/hosts/` | Multiple hosts: agent links (framing, authentication, reconnection), forwarding helper requests to agents, the host list, cross-host connection matching |
 | `src/privileged_helper/process/monitoring/` | Independent observations per connection, 60-second history, latest-state delivery |
 | `src/privileged_helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
 | `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, DWARF CFI unwinding with framehop, disassembly |
 | `src/privileged_helper/process/snapshot/symbol/` | ELF retrieval/caching, address conversion, symbol/source location resolution using ELF/DWARF |
 | `src/privileged_helper/process/snapshot/stack.rs` | Frame types shared by sampling and symbol resolution |
 | `src/privileged_helper/system/` | Structure of all processes, subscriptions, BPF collection, name resolution |
+| `src/privileged_helper/system/rdma/` | RDMA queue pairs, connection manager IDs, and ports via RDMA netlink, IPoIB neighbors, and sysfs |
 | `src/privileged_helper/system/hardware/` | GPUs, RDMA NICs, accelerators, NVSwitches, PCIe bridges, inter-device paths, and processes holding devices open, using sysfs/procfs |
 | `src/privileged_helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
 | `web/src/` | TypeScript pages, SPACE, rendering models, and CSS (HTML entry points: `web/{list,process,space}/index.html`) |
@@ -245,9 +251,12 @@ A process identity in JSON is `{ "pid": 123, "start_time_ticks": 456 }`. Address
 
 APIs operating on a target require its identity on every request. No prior selection or SSE connection is necessary. Below, “identity query” means the required `pid` and `start_time_ticks` parameters.
 
+Every process and system API also takes an optional `host` parameter naming a remote host (see [Multiple hosts](#multiple-hosts-hub-and-agent)). Without it, or with the hub's own name, the request goes to this machine. An unknown host is 404, an offline host 503, and `host=all` outside `GET /api/system/events` 400.
+
 | Method / path | Arguments | Return value |
 |---|---|---|
 | `GET /api/config` | None | Version, update interval `interval_ms`, history duration `history_seconds` |
+| `GET /api/hosts` | None | `local` (this server's host name) and `hosts`: name, `local`, `status` (`{state: "online" \| "offline", since}`), machine_id, version, kernel, arch. The local host is first |
 | `GET /api/processes` | None | List of process identities, names, users, CPU/RSS, and other information |
 | `GET /api/processes/observation` | Identity query | On-demand process observation; CPU usage and per-second rates are null |
 | `GET /api/processes/threads` | Identity query | Array of on-demand thread observations; CPU usage is null |
@@ -256,7 +265,7 @@ APIs operating on a target require its identity on every request. No prior selec
 | `GET /api/processes/environment` | Identity query | Environment variable names/values and retrieval information |
 | `GET /api/processes/auxv` | Identity query | Auxiliary vector tags/values and resolved references |
 | `GET /api/processes/events` | Identity query | SSE `observation`: target summary, latest observation, threads, history, maps, exit state |
-| `GET /api/system/events` | None | SSE `snapshot`, `activity`, `gap`: structure, CPU/IPC/file I/O/signal activity, delivery gaps |
+| `GET /api/system/events` | Optional `host` | SSE `snapshot`, `activity`, `gap`: structure, CPU/IPC/file I/O/signal activity, delivery gaps. `host=all` merges every host |
 
 Missing or malformed identity queries return 400. PID must be a positive integer. Single GET requests, including observation/threads/maps, return 410 when they detect target exit or PID reuse. Other observation failures generally return 422; blocking task failures return 500.
 
@@ -296,9 +305,9 @@ The connection itself is a viewing session. At most 32 simultaneous connections 
 | `activity` | Activity aggregation about every second: `captured_at`, `window_ms`, `cpu`, `ipc`, `files`, `signals`, `status` |
 | `gap` | `{dropped_frames: count}` when a subscriber falls behind, followed by the latest `snapshot`; lost activity is not resent |
 
-A per-connection `SnapshotEncoder` converts `SystemSnapshot` from `system/snapshot.rs` to JSON. `ProcessSnapshot` represents a process; `FdEndpoint` a process FD endpoint; `FdRelation` a socket, pipe, or shared-ownership relationship; and `HardwareDevice`, `HardwarePath`, and `DeviceHandle` hardware information.
+A per-connection `SnapshotEncoder` converts `SystemSnapshot` from `system/snapshot.rs` to JSON. `ProcessSnapshot` represents a process; `FdEndpoint` a process FD endpoint; `FdRelation` a socket, pipe, or shared-ownership relationship; `RdmaRelation` an RDMA queue pair (QP); and `HardwareDevice`, `HardwarePath`, and `DeviceHandle` hardware information.
 
-Top-level `snapshot` fields include `kind`, `sequence`, `captured_at`, `processes`, `warnings`, `inspected_processes`, `inspected_fds`, FD relations, and hardware data. `kind` is `full` or `delta`; `sequence` increases with each delivery within a connection. A `delta` includes the preceding `sequence` as `base_sequence`. Structure may be empty before the first collection.
+Top-level `snapshot` fields include `kind`, `sequence`, `captured_at`, `processes`, `warnings`, `inspected_processes`, `inspected_fds`, FD relations, RDMA data, and hardware data. `kind` is `full` or `delta`; `sequence` increases with each delivery within a connection. A `delta` includes the preceding `sequence` as `base_sequence`. Structure may be empty before the first collection.
 
 The first update, resynchronization after a `gap`, and structure updates at least 60 seconds after the previous `full` send a `full` snapshot, replacing the entire structure including all maps and FD relations. Other updates use `delta`. Receivers check `base_sequence` against their retained structure's `sequence` before applying a delta. See SPACE's [mergeSnapshot](web/src/space/data.ts).
 
@@ -307,6 +316,9 @@ The first update, resynchronization after a `gap`, and structure updates at leas
 - FD relations: `fd_relations` replaces all relations; `fd_relations_delta` applies `upsert` and `remove` keyed by connection ID. For both maps and FD relations, replacement is used when full JSON is smaller than a delta.
 - Each FD relation: connection ID, endpoints `endpoint`/`peer`, label, socket information, `candidate`, `shared`. Endpoints contain process identity, FD, FD count, resource, kind, and access. `peer` is null without a local peer. `candidate` denotes a possible connection; `shared` denotes resource sharing, distinct from a uniquely identified communication peer.
 - `socket`: protocol, state, local/remote addresses, network_peer, remote_hostname, remote_gid. Socket information and unavailable addresses/names may be null. `remote_gid` is the peer InfiniBand port's GID when the destination is an IPoIB neighbor in the collection thread's network namespace (same format as sysfs `gids/N`). The neighbor table is read with rtnetlink `RTM_GETNEIGH` only when an IPoIB interface and destination exist. IPoIB hardware addresses are 20 bytes; the final 16 bytes are the GID. `/proc/net/arp` is not used because it truncates the address. Expired neighbor entries and sockets in other network namespaces yield null.
+- RDMA relations: `rdma_relations` replaces all relations; `rdma_relations_delta` applies `upsert` and `remove` keyed by ID, using replacement when the full JSON is smaller, like FD relations. `rdma_ports` is small and sent in full each time. Older servers omit both fields; receivers treat them as empty.
+- Each RDMA relation: ID (`rdma:<device>/<port>:<qpn>`; a QP pair on one host joins both IDs with `/`), endpoints `endpoint`/`peer`, `remote_qpn`, `cm`, `remote_gid`, `remote_hostname`, and label. An endpoint has its owner `owner` (`{kind: "process", process_id}`, `{kind: "kernel", name}`, or `{kind: "unknown", pid}`), device, port, qpn, and `qp_type`/`state` (`{kind, code?}`; unknown kernel values keep `unknown` and their code). `peer` is set only when a connected QP on the same host is found. `cm` is the RDMA CM ID bound to the QP: ID, consumer `owner`, state, `port_space`, and `source`/`destination` addresses (`{kind: "inet", ip, port}`, `{kind: "ib", gid, service_id, pkey}`, or `{kind: "unknown", family}`).
+- `rdma_ports`: device, port, link_layer, state, LID, GID (`gids/0`), and rate. Unassigned LIDs and GIDs are null.
 - `warnings` and scan counts: warnings for unavailable data, truncated scans, and similar conditions, plus numbers of processes/FDs inspected.
 - Hardware: `hardware_devices` and `hardware_paths` are small and sent in full each time. Handles use either full `device_handles` or `device_handles_delta` keyed by ID. Older servers omit these fields; receivers treat them as empty.
 - Each `hardware_devices` entry: `address` (PCI address such as `0000:85:00.0`, or host bridge such as `pci0000:80`), `parent`, `role` (`host_bridge`, `root_port`, `switch_port`, `endpoint`), `kind` (`gpu`, `rdma`, `accelerator`, `nv_switch`; null for bridges), `label`, class/vendor_id/device_id as hexadecimal strings, driver, `numa_node`, `link` (`current`/`max` values of `{speed_gts, width}`), power_state/runtime_status, iommu_group, memory BAR `bars`, GPU `gpu` (vendor, model, uuid, NVIDIA device minor, DRM nodes), RDMA device `rdma`, and `netdevs`.
@@ -334,6 +346,18 @@ Register mapping is `{pathname, readable, writable, executable, private}` or nul
 Sensor status is `{state: "idle" | "observing"}` or `{state: "unavailable" | "error", message: "…"}`. Log levels are determined by the sensor state enum.
 
 Activity arrays are empty when there is no matching activity or when a sensor is unavailable. An empty array alone does not establish that no activity occurred; also check sensor `state` values in `status` (observing, unavailable, error).
+
+### Multiple hosts (hub and agent)
+
+A hub accepts agent TCP links on `--accept-agents`. An agent links to a hub with `--connect` and answers the hub's requests with its own privileged helper. The hub forwards the same closed helper requests (`MonitorRequest`) it sends its own helper, so every process and system API works for a remote host with `host=<name>`, including observation sessions. Browsers connect only to the hub, under the same Origin and CSP rules.
+
+- Frames ([wire.rs](src/http_server/hosts/wire.rs)): a `u32` big-endian length, one encoding byte (1 JSON, 2 gzip JSON for messages over 1 KiB), then a message: `hello` (protocol, host, machine_id, version, kernel, arch, token), `welcome`, `reject`, `request` (`id`, `MonitorRequest`), `response` (`id`, `WireResponse`), `ping`, `pong`. Messages are at most the helper response limit plus 64 KiB, compressed or not.
+- Link: the agent sends `hello` first; the hub answers within 5 seconds with `welcome` or `reject` and a reason. Tokens are compared in constant time. Both sides ping every 10 seconds and close a link without messages for 30 seconds. Agents reconnect with exponential backoff from 1 to 30 seconds plus up to 20% jitter.
+- Requests ([link.rs](src/http_server/hosts/link.rs), [connector.rs](src/http_server/hosts/connector.rs)): at most 64 requests per agent are in flight, each with the helper deadline plus 5 seconds. Responses may arrive out of order. The agent polls and closes only observation sessions the link started, never those of its own viewers, and closes them when the link ends. Agents collect only while the hub keeps their sessions open.
+- Host names ([registry.rs](src/http_server/hosts/registry.rs)): names are unique. A reconnect from the same machine_id replaces the previous link. A name used by another online machine, the hub's own name, `all`, and more than 64 hosts are rejected. A disconnected host stays listed as offline for 10 minutes.
+- Merged stream (`host=all`, [merged.rs](src/http_server/api/merged.rs)): `hosts` first (as `/api/hosts`, resent when hosts change), then each host's `snapshot`, `activity`, and `gap` with `"host"` added; each host has its own sequence and delta baseline. A host that comes online joins the stream. About once a second the hub matches connections between hosts and sends `links` when they change: `sockets` and `rdma` entries with `a` and `b` as `{host, relation}`; RDMA entries add `evidence: {gid, cm}`.
+- Cross-host matching ([correlate.rs](src/http_server/hosts/correlate.rs)): an external TCP/UDP connection without a local peer matches when exactly one connection on another host has the reversed `(local, remote)` tuple. Loopback and unspecified addresses, and tuples duplicated by NAT or otherwise, stay unmatched. RDMA QPs match when connected QPs on two hosts have swapped QPNs and remote QPNs. A remote GID equal to the other end's port GID, or swapped CM addresses, is evidence; any contradicting address rejects the match. Without evidence, a swap matches only when it is unique among all hosts and both ports have the same link layer.
+- Limits: no TLS. Non-loopback `--accept-agents` requires `--allow-non-loopback` and a token. Use a trusted network such as Tailscale or WireGuard; an agent trusts whichever hub answers at its `--connect` address.
 
 ## Backend processing
 
@@ -387,6 +411,18 @@ The system snapshot uses [system/hardware](src/privileged_helper/system/hardware
 - Paths: device pairs are classified from common upstream nodes as in `nvidia-smi topo -m`. Different host bridges yield `node` on the same NUMA node or `sys` otherwise (unknown NUMA counts as the same node when only one NUMA node is online). A shared host bridge ancestor yields `phb`; traversing at most one PCIe switch (upstream port and its downstream ports) yields `pix`, otherwise `pxb`. The negotiated link with the lowest bandwidth after encoding across all hops is the `bottleneck`.
 - Processes: FD scans record character device rdev and derive PCI address/type (`drm/renderD*`, `drm/card*`, `infiniband_verbs`, `infiniband_mad`, `accel`) from `/sys/dev/char/<major>:<minor>` symlink targets. `/dev/nvidiaN` has no sysfs node, so GPUs are matched using the `nvidia` major number in `/proc/devices` and device minor. Control devices such as `nvidiactl` are excluded. FDs with the same process, device, and type are grouped.
 - Traffic: GPU/NIC DMA is not observed, so PCIe links have no particles.
+
+### RDMA queue pairs
+
+The system snapshot uses [system/rdma](src/privileged_helper/system/rdma.rs) to read RDMA resources visible in the helper's network and PID namespaces.
+
+- Gate: RDMA netlink is opened only when `/sys/class/infiniband` lists a device, so a host without RDMA never autoloads `ib_core`.
+- Queue pairs and CM IDs: [nldev.rs](src/privileged_helper/system/rdma/nldev.rs) dumps devices (`RDMA_NLDEV_CMD_GET`), then queue pairs (`RES_QP_GET`) and connection manager IDs (`RES_CM_ID_GET`) per device index. Resources of processes outside the PID namespace are omitted by the kernel; kernel-owned resources are always reported with their kernel name. At most 4,096 QPs are kept per snapshot; a per-device failure becomes a warning while other devices are still reported.
+- Ports: [ports.rs](src/privileged_helper/system/rdma/ports.rs) reads link layer, state, LID, `gids/0`, and rate under `ports/` of each device.
+- Remote GIDs: an IB CM destination carries the remote port GID. For an IP destination, the IPoIB neighbor table is read once with the same [ipoib.rs](src/privileged_helper/system/ipoib.rs) dump used for sockets.
+- Local pairs ([relations.rs](src/privileged_helper/system/rdma/relations.rs)): two connected QPs (RC, UC, XRC) whose QPN and remote QPN are swapped form one relation when the match is unique in both directions. QPNs are unique per device only, so QPs on different devices also need agreeing addresses: a remote GID equal to the other port's GID, or swapped CM addresses. Any contradicting address rejects the pair.
+- Names: reverse DNS of the IP CM destination fills `remote_hostname` after collection, like socket destinations.
+- Traffic: verbs data transfers bypass the kernel, so queue pairs carry no per-QP traffic observation or particles.
 
 ### Environment variables and auxiliary vectors
 
@@ -487,7 +523,7 @@ TypeScript build settings are in [tsconfig.json](web/tsconfig.json), commands in
 
 ### Process list `/list`
 
-[list/app.ts](web/src/list/app.ts) connects `ListDataStore`, search, and table rendering. See [`ListDataStore.start`](web/src/list/data.ts#L49)/[`ListDataStore.refresh`](web/src/list/data.ts#L23) for networking/state, [`matchingProcesses`](web/src/list/search.ts#L3) for search/sorting, and [`renderProcesses`](web/src/list/renderer.ts#L8) for DOM updates. Creating the data component does not start networking; data updates and searches calculate visible rows and update the table.
+[list/app.ts](web/src/list/app.ts) connects `ListDataStore`, search, and table rendering. See [`ListDataStore.start`](web/src/list/data.ts#L61)/[`ListDataStore.refresh`](web/src/list/data.ts#L26) for networking/state, [`matchingProcesses`](web/src/list/search.ts#L3) for search/sorting, and [`renderProcesses`](web/src/list/renderer.ts#L8) for DOM updates. Creating the data component does not start networking; data updates and searches calculate visible rows and update the table.
 
 The list page contains only list DOM and does not open detail SSE.
 
@@ -498,13 +534,15 @@ The list page contains only list DOM and does not open detail SSE.
 
 The refresh interval is the greater of the configured interval and 1,000 ms. Refreshes are skipped while a list request is in progress. PID/name/command-line search and descending CPU/RSS or ascending PID sorting run in the browser against fetched data.
 
-Process names link to `/process/{pid}?start_time_ticks={start_time}` using [`processUrl`](web/src/shared/navigation.ts#L4). Normal navigation opens details while preserving the observed `{pid, start_time_ticks}`. The header's Go to space view opens `/space`.
+Process names link to `/process/{pid}?start_time_ticks={start_time}` using [`processUrl`](web/src/shared/navigation.ts#L8). Normal navigation opens details while preserving the observed `{pid, start_time_ticks}`. The header's Go to space view opens `/space`.
+
+When other hosts are known, the header shows a host selector ([`mountHostControls`](web/src/shared/hosts.ts)). Selecting a host sets `?host=` in the page URL and lists that host's processes; process links and Go to space view keep the host.
 
 `pagehide` stops periodic refresh and cancels an in-flight list request. Restoring from the page cache refetches configuration/list and resumes refresh.
 
 ### Process details `/process/{pid}`
 
-[process/app.ts](web/src/process/app.ts) connects data, rendering, and selection; handles page startup/shutdown; and preserves the identity-bearing URL. [`ProcessDataStore.connect`](web/src/process/data.ts#L158) establishes SSE; [`ProcessDataStore.acceptTarget`](web/src/process/data.ts#L200) → [`renderTarget`](web/src/process/renderer.ts#L22) applies received state. See [`ProcessDataStore.loadDetails`](web/src/process/data.ts#L120) for additional panels, [`drawHistory`](web/src/process/history.ts#L10) for history graphs, and [`renderLiveSample`](web/src/process/samples.ts#L43) for selected-thread samples.
+[process/app.ts](web/src/process/app.ts) connects data, rendering, and selection; handles page startup/shutdown; and preserves the identity-bearing URL. [`ProcessDataStore.connect`](web/src/process/data.ts#L165) establishes SSE; [`ProcessDataStore.acceptTarget`](web/src/process/data.ts#L209) → [`renderTarget`](web/src/process/renderer.ts#L22) applies received state. See [`ProcessDataStore.loadDetails`](web/src/process/data.ts#L127) for additional panels, [`drawHistory`](web/src/process/history.ts#L10) for history graphs, and [`renderLiveSample`](web/src/process/samples.ts#L43) for selected-thread samples.
 
 `ProcessDataStore` is DOM-independent and retains observations by checking PID, start time, connection generation, and additional GET generation. Search filters fetched values; `ThreadSelection` retains the selected thread. State notifications update individual rendering components; history graphs receive history data and a Canvas.
 
@@ -513,6 +551,8 @@ Process names link to `/process/{pid}?start_time_ticks={start_time}` using [`pro
 | `GET /api/processes` | At initialization, match PID and URL start time; resolve the PID's start time if absent from the URL |
 | `GET /api/processes/events` | Connect with an identity query and update summary, observation, history, threads, maps, exit state |
 | `GET /api/processes/environment`, `GET /api/processes/auxv`, `GET /api/processes/fds` | When opening each panel and every five seconds while open (skip while fetching) |
+
+A `?host=` in the page URL sends every request above to that remote host and shows the host in the heading. Peer process links, Go to list view, and Go to space view keep the host; choosing another host in the header selector opens that host's list.
 
 The detail page contains only detail DOM and does not periodically refresh the process list. At startup it fetches the list once, matches PID and URL `start_time_ticks`, and connects SSE. If start time is absent, it resolves the current identity and retains start time in the URL. Invalid start time, missing target, or identity mismatch produces a detail-page error with a list link. It never connects to a mismatched process. Additional GETs use the same identity query. Regular updates use SSE `observation`, not single observation/threads/maps GETs.
 
@@ -548,7 +588,7 @@ Hit testing receives current Three.js objects and display data for each event an
 
 #### Receiving data and updating structure
 
-On initial display or redisplay, `app.ts` calls [`SpaceDataStore.start`](web/src/space/data.ts), connecting EventSource to `GET /api/system/events`. The initial structure also arrives through SSE; the page is registered as a backend viewer only while connected. See [api-types.ts `SystemSnapshotUpdate`](web/src/shared/api-types.ts#L319)/[`SpaceActivity`](web/src/shared/api-types.ts#L352) for event types and the [HTTP API description](#get-apisystemevents) for contents.
+On initial display or redisplay, `app.ts` calls [`SpaceDataStore.start`](web/src/space/data.ts), connecting EventSource to `GET /api/system/events`. The initial structure also arrives through SSE; the page is registered as a backend viewer only while connected. See [api-types.ts `SystemSnapshotUpdate`](web/src/shared/api-types.ts#L409)/[`SpaceActivity`](web/src/shared/api-types.ts#L455) for event types and the [HTTP API description](#get-apisystemevents) for contents.
 
 | Event | Applied changes | Main implementation |
 |---|---|---|
@@ -567,6 +607,7 @@ On initial display or redisplay, `app.ts` calls [`SpaceDataStore.start`](web/src
 | User identity | Top/bottom box frames use real UID colors; vertical frames use effective UID colors | [`userColor`, `processColors`](web/src/space/model.ts) |
 | IPC/network connections | Solid FD-relation lines: green tones for confirmed inter-process connections, pale ochre for candidates, pale blue-gray for shared FDs. Network peers are grouped by process/protocol/peer IP/port and placed above processes. IPoIB peer labels include “IB”; details show peer InfiniBand GID | [`buildScene`](web/src/space/scene.ts#L99), [`networkGroups`](web/src/space/data.ts), [`networkLayout`](web/src/space/data.ts) |
 | Recently accessed files | File markers and connection lines below processes, updated in a group separate from structure | [`fileLayout`](web/src/space/data.ts), [`refreshFileScene`](web/src/space/scene.ts#L400) |
+| RDMA queue pairs | Purple icosahedron markers group unpaired QPs by anchor, consumer, QP type, and remote address, like network peers, sharing their lattice above the anchor. A QP owned by a shown process rises from its roof. Kernel QPs, and QPs of processes outside the snapshot, rise from a thin purple device plate: on the device's NIC in the hardware bay when it is shown, otherwise in a column right of the processes on the host's layer. Management QPs (SMI, GSI) are hidden. Connected QPs on one host, and QPs matched across hosts in the merged view, are joined by purple curves; between host layers the curve runs from the upper anchor's base to the lower anchor's roof. Details show QP type/state, local LID/GID, remote QPN/GID, CM state, port space, and addresses; a device shows its ports | [`rdmaModel`, `rdmaDeviceLayout`](web/src/space/rdma.ts), [`buildRdma`](web/src/space/scene.ts) |
 | Hardware | PCIe tree to the left (−x) of the lowest-PID process (usually systemd). Devices form a y-axis column closest to that process; root ports, switches, and host bridges extend left, with parents centered on children. Overlap with process boxes shifts the whole tree left. Hardware labels are placed before regular labels to keep them visible. GPUs are amber boxes, RDMA NICs purple boxes, bridges small platforms. PCIe links to bridges are floor strips, with width by lane count and color by generation; links below both endpoints' limits are orange. A line always connects each process's front face to each device it opens (one per process/device pair; amber for GPUs, purple for RDMA NICs; search-hidden processes excluded). Selecting that line selects the device. Selecting a device/process highlights related lines. Selecting a device highlights paths to other devices by class color and shows class/bottleneck. Details include ID, driver, NUMA, IOMMU group, BAR, GPU/RDMA information, downstream devices, paths, processes | [`hardwareLayout`](web/src/space/hardware.ts), [`buildHardware`](web/src/space/scene.ts) |
 
 #### Activity display and render loop
@@ -589,14 +630,15 @@ SPACE retains up to 256 signals with both endpoints visible. Purple lights and f
 
 #### Search, selection, and camera controls
 
-Interactions run in the browser. Selection does not call detail APIs; retained structure/activity updates the right-hand details panel. Open process details uses [`processUrl`](web/src/shared/navigation.ts#L4) to preserve observed start time and navigate to `/process/{pid}?start_time_ticks={start_time}`.
+Interactions run in the browser. Selection does not call detail APIs; retained structure/activity updates the right-hand details panel. Open process details uses [`processUrl`](web/src/shared/navigation.ts#L8) to preserve observed start time and navigate to `/process/{pid}?start_time_ticks={start_time}`.
 
 | Interaction | Behavior | Main implementation |
 |---|---|---|
 | PID/process-name search | Filters rendered targets; Enter selects the first match and focuses the camera | [`visibleIds`](web/src/space/search.ts#L4), [search events](web/src/space/search.ts#L19) |
 | Click/hover | Selects/describes processes, connection lines, network peers, Netlink plates, files; double-clicking a process focuses the camera | [`hit`, `edgeHit`](web/src/space/selection.ts#L75), [pointer events](web/src/space/selection.ts#L60), [`details`](web/src/space/details.ts#L138) |
 | Drag/right-drag/scroll, keys | Rotate/pan/zoom camera. Keys are matched by physical position (`KeyboardEvent.code`), so AZERTY's Z/Q/S/D act as W/A/S/D. Held W/A/S/D move over the ground plane at about the target distance per second (Shift is three times faster); held ←/→ orbit like a drag in that direction and ↑/↓ raise or lower the camera, a quarter turn per second (Shift doubles it); the two keys right of M (`,` and `.` on QWERTY) zoom in and out | [OrbitControls configuration](web/src/space/camera.ts#L6), [`move`, `zoom`](web/src/space/camera.ts), [key events](web/src/space/app.ts) |
-| Fit all | Clears search/selection and fits the whole scene | [`fit`](web/src/space/camera.ts#L57), [button events](web/src/space/app.ts#L214) |
+| Host layers (merged view) | The layer picker at the bottom right and keys 1-9 frame that host layer, ALL and 0 every layer. A rotation pivots on the layer in view: where the view ray meets it, so the picture does not jump. Until the camera is moved, each host layer that arrives refits the scene | [`layerPivot`](web/src/space/camera.ts), [`focusLayer`, `renderLayerPicker`](web/src/space/app.ts) |
+| Fit all | Clears search/selection and fits the whole scene | [`fit`](web/src/space/camera.ts#L109), [button events](web/src/space/app.ts#L214) |
 | Rearrange | Clears particles, rearranges processes/network peers/Netlink plates/files, and fits the scene | [`SpaceDataStore.replaceSnapshot`](web/src/space/data.ts), [button events](web/src/space/app.ts#L208) |
 
 #### Connection and page lifecycle
