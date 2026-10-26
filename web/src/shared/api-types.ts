@@ -99,6 +99,8 @@ export interface IpcIdentity {
 export interface ProcessId {
   pid: number;
   start_time_ticks: number;
+  /** Set by the browser for a process of a remote host; the server never sends it. */
+  host?: string;
 }
 export interface ProcessSummary {
   identity: ProcessId;
@@ -457,4 +459,29 @@ export interface SpaceActivity {
   cpu?: CpuActivity[];
   ipc?: IoActivity[];
   signals?: SignalEvent[];
+}
+export type HostStatus =
+  { state: "online"; since: number } | { state: "offline"; since: number };
+/** `GET /api/hosts` entries; the local host is first. */
+export interface HostSummary {
+  name: string;
+  local: boolean;
+  status: HostStatus;
+  machine_id: string;
+  version: string;
+  kernel: string | null;
+  /** The procinsh build architecture, such as `x86_64` or `aarch64`. */
+  arch: string;
+}
+export interface HostsResponse {
+  local: string;
+  hosts: HostSummary[];
+}
+export interface CrossHostLinkEnd {
+  host: string;
+  relation: string;
+}
+/** `links` events of the merged stream: connections observed on two hosts. */
+export interface CrossHostLinks {
+  sockets: { a: CrossHostLinkEnd; b: CrossHostLinkEnd }[];
 }

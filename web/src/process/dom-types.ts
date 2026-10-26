@@ -2,6 +2,8 @@
 export interface ProcessElements {
   brand: HTMLAnchorElement;
   back: HTMLAnchorElement;
+  "host-picker": HTMLElement;
+  "space-link": HTMLAnchorElement;
   error: HTMLElement;
   inspector: HTMLElement;
   identity: HTMLElement;

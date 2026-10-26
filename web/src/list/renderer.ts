@@ -5,7 +5,11 @@ import { node, cell } from "../shared/dom.js";
 import { processUrl } from "../shared/navigation.js";
 import type { ProcessSummary } from "../shared/api-types.js";
 import { listElement as $ } from "./dom-types.js";
-export function renderProcesses(rows: ProcessSummary[], total: number) {
+export function renderProcesses(
+  rows: ProcessSummary[],
+  total: number,
+  host: string | null = null,
+) {
   const fragment = document.createDocumentFragment();
   for (const p of rows) {
     const row = node("tr");
@@ -17,7 +21,7 @@ export function renderProcesses(rows: ProcessSummary[], total: number) {
     cell(row, p.state);
     const detail = cell(row);
     const link = node("a", p.name, "process-link");
-    link.href = processUrl(p.identity);
+    link.href = processUrl(p.identity, host);
     detail.append(link);
     const command = node(
       "div",
