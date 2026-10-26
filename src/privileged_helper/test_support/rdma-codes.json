@@ -1,0 +1,302 @@
+[
+  {
+    "group": "qp_type",
+    "code": 0,
+    "value": {
+      "kind": "smi"
+    },
+    "label": "SMI"
+  },
+  {
+    "group": "qp_type",
+    "code": 1,
+    "value": {
+      "kind": "gsi"
+    },
+    "label": "GSI"
+  },
+  {
+    "group": "qp_type",
+    "code": 2,
+    "value": {
+      "kind": "rc"
+    },
+    "label": "RC"
+  },
+  {
+    "group": "qp_type",
+    "code": 3,
+    "value": {
+      "kind": "uc"
+    },
+    "label": "UC"
+  },
+  {
+    "group": "qp_type",
+    "code": 4,
+    "value": {
+      "kind": "ud"
+    },
+    "label": "UD"
+  },
+  {
+    "group": "qp_type",
+    "code": 5,
+    "value": {
+      "kind": "raw_ipv6"
+    },
+    "label": "RAW_IPV6"
+  },
+  {
+    "group": "qp_type",
+    "code": 6,
+    "value": {
+      "kind": "raw_ethertype"
+    },
+    "label": "RAW_ETHERTYPE"
+  },
+  {
+    "group": "qp_type",
+    "code": 8,
+    "value": {
+      "kind": "raw_packet"
+    },
+    "label": "RAW_PACKET"
+  },
+  {
+    "group": "qp_type",
+    "code": 9,
+    "value": {
+      "kind": "xrc_ini"
+    },
+    "label": "XRC_INI"
+  },
+  {
+    "group": "qp_type",
+    "code": 10,
+    "value": {
+      "kind": "xrc_tgt"
+    },
+    "label": "XRC_TGT"
+  },
+  {
+    "group": "qp_type",
+    "code": 255,
+    "value": {
+      "kind": "driver"
+    },
+    "label": "DRIVER"
+  },
+  {
+    "group": "qp_type",
+    "code": 7,
+    "value": {
+      "kind": "unknown",
+      "code": 7
+    },
+    "label": "TYPE 7"
+  },
+  {
+    "group": "qp_state",
+    "code": 0,
+    "value": {
+      "kind": "reset"
+    },
+    "label": "RESET"
+  },
+  {
+    "group": "qp_state",
+    "code": 1,
+    "value": {
+      "kind": "init"
+    },
+    "label": "INIT"
+  },
+  {
+    "group": "qp_state",
+    "code": 2,
+    "value": {
+      "kind": "rtr"
+    },
+    "label": "RTR"
+  },
+  {
+    "group": "qp_state",
+    "code": 3,
+    "value": {
+      "kind": "rts"
+    },
+    "label": "RTS"
+  },
+  {
+    "group": "qp_state",
+    "code": 4,
+    "value": {
+      "kind": "sqd"
+    },
+    "label": "SQD"
+  },
+  {
+    "group": "qp_state",
+    "code": 5,
+    "value": {
+      "kind": "sqe"
+    },
+    "label": "SQE"
+  },
+  {
+    "group": "qp_state",
+    "code": 6,
+    "value": {
+      "kind": "err"
+    },
+    "label": "ERR"
+  },
+  {
+    "group": "qp_state",
+    "code": 9,
+    "value": {
+      "kind": "unknown",
+      "code": 9
+    },
+    "label": "STATE 9"
+  },
+  {
+    "group": "cm_state",
+    "code": 0,
+    "value": {
+      "kind": "idle"
+    },
+    "label": "IDLE"
+  },
+  {
+    "group": "cm_state",
+    "code": 1,
+    "value": {
+      "kind": "addr_query"
+    },
+    "label": "ADDR_QUERY"
+  },
+  {
+    "group": "cm_state",
+    "code": 2,
+    "value": {
+      "kind": "addr_resolved"
+    },
+    "label": "ADDR_RESOLVED"
+  },
+  {
+    "group": "cm_state",
+    "code": 3,
+    "value": {
+      "kind": "route_query"
+    },
+    "label": "ROUTE_QUERY"
+  },
+  {
+    "group": "cm_state",
+    "code": 4,
+    "value": {
+      "kind": "route_resolved"
+    },
+    "label": "ROUTE_RESOLVED"
+  },
+  {
+    "group": "cm_state",
+    "code": 5,
+    "value": {
+      "kind": "connect"
+    },
+    "label": "CONNECT"
+  },
+  {
+    "group": "cm_state",
+    "code": 6,
+    "value": {
+      "kind": "disconnect"
+    },
+    "label": "DISCONNECT"
+  },
+  {
+    "group": "cm_state",
+    "code": 7,
+    "value": {
+      "kind": "addr_bound"
+    },
+    "label": "ADDR_BOUND"
+  },
+  {
+    "group": "cm_state",
+    "code": 8,
+    "value": {
+      "kind": "listen"
+    },
+    "label": "LISTEN"
+  },
+  {
+    "group": "cm_state",
+    "code": 9,
+    "value": {
+      "kind": "device_removal"
+    },
+    "label": "DEVICE_REMOVAL"
+  },
+  {
+    "group": "cm_state",
+    "code": 10,
+    "value": {
+      "kind": "destroying"
+    },
+    "label": "DESTROYING"
+  },
+  {
+    "group": "cm_state",
+    "code": 42,
+    "value": {
+      "kind": "unknown",
+      "code": 42
+    },
+    "label": "STATE 42"
+  },
+  {
+    "group": "port_space",
+    "code": 2,
+    "value": {
+      "kind": "ipoib"
+    },
+    "label": "IPOIB"
+  },
+  {
+    "group": "port_space",
+    "code": 262,
+    "value": {
+      "kind": "tcp"
+    },
+    "label": "TCP"
+  },
+  {
+    "group": "port_space",
+    "code": 273,
+    "value": {
+      "kind": "udp"
+    },
+    "label": "UDP"
+  },
+  {
+    "group": "port_space",
+    "code": 319,
+    "value": {
+      "kind": "ib"
+    },
+    "label": "IB"
+  },
+  {
+    "group": "port_space",
+    "code": 511,
+    "value": {
+      "kind": "unknown",
+      "code": 511
+    },
+    "label": "PS 0x01ff"
+  }
+]

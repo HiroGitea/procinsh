@@ -177,9 +177,10 @@ impl SystemMonitor {
                         previous_warnings = data.warnings.clone();
                     }
                     log::debug!(
-                        "System snapshot collected processes={} fd_relations={}",
+                        "System snapshot collected processes={} fd_relations={} rdma_relations={}",
                         data.processes.len(),
-                        data.fd_relations.len()
+                        data.fd_relations.len(),
+                        data.rdma_relations.len()
                     );
                     for relation in &mut data.fd_relations {
                         if let Some(socket) = &mut relation.socket
@@ -187,6 +188,15 @@ impl SystemMonitor {
                         {
                             socket.remote_hostname =
                                 socket.remote.and_then(|a| resolver.lookup(a.ip));
+                        }
+                    }
+                    for relation in &mut data.rdma_relations {
+                        if relation.peer.is_none() {
+                            relation.remote_hostname = relation
+                                .cm
+                                .as_ref()
+                                .and_then(|cm| cm.destination?.ip())
+                                .and_then(|ip| resolver.lookup(ip));
                         }
                     }
                     let data = Arc::new(data);
