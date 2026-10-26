@@ -4,6 +4,7 @@ use axum::response::{
     sse::{Event, KeepAlive},
 };
 use procinsh_protocol::ipc::schema::MonitorEvent;
+use serde_json::Value;
 use std::{
     convert::Infallible,
     sync::Arc,
@@ -12,28 +13,37 @@ use std::{
 
 // HTTP formatting, JSON output, delta selection and SSE recovery all happen
 // in the HTTP worker. IPC carries complete structured observations.
-fn encode(event: MonitorEvent, delivery: &mut SnapshotEncoder) -> Vec<(&'static str, String)> {
+/// SSE events for `event`, and the complete snapshot it carries, if any.
+pub(super) fn encode(
+    event: MonitorEvent,
+    delivery: &mut SnapshotEncoder,
+) -> (Vec<(&'static str, String)>, Option<Arc<Value>>) {
     match event {
-        MonitorEvent::Observation(data) => vec![("observation", data.to_string())],
-        MonitorEvent::Activity(data) => vec![("activity", data.to_string())],
-        MonitorEvent::Snapshot(data) => vec![(
-            "snapshot",
-            delivery
-                .encode(Arc::new(data), false, Instant::now())
-                .unwrap(),
-        )],
-        MonitorEvent::Gap { dropped, snapshot } => vec![
+        MonitorEvent::Observation(data) => (vec![("observation", data.to_string())], None),
+        MonitorEvent::Activity(data) => (vec![("activity", data.to_string())], None),
+        MonitorEvent::Snapshot(data) => {
+            let data = Arc::new(data);
+            let encoded = delivery
+                .encode(data.clone(), false, Instant::now())
+                .unwrap();
+            (vec![("snapshot", encoded)], Some(data))
+        }
+        MonitorEvent::Gap { dropped, snapshot } => {
+            let snapshot = Arc::new(snapshot);
+            let encoded = delivery
+                .encode(snapshot.clone(), true, Instant::now())
+                .unwrap();
             (
-                "gap",
-                serde_json::json!({"dropped_frames":dropped}).to_string(),
-            ),
-            (
-                "snapshot",
-                delivery
-                    .encode(Arc::new(snapshot), true, Instant::now())
-                    .unwrap(),
-            ),
-        ],
+                vec![
+                    (
+                        "gap",
+                        serde_json::json!({"dropped_frames":dropped}).to_string(),
+                    ),
+                    ("snapshot", encoded),
+                ],
+                Some(snapshot),
+            )
+        }
     }
 }
 
@@ -45,7 +55,7 @@ pub(super) fn response(state: Arc<AppState>, mut session: ObservationSession) ->
         loop {
             let idle = event.is_none();
             if let Some(event) = event.take() {
-                for (name, data) in encode(event, &mut delivery) {
+                for (name, data) in encode(event, &mut delivery).0 {
                     let path = if name == "observation" { "/api/processes/events" } else { "/api/system/events" };
                     log::debug!("SSE {path} event={name} payload_bytes={}", data.len());
                     yield Ok::<_, Infallible>(Event::default().event(name).data(data));

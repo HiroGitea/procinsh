@@ -1,3 +1,4 @@
+use super::hosts::AgentLink;
 use anyhow::{Context, Result, bail};
 use procinsh_protocol::ipc::{schema::*, transport};
 use std::{net::Shutdown, os::unix::net::UnixStream, sync::Arc};
@@ -13,6 +14,8 @@ enum Backend {
         sender: mpsc::Sender<PendingRequest>,
         shutdown: UnixStream,
     },
+    /// A remote host's helper, reached through its agent link.
+    Agent(Arc<AgentLink>),
 }
 
 /// A bounded queue and one I/O worker serialize socket access. A timed-out
@@ -20,6 +23,9 @@ enum Backend {
 #[derive(Clone)]
 pub(super) struct MonitorClient(Arc<Backend>);
 impl MonitorClient {
+    pub(super) fn agent(link: Arc<AgentLink>) -> Self {
+        Self(Arc::new(Backend::Agent(link)))
+    }
     pub(super) fn unavailable() -> Self {
         Self(Arc::new(Backend::Unavailable))
     }
@@ -60,6 +66,7 @@ impl MonitorClient {
     pub(super) async fn request(&self, request: MonitorRequest) -> Result<MonitorResponse> {
         match &*self.0 {
             Backend::Unavailable => bail!("privileged helper unavailable"),
+            Backend::Agent(link) => link.request(request).await,
             Backend::Remote { sender, shutdown } => {
                 let (reply, received) = oneshot::channel();
                 sender
@@ -90,9 +97,11 @@ impl MonitorClient {
         }
     }
 
-    fn close(&self, session: u64) {
+    /// Queues a session close without waiting for the reply.
+    pub(super) fn close(&self, session: u64) {
         match &*self.0 {
             Backend::Unavailable => {}
+            Backend::Agent(link) => link.close_session(session),
             Backend::Remote { sender, .. } => {
                 let (reply, _received) = oneshot::channel();
                 // Keep the receiver alive until after enqueue; unlike normal

@@ -2,7 +2,7 @@ use super::{client::MonitorClient, privileges};
 use anyhow::{Context, Result, ensure};
 use procinsh_protocol::ipc::{schema::*, transport};
 use std::{
-    net::{Shutdown, SocketAddr},
+    net::Shutdown,
     os::{
         fd::AsRawFd,
         unix::{net::UnixStream, process::CommandExt},
@@ -85,7 +85,7 @@ impl Drop for HelperSupervisor {
     }
 }
 
-pub(crate) fn run(listen: &[SocketAddr]) -> Result<()> {
+pub(crate) fn run(config: super::ServerConfig) -> Result<()> {
     let path = std::env::current_exe()?.with_file_name("procinsh-privileged-helper");
     privileges::close_inherited()?;
     // This runs before Tokio creates any threads. Keep no_new_privs unset until
@@ -159,7 +159,7 @@ pub(crate) fn run(listen: &[SocketAddr]) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    let result = runtime.block_on(super::server::run(listen, client));
+    let result = runtime.block_on(super::server::run(config, client));
     runtime.shutdown_timeout(Duration::from_secs(1));
     result
 }
