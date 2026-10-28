@@ -54,7 +54,8 @@ sudo setcap \
 
 ### Multiple hosts
 
-You can view multiple hosts together.
+Run procinsh as an agent on each host and connect it to a hub with `--connect`
+to view multiple hosts together in one screen.
 
 ```sh
 # hub (its own web UI on 127.0.0.1:9090)
