@@ -54,13 +54,7 @@ sudo setcap \
 
 ### Multiple hosts
 
-One procinsh can show several machines, such as bare-metal servers, VMs and
-containers. Run a hub that accepts agents, and run procinsh on each other
-machine with `--connect`. Every agent needs its own privileged helper, like a
-standalone procinsh. Agents collect only while someone views them on the hub.
-Pick a host in the list, process, or space view; the space view also offers
-"All hosts (layers)" to stack every host and draw connections between them,
-including TCP/UDP connections and RDMA (InfiniBand/RoCE) queue pairs.
+You can view multiple hosts together.
 
 ```sh
 # hub (its own web UI on 127.0.0.1:9090)
@@ -74,9 +68,7 @@ procinsh --connect 100.64.0.1:9190 --host-name gpu-node-1 \
   --agent-token-file ~/procinsh-token
 ```
 
-The hub can read everything its agents can, including process memory and
-environment variables. The agent link is not encrypted; run hubs and agents
-only on a secure network.
+<img src="./images/procinsh_multi_host.png" alt="Three KVM virtual machines in the All hosts (layers) view" width="800">
 
 ### Self build on Linux
 
