@@ -264,10 +264,6 @@ function layerBounds(): LayerBounds[] {
     ];
   });
 }
-/** The host layer entered with the layer picker or 1-9; null shows every layer. */
-let activeLayer: string | null = null;
-/** The rendered picker state; rebuilding only on change keeps button focus. */
-let pickerState = "";
 /** Frames host layer `index` from the top, or every layer for -1. */
 function focusLayer(index: number) {
   const hosts = [...data.hostLayerZ.keys()];
@@ -275,44 +271,6 @@ function focusLayer(index: number) {
   stopTour();
   camera.fit(index < 0 ? worldPositions() : layerPositions(hosts[index]));
   cameraMoved = true;
-  activeLayer = index < 0 ? null : hosts[index];
-  renderLayerPicker();
-}
-/** A floor picker like an indoor map's: All, then layers 1, 2, … top to bottom. */
-function renderLayerPicker() {
-  const picker = $("layer-picker");
-  const hosts = [...data.hostLayerZ.keys()];
-  if (activeLayer !== null && !hosts.includes(activeLayer)) activeLayer = null;
-  const state = JSON.stringify([hosts, activeLayer]);
-  if (state === pickerState) return;
-  pickerState = state;
-  picker.hidden = hosts.length < 2;
-  if (picker.hidden) return;
-  const button = (
-    text: string,
-    label: string,
-    active: boolean,
-    index: number,
-  ) => {
-    const element = document.createElement("button");
-    element.textContent = text;
-    element.title = label;
-    element.setAttribute("aria-label", label);
-    element.setAttribute("aria-pressed", String(active));
-    element.onclick = () => focusLayer(index);
-    return element;
-  };
-  picker.replaceChildren(
-    button("ALL", "All layers (0)", activeLayer === null, -1),
-    ...hosts.map((host, index) =>
-      button(
-        String(index + 1),
-        `Layer ${index + 1}: ${host}${index < 9 ? ` (${index + 1})` : ""}`,
-        activeLayer === host,
-        index,
-      ),
-    ),
-  );
 }
 function retainSelection() {
   selection.retain({
@@ -399,7 +357,6 @@ function updateSnapshot() {
     camera.fit(worldPositions());
     fittedLayers = data.hostLayerZ.size;
   }
-  renderLayerPicker();
   updateDetails();
   syncTourFromUrl();
 }
@@ -442,8 +399,6 @@ function fitScene() {
   stopTour();
   if (data.nodes.size) camera.fit(worldPositions());
   cameraMoved = false;
-  activeLayer = null;
-  renderLayerPicker();
 }
 
 function rearrangeScene() {
