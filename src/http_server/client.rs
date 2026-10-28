@@ -72,6 +72,9 @@ impl MonitorClient {
     }
 
     pub(super) async fn request(&self, request: MonitorRequest) -> Result<MonitorResponse> {
+        if let Backend::Agent(link) = &*self.0 {
+            return link.request(request).await;
+        }
         let session = match &request {
             MonitorRequest::Poll { session } => Some(*session),
             _ => None,
@@ -99,7 +102,7 @@ impl MonitorClient {
     ) -> Result<crate::ipc::schema::MonitorResponse> {
         match &*self.0 {
             Backend::Unavailable => bail!("privileged helper unavailable"),
-            Backend::Agent(link) => link.request(request).await,
+            Backend::Agent(_) => bail!("raw acquisition is unavailable through an agent link"),
             Backend::Remote {
                 sender, shutdown, ..
             } => {

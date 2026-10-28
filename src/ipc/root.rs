@@ -12,6 +12,7 @@
 //! - [`registers`] (`pub(crate)`): `mod registers`.
 //! - [`stack`] (`pub(crate)`): `mod stack`.
 //! - [`acquisition`] (`pub(crate)`): `mod acquisition`.
+//! - [`rdma`] (`pub(crate)`): `mod rdma`.
 //! - [`elf`] (`pub(crate)`): `mod elf`.
 // Each executable uses a different subset of the shared wire declarations.
 #![allow(dead_code)]
@@ -34,3 +35,5 @@ pub(crate) mod stack;
 pub(crate) mod acquisition;
 
 pub(crate) mod elf;
+
+pub(crate) mod rdma;

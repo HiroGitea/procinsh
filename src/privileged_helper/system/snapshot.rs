@@ -16,14 +16,6 @@
 use super::hardware::HardwareObservation;
 use super::hardware::HardwareSources;
 use super::rdma;
-use crate::privileged_helper::process::{self, ProcessId, ProcessScanner, ProcessSummary, SocketInfo};
-use crate::privileged_helper::resource::{DeviceId, IpcIdentity, IpcKind};
-#[cfg(test)]
-use crate::privileged_helper::socket_types::SocketState;
-use crate::privileged_helper::socket_types::{
-    AddressFamily, SocketConnectionStatus, SocketProtocol, SocketType,
-};
-use crate::privileged_helper::socket_types::{FdAccess, FdKind};
 /// A Linux process and its observed structural address space, without RSS/PSS.
 /// CPU and RSS measurements belong to [`crate::privileged_helper::process::ProcessSummary`].
 pub(in crate::privileged_helper) use crate::ipc::model::system::{
@@ -420,6 +412,15 @@ pub(super) fn collect_from(
     );
     result.rdma_ports = observed.ports;
     result.rdma_relations = observed.relations;
+    for relation in &mut result.rdma_relations {
+        if relation.peer.is_none() {
+            relation.remote_hostname = relation
+                .cm
+                .as_ref()
+                .and_then(|cm| cm.destination?.ip())
+                .and_then(|ip| resolver.lookup(ip));
+        }
+    }
     result.warnings.extend(observed.warnings);
     #[cfg(test)]
     {

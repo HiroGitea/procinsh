@@ -9,11 +9,11 @@ use super::super::{
     hosts::{AgentLink, correlate},
 };
 use super::process::ApiError;
+use crate::http_server::protocol::MonitorRequest;
 use axum::response::{
     IntoResponse, Response, Sse,
     sse::{Event, KeepAlive},
 };
-use procinsh_protocol::ipc::schema::MonitorRequest;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap},

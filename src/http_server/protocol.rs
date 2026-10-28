@@ -19,6 +19,7 @@ pub(super) use crate::ipc::schema::{
 };
 use anyhow::Result;
 use serde_json::Value;
+#[derive(serde::Serialize, serde::Deserialize)]
 pub(super) enum MonitorEvent {
     Observation(Value),
     Snapshot(Value),
@@ -27,12 +28,15 @@ pub(super) enum MonitorEvent {
         dropped: u64,
         snapshot: Value,
     },
+    #[serde(skip)]
     AcquiredSnapshot(std::sync::Arc<crate::ipc::model::system::SystemSnapshot>),
+    #[serde(skip)]
     AcquisitionGap {
         dropped: u64,
         snapshot: std::sync::Arc<crate::ipc::model::system::SystemSnapshot>,
     },
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 pub(super) enum MonitorResponse {
     Data(Value),
     Started {

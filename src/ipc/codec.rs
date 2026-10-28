@@ -349,6 +349,15 @@ mod tests {
     fn captured_snapshots_remain_typed_until_main_processing() {
         let snapshot = crate::ipc::model::system::SystemSnapshot {
             captured_at: 123,
+            rdma_ports: vec![crate::ipc::rdma::RdmaPortInfo {
+                device: "mlx5_0".into(),
+                port: 1,
+                link_layer: Some("InfiniBand".into()),
+                state: Some("ACTIVE".into()),
+                lid: Some(42),
+                gid: crate::ipc::rdma::IbGid::parse("fe80:0000:0000:0000:0000:0000:0000:0051"),
+                rate: Some("100 Gb/sec".into()),
+            }],
             raw_sockets: vec![(
                 10,
                 crate::ipc::model::sockets::SocketInfo {
@@ -373,6 +382,12 @@ mod tests {
             panic!()
         };
         assert_eq!(decoded.captured_at, 123);
+        assert_eq!(decoded.rdma_ports[0].device, "mlx5_0");
+        assert_eq!(decoded.rdma_ports[0].lid, Some(42));
+        assert_eq!(
+            decoded.rdma_ports[0].gid.unwrap().to_string(),
+            "fe80:0000:0000:0000:0000:0000:0000:0051"
+        );
         assert_eq!(decoded.raw_sockets[0].0, 10);
         assert_eq!(
             decoded.raw_sockets[0].1.state,

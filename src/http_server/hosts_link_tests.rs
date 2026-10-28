@@ -2,11 +2,11 @@
 //! scripted helper.
 
 use super::{AppState, client::MonitorClient, hosts, router::router};
+use crate::ipc::{schema::*, transport};
 use axum::{
     body::{Body, HttpBody},
     http::{Request, StatusCode},
 };
-use procinsh_protocol::ipc::{schema::*, transport};
 use serde_json::{Value, json};
 use std::{
     os::unix::net::UnixStream,
@@ -25,10 +25,10 @@ fn info(name: &str) -> hosts::HostInfo {
 }
 
 fn tcp(id: &str, local: (&str, u16), remote: (&str, u16)) -> Value {
-    json!({"id": id, "peer": null, "shared": false, "socket": {
+    json!({"id": id, "peer": null, "shared": false, "candidate":false,"label":"TCP","endpoint":{"process_id":{"pid":7,"start_time_ticks":1},"fd":3,"fd_count":1,"resource":{"device":{"major":0,"minor":0},"inode":"1","kind":"socket"},"kind":"socket","access":"read_write","connection_status":null}, "socket": {
         "protocol": {"kind": "tcp", "family": "ipv4"}, "state": {"kind": "established"},
         "local": {"ip": local.0, "port": local.1}, "remote": {"ip": remote.0, "port": remote.1},
-        "network_peer": true}})
+        "network_peer": true,"path":null,"remote_hostname":null,"remote_gid":null}})
 }
 
 /// A helper that names its host in every reply and logs the sessions it closes.
@@ -42,36 +42,55 @@ fn scripted_helper(
         let mut sessions = 0;
         while let Ok(request) = transport::read::<MonitorRequest>(&mut helper, MAX_REQUEST) {
             let response: WireResponse = match request {
-                MonitorRequest::Processes => Ok(MonitorResponse::Data(json!([{"host": host}]))),
-                MonitorRequest::Process { id, resource } => {
-                    let resource = match resource {
-                        ProcessResource::Maps => "maps",
-                        _ => "other",
-                    };
+                MonitorRequest::Processes => {
+                    Ok(MonitorResponse::Data(AcquiredData::Processes(vec![
+                        summary(
+                            host,
+                            ProcessId {
+                                pid: 7,
+                                start_time_ticks: 1,
+                            },
+                        ),
+                    ])))
+                }
+                MonitorRequest::Process { id, .. } => {
                     if id.pid == 404 {
                         Err("Process exited".into())
                     } else {
-                        Ok(MonitorResponse::Data(
-                            json!({"host": host, "pid": id.pid, "resource": resource}),
-                        ))
+                        Ok(MonitorResponse::Data(AcquiredData::Maps(
+                            crate::ipc::acquisition::MemoryMaps {
+                                process_id: id,
+                                maps: vec![],
+                                error: Some(host.into()),
+                                captured_at: None,
+                                rollup: None,
+                            },
+                        )))
                     }
                 }
                 MonitorRequest::ObserveSystem => {
                     sessions += 1;
                     Ok(MonitorResponse::Started {
                         session: sessions,
-                        initial: MonitorEvent::Snapshot(json!({
-                            "processes": [], "fd_relations": [relation.clone()],
-                            "device_handles": [], "origin": host})),
+                        initial: MonitorEvent::AcquiredSnapshot(Arc::new(
+                            crate::ipc::model::system::SystemSnapshot {
+                                fd_relations: vec![
+                                    serde_json::from_value(relation.clone()).unwrap(),
+                                ],
+                                warnings: vec![host.into()],
+                                ..Default::default()
+                            },
+                        )),
                     })
                 }
                 MonitorRequest::ObserveProcess { id } => {
                     sessions += 1;
                     Ok(MonitorResponse::Started {
                         session: sessions,
-                        initial: MonitorEvent::Observation(json!({"host": host, "pid": id.pid})),
+                        initial: MonitorEvent::Observation(Arc::new(detail(host, id))),
                     })
                 }
+                MonitorRequest::MappedElf { .. } => Ok(MonitorResponse::Elf(None)),
                 MonitorRequest::Poll { .. } => Ok(MonitorResponse::Event {
                     event: None,
                     closed: false,
@@ -226,16 +245,16 @@ async fn hub_serves_agent_processes_details_and_space_until_offline() {
 
     // The process list and details go to the selected host's helper.
     assert_eq!(
-        json(&app, "/api/processes").await.1,
-        json!([{"host": "hub"}])
+        json(&app, "/api/processes").await.1[0]["name"],
+        json!("hub")
     );
     assert_eq!(
-        json(&app, "/api/processes?host=hub").await.1,
-        json!([{"host": "hub"}])
+        json(&app, "/api/processes?host=hub").await.1[0]["name"],
+        json!("hub")
     );
     assert_eq!(
-        json(&app, "/api/processes?host=agent-a").await.1,
-        json!([{"host": "agent"}])
+        json(&app, "/api/processes?host=agent-a").await.1[0]["name"],
+        json!("agent")
     );
     assert_eq!(
         json(
@@ -243,8 +262,8 @@ async fn hub_serves_agent_processes_details_and_space_until_offline() {
             "/api/processes/maps?host=agent-a&pid=7&start_time_ticks=1"
         )
         .await
-        .1,
-        json!({"host": "agent", "pid": 7, "resource": "maps"})
+        .1["error"],
+        json!("agent")
     );
     let (status, error) = json(
         &app,
@@ -268,10 +287,10 @@ async fn hub_serves_agent_processes_details_and_space_until_offline() {
         "/api/processes/events?host=agent-a&pid=7&start_time_ticks=1",
     )
     .await;
-    assert_eq!(
-        next_event(&mut body).await,
-        ("observation".into(), json!({"host": "agent", "pid": 7}))
-    );
+    let (name, observation) = next_event(&mut body).await;
+    assert_eq!(name, "observation");
+    assert_eq!(observation["summary"]["name"], "agent");
+    assert_eq!(observation["summary"]["identity"]["pid"], 7);
     drop(body);
     until("agent session closed", || {
         agent_closed.lock().unwrap().contains(&1)
@@ -282,7 +301,7 @@ async fn hub_serves_agent_processes_details_and_space_until_offline() {
     let mut body = events(&app, "/api/system/events?host=agent-a").await;
     let (name, snapshot) = next_event(&mut body).await;
     assert_eq!(
-        (name.as_str(), &snapshot["origin"]),
+        (name.as_str(), &snapshot["warnings"][0]),
         ("snapshot", &json!("agent"))
     );
     assert_eq!(snapshot["kind"], "full");
@@ -298,7 +317,7 @@ async fn hub_serves_agent_processes_details_and_space_until_offline() {
             (name, data) if name == "snapshot" => {
                 origins.insert(
                     data["host"].as_str().unwrap().to_owned(),
-                    data["origin"].clone(),
+                    data["warnings"][0].clone(),
                 );
             }
             // Links before both snapshots arrive are empty; a later event adds the match.
@@ -355,4 +374,43 @@ async fn hub_serves_agent_processes_details_and_space_until_offline() {
     stop_wrong.send_replace(true);
     wrong.await.unwrap();
     shutdown.send_replace(true);
+}
+
+fn summary(host: &str, identity: ProcessId) -> crate::ipc::acquisition::ProcessSummary {
+    crate::ipc::acquisition::ProcessSummary {
+        identity,
+        parent_pid: 0,
+        name: host.into(),
+        executable: None,
+        command_line: None,
+        uid: None,
+        username: None,
+        euid: None,
+        effective_username: None,
+        state: "S".into(),
+        started_at: None,
+        cpu_percent: None,
+        rss_bytes: 0,
+        thread_count: 1,
+        raw_ticks: 0,
+        raw_measured_ns: 0,
+    }
+}
+fn detail(host: &str, id: ProcessId) -> crate::ipc::acquisition::ProcessDetailSnapshot {
+    let sample=serde_json::from_value(json!({"timestamp":1,"process_id":id,"rss_bytes":0,"vms_bytes":0,"minor_faults":0,"major_faults":0,"voluntary_context_switches":null,"nonvoluntary_context_switches":null,"io":null,"threads":[],"cpu":0,"nice":0,"priority":20,"ticks":0,"measured_at":0})).unwrap();
+    crate::ipc::acquisition::ProcessDetailSnapshot {
+        summary: summary(host, id),
+        exited: false,
+        error: None,
+        observation: None,
+        process_sample: sample,
+        history: Default::default(),
+        maps: vec![],
+        maps_error: None,
+        maps_captured_at: None,
+        rollup: None,
+        live_samples: vec![],
+        mapping_snapshots: vec![],
+        sampling_error: None,
+    }
 }

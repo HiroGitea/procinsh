@@ -3,10 +3,11 @@
 
 use super::identity::HostInfo;
 use super::listener::{IDLE_TIMEOUT, PING_INTERVAL};
+use super::wire::AgentResponse;
 use super::wire::{self, Message};
 use crate::http_server::client::MonitorClient;
+use crate::http_server::protocol::{MonitorRequest, MonitorResponse};
 use anyhow::{Context, Result, bail};
-use procinsh_protocol::ipc::schema::{MonitorRequest, MonitorResponse, WireResponse};
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -67,7 +68,7 @@ impl Sessions {
         self.0.lock().unwrap().contains(&session)
     }
     /// Records a started session, and forgets `used` once it is closed or failed.
-    fn update(&self, used: Option<u64>, closing: bool, response: &WireResponse) {
+    fn update(&self, used: Option<u64>, closing: bool, response: &AgentResponse) {
         let mut sessions = self.0.lock().unwrap();
         if let Ok(MonitorResponse::Started { session, .. }) = response {
             sessions.insert(*session);
@@ -92,7 +93,7 @@ async fn answer(
     client: &MonitorClient,
     sessions: &Sessions,
     request: MonitorRequest,
-) -> WireResponse {
+) -> AgentResponse {
     let (used, closing) = match &request {
         MonitorRequest::Poll { session } => (Some(*session), false),
         MonitorRequest::Close { session } => (Some(*session), true),

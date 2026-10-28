@@ -134,6 +134,8 @@ struct SystemSnapshotJson {
     pub captured_at: u64,
     pub processes: Vec<ProcessSnapshot>,
     pub fd_relations: Vec<FdRelation>,
+    pub rdma_ports: Vec<crate::ipc::rdma::RdmaPortInfo>,
+    pub rdma_relations: Vec<crate::ipc::rdma::RdmaRelation>,
     pub hardware_devices: Vec<HardwareDevice>,
     pub hardware_paths: Vec<HardwarePath>,
     pub device_handles: Vec<DeviceHandle>,

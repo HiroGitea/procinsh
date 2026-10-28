@@ -1,11 +1,11 @@
 use super::super::{AppState, hosts::ALL_HOSTS};
 use super::hosts::{HostQuery, client};
 use super::process::ApiError;
+use crate::http_server::protocol::MonitorRequest;
 use axum::{
     extract::{Query, State},
     response::Response,
 };
-use crate::http_server::protocol::MonitorRequest;
 use std::sync::Arc;
 
 pub(super) async fn events(

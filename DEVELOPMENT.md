@@ -100,7 +100,7 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 | `src/privileged_helper/system/` | Protected system snapshots, subscriptions and BPF collection |
 | `src/http_server/analysis/hardware/` | Interpret helper-acquired hardware attributes into GPUs, RDMA NICs, accelerators, NVSwitches, PCIe paths, and device holders |
 | `src/privileged_helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
-| `src/main/http_server/hosts/` | Agent links, host registry, and cross-host connection matching |
+| `src/http_server/hosts/` | Agent links, host registry, and cross-host connection matching |
 | `src/privileged_helper/system/rdma/` | RDMA acquisition through netlink and sysfs |
 | `web/src/` | TypeScript pages, SPACE, rendering models, and CSS (HTML entry points: `web/{list,process,space}/index.html`) |
 | `tests/` | Rust, browser, log, and live sensor tests, plus C fixtures |

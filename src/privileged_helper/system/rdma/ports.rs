@@ -1,22 +1,8 @@
 //! Local RDMA port addresses and link state from sysfs.
 
-use super::codes::IbGid;
-use serde::Serialize;
 use std::{fs, path::Path};
 
-/// One port of an RDMA device. Unassigned LIDs and GIDs are null.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub(in crate::privileged_helper::system) struct RdmaPortInfo {
-    pub(in crate::privileged_helper::system) device: String,
-    pub(in crate::privileged_helper::system) port: u32,
-    /// `InfiniBand` or `Ethernet` (RoCE), as written by the kernel.
-    pub(in crate::privileged_helper::system) link_layer: Option<String>,
-    /// Logical port state, such as `ACTIVE`.
-    pub(in crate::privileged_helper::system) state: Option<String>,
-    pub(in crate::privileged_helper::system) lid: Option<u32>,
-    pub(in crate::privileged_helper::system) gid: Option<IbGid>,
-    pub(in crate::privileged_helper::system) rate: Option<String>,
-}
+pub(in crate::privileged_helper::system) use crate::ipc::rdma::*;
 
 fn text(path: &Path) -> Option<String> {
     let value = fs::read_to_string(path).ok()?;
