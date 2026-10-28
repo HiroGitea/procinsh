@@ -52,16 +52,7 @@ pub(super) mod process {
     }
     impl TestTarget {
         pub fn new(name: &str) -> Self {
-            static BUILD: std::sync::Once = std::sync::Once::new();
-            BUILD.call_once(|| {
-                assert!(
-                    Command::new("sh")
-                        .arg("tests/targets/build.sh")
-                        .status()
-                        .unwrap()
-                        .success()
-                )
-            });
+            crate::test_support::build_targets();
             let mut child = Command::new(format!("tests/targets/bin/{name}"))
                 .stdout(Stdio::piped())
                 .spawn()

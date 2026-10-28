@@ -11,6 +11,9 @@
 mod http_server;
 #[path = "../ipc/root.rs"]
 mod ipc;
+#[cfg(test)]
+#[path = "../test_support.rs"]
+mod test_support;
 
 #[cfg(not(all(
     target_os = "linux",

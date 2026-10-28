@@ -9,6 +9,9 @@ mod http_server;
 mod ipc;
 #[path = "root.rs"]
 mod privileged_helper;
+#[cfg(test)]
+#[path = "../test_support.rs"]
+mod test_support;
 
 fn main() -> std::process::ExitCode {
     env_logger::init();
