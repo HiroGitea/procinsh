@@ -1,3 +1,65 @@
+<!-- After updating this file, run `npx doctoc DEVELOPMENT.md` from the repository root. -->
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [ProcInSh Development Guide](#procinsh-development-guide)
+  - [Build and runtime environment](#build-and-runtime-environment)
+    - [Frontend development with Vite](#frontend-development-with-vite)
+    - [Verification before publishing to crates.io](#verification-before-publishing-to-cratesio)
+    - [Releases](#releases)
+  - [Implementation structure](#implementation-structure)
+  - [Privileged helper boundary](#privileged-helper-boundary)
+    - [Ownership inventory](#ownership-inventory)
+    - [Launch, protocol and lifetime](#launch-protocol-and-lifetime)
+    - [Installation, upgrades and containers](#installation-upgrades-and-containers)
+    - [Verification](#verification)
+  - [HTTP API](#http-api)
+    - [`GET /api/processes/events`](#get-apiprocessesevents)
+    - [`GET /api/system/events`](#get-apisystemevents)
+    - [Multiple hosts (hub and agent)](#multiple-hosts-hub-and-agent)
+  - [Backend processing](#backend-processing)
+    - [Common processing and state management](#common-processing-and-state-management)
+    - [Configuration and process list](#configuration-and-process-list)
+    - [On-demand observations, threads, and maps](#on-demand-observations-threads-and-maps)
+    - [FDs and peers](#fds-and-peers)
+    - [Hardware](#hardware)
+    - [RDMA queue pairs](#rdma-queue-pairs)
+    - [Environment variables and auxiliary vectors](#environment-variables-and-auxiliary-vectors)
+    - [Initial/periodic snapshots and live sampling without stopping the target](#initialperiodic-snapshots-and-live-sampling-without-stopping-the-target)
+    - [Process detail monitoring over SSE](#process-detail-monitoring-over-sse)
+    - [System-wide state/structure and viewing sessions](#system-wide-statestructure-and-viewing-sessions)
+    - [System-wide activity collection and SSE delivery](#system-wide-activity-collection-and-sse-delivery)
+  - [Frontend processing](#frontend-processing)
+    - [Page entry points and file responsibilities](#page-entry-points-and-file-responsibilities)
+    - [Process list `/list`](#process-list-list)
+    - [Process details `/process/{pid}`](#process-details-processpid)
+      - [List and process detail verification entry points](#list-and-process-detail-verification-entry-points)
+    - [SPACE `/` and `/space`](#space--and-space)
+      - [Receiving data and updating structure](#receiving-data-and-updating-structure)
+      - [Layout of processes, peers, and files](#layout-of-processes-peers-and-files)
+      - [Activity display and render loop](#activity-display-and-render-loop)
+      - [Search, selection, and camera controls](#search-selection-and-camera-controls)
+      - [Connection and page lifecycle](#connection-and-page-lifecycle)
+      - [SPACE verification entry points](#space-verification-entry-points)
+  - [SPACE recording and replay](#space-recording-and-replay)
+    - [Recording JSON contract](#recording-json-contract)
+    - [Static replay site and Cloudflare Pages size limit](#static-replay-site-and-cloudflare-pages-size-limit)
+    - [Recording browser demos](#recording-browser-demos)
+    - [Recording the Linux kernel build demo](#recording-the-linux-kernel-build-demo)
+    - [Recording/replay verification](#recordingreplay-verification)
+  - [Permissions](#permissions)
+  - [Logging](#logging)
+  - [Verification](#verification-1)
+    - [Browser tests](#browser-tests)
+    - [Generating communication/IPC load with Chromium](#generating-communicationipc-load-with-chromium)
+    - [Live sensor tests](#live-sensor-tests)
+  - [Related links](#related-links)
+  - [Acquisition and analysis boundary](#acquisition-and-analysis-boundary)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # ProcInSh Development Guide
 
 ProcInSh is a web application for observing Linux x86-64 processes. Its Rust HTTP server collects information from `/proc`, perf, and eBPF and serves it to the browser.
