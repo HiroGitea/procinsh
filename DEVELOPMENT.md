@@ -68,8 +68,6 @@
 
 # ProcInSh Development Guide
 
-ProcInSh is a web application for observing Linux x86-64 processes. Its privileged helper collects information from `/proc`, perf, and eBPF; its Rust HTTP server analyzes the collected values and serves them to the browser.
-
 This guide describes the implementation, behavior, APIs, and development and verification procedures. Run the commands below from the repository root.
 
 ## Build and runtime environment
