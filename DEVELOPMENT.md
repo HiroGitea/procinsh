@@ -9,7 +9,6 @@
     - [Verification before publishing to crates.io](#verification-before-publishing-to-cratesio)
     - [Releases](#releases)
   - [Implementation structure](#implementation-structure)
-    - [Acquisition and analysis boundary](#acquisition-and-analysis-boundary)
     - [Frontend processing](#frontend-processing)
       - [Page entry points and file responsibilities](#page-entry-points-and-file-responsibilities)
       - [Process list `/list`](#process-list-list)
@@ -158,7 +157,7 @@ HTTP handlers use the shared IPC schema in `ipc/schema.rs` and the client in `ht
 
 As an exception, domain types and subscription operations re-exported through façades use `pub(in crate::privileged_helper)`. This visibility allows parents to re-export items from private children; it does not expose them outside the crate. Internal tests live in their respective modules. `tests/http.rs` starts the binary to verify HTTP, SSE, and SIGTERM shutdown.
 
-Tokio/Axum handles HTTP and SSE. Detail APIs send bounded IPC requests to the helper. Periodic process observation and system-wide structure/activity collection run on helper OS threads. Process detail monitoring has independent state per connection. HTTP `AppState` holds the IPC client and shutdown state; helper `MonitorState` owns the process scanner and collection subsystems. Process monitoring manages connection counts and collectors; each collector manages its perf lifecycle. Main owns symbol/unwind caches, per-session rate calculations and histories. See [Acquisition and analysis boundary](#acquisition-and-analysis-boundary).
+Tokio/Axum handles HTTP and SSE. Detail APIs send bounded IPC requests to the helper. Periodic process observation and system-wide structure/activity collection run on helper OS threads. Process detail monitoring has independent state per connection. HTTP `AppState` holds the IPC client and shutdown state; helper `MonitorState` owns the process scanner and collection subsystems. Process monitoring manages connection counts and collectors; each collector manages its perf lifecycle. Main owns symbol/unwind caches, per-session rate calculations and histories.
 
 Web UI API types live in `web/src/shared/api-types.ts` and are maintained alongside Rust JSON responses. The contract includes null handling and hexadecimal address strings. These are compile-time types, not runtime input validation. Vite bundles Three.js as an npm dependency; TypeScript and type definitions are build-only npm dependencies.
 
@@ -169,32 +168,6 @@ Do not exhaustively copy child module internals, fields, enum variants, or test-
 This manual list compensates for the pinned rustdoc's inability to show restricted re-exports as façade interfaces in this module arrangement.
 Name links open the defining rustdoc page, whose **Source** link opens the implementation.
 CI treats `rustdoc::broken_intra_doc_links` as an error to catch broken links, but does not check that signatures written in comments match the code.
-
-### Acquisition and analysis boundary
-
-The privileged helper owns protected reads and kernel resources. The HTTP process
-clears capabilities and interprets acquired values before exposing the existing
-HTTP API. No file descriptor crosses IPC.
-
-| Helper acquisition | Main interpretation |
-| --- | --- |
-| Protected procfs reads, process/FD identity checks and account-name acquisition | Process and thread rates, histories, environment/auxv formatting |
-| Raw executable-header bytes, ptrace/perf registers, stack bytes, instruction bytes and mapping metadata | Process architecture identification, register classification and roles, framehop unwinding and iced-x86 disassembly |
-| Open a currently executable mapped file, pin and verify its device/inode, read bounded bytes and recheck metadata | ELF/DWARF parsing, decompression, symbol/source lookup and caching |
-| FD ownership, socket metadata, namespace diagnostics and IPoIB neighbor observations | Peer/shared-holder relationships and destination enrichment |
-| BPF loading, attachment, bounded ring draining and map reads | File/IPC aggregation, CPU counter deltas and signal identity matching |
-| Character-device metadata and bounded raw sysfs/procfs hardware attributes | In-memory hardware topology, paths and device-handle grouping |
-| Observation sessions, acquisition cancellation, kernel resource cleanup and bounded reverse DNS workers/caches | Response formatting and hostname attachment |
-
-`src/` contains only `ipc`, `privileged_helper` and `http_server`. The two executable
-subsystems expose only `run`; analysis, JSON adapters and presentation models are
-private children of `http_server`. IPC modules are visible only within the crate.
-Each executable includes the same
-IPC source definitions; main supplies their serde implementations through remote
-derives and JSON adapters. IPC has no serde or JSON values. The normal helper build
-does not include main's HTTP, JSON, ELF/DWARF, framehop, iced-x86, hardware-topology
-or DNS code. Helper tests include main's presentation adapters to exercise the
-existing HTTP contracts without putting that code into the installed helper.
 
 ### Frontend processing
 
