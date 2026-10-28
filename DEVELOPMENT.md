@@ -10,39 +10,46 @@
     - [Verification before publishing to crates.io](#verification-before-publishing-to-cratesio)
     - [Releases](#releases)
   - [Implementation structure](#implementation-structure)
-  - [Privileged helper boundary](#privileged-helper-boundary)
-    - [Ownership inventory](#ownership-inventory)
-    - [Launch, protocol and lifetime](#launch-protocol-and-lifetime)
-    - [Installation, upgrades and containers](#installation-upgrades-and-containers)
-    - [Verification](#verification)
-  - [HTTP API](#http-api)
-    - [`GET /api/processes/events`](#get-apiprocessesevents)
-    - [`GET /api/system/events`](#get-apisystemevents)
-    - [Multiple hosts (hub and agent)](#multiple-hosts-hub-and-agent)
-  - [Backend processing](#backend-processing)
-    - [Common processing and state management](#common-processing-and-state-management)
-    - [Configuration and process list](#configuration-and-process-list)
-    - [On-demand observations, threads, and maps](#on-demand-observations-threads-and-maps)
-    - [FDs and peers](#fds-and-peers)
-    - [Hardware](#hardware)
-    - [RDMA queue pairs](#rdma-queue-pairs)
-    - [Environment variables and auxiliary vectors](#environment-variables-and-auxiliary-vectors)
-    - [Initial/periodic snapshots and live sampling without stopping the target](#initialperiodic-snapshots-and-live-sampling-without-stopping-the-target)
-    - [Process detail monitoring over SSE](#process-detail-monitoring-over-sse)
-    - [System-wide state/structure and viewing sessions](#system-wide-statestructure-and-viewing-sessions)
-    - [System-wide activity collection and SSE delivery](#system-wide-activity-collection-and-sse-delivery)
-  - [Frontend processing](#frontend-processing)
-    - [Page entry points and file responsibilities](#page-entry-points-and-file-responsibilities)
-    - [Process list `/list`](#process-list-list)
-    - [Process details `/process/{pid}`](#process-details-processpid)
-      - [List and process detail verification entry points](#list-and-process-detail-verification-entry-points)
-    - [SPACE `/` and `/space`](#space--and-space)
-      - [Receiving data and updating structure](#receiving-data-and-updating-structure)
-      - [Layout of processes, peers, and files](#layout-of-processes-peers-and-files)
-      - [Activity display and render loop](#activity-display-and-render-loop)
-      - [Search, selection, and camera controls](#search-selection-and-camera-controls)
-      - [Connection and page lifecycle](#connection-and-page-lifecycle)
-      - [SPACE verification entry points](#space-verification-entry-points)
+    - [Acquisition and analysis boundary](#acquisition-and-analysis-boundary)
+    - [Frontend processing](#frontend-processing)
+      - [Page entry points and file responsibilities](#page-entry-points-and-file-responsibilities)
+      - [Process list `/list`](#process-list-list)
+      - [Process details `/process/{pid}`](#process-details-processpid)
+        - [List and process detail verification entry points](#list-and-process-detail-verification-entry-points)
+      - [SPACE `/` and `/space`](#space--and-space)
+        - [Receiving data and updating structure](#receiving-data-and-updating-structure)
+        - [Layout of processes, peers, and files](#layout-of-processes-peers-and-files)
+        - [Activity display and render loop](#activity-display-and-render-loop)
+        - [Search, selection, and camera controls](#search-selection-and-camera-controls)
+        - [Connection and page lifecycle](#connection-and-page-lifecycle)
+        - [SPACE verification entry points](#space-verification-entry-points)
+    - [HTTP API](#http-api)
+      - [`GET /api/processes/events`](#get-apiprocessesevents)
+      - [`GET /api/system/events`](#get-apisystemevents)
+    - [Backend processing](#backend-processing)
+      - [Common processing and state management](#common-processing-and-state-management)
+      - [Configuration and process list](#configuration-and-process-list)
+      - [Analysis, caches, and session state](#analysis-caches-and-session-state)
+      - [Hardware interpretation](#hardware-interpretation)
+      - [Process detail monitoring over SSE](#process-detail-monitoring-over-sse)
+      - [System-wide state/structure and viewing sessions](#system-wide-statestructure-and-viewing-sessions)
+      - [System-wide activity and SSE delivery](#system-wide-activity-and-sse-delivery)
+      - [Multiple hosts (hub and agent)](#multiple-hosts-hub-and-agent)
+    - [IPC between backend and privileged helper](#ipc-between-backend-and-privileged-helper)
+      - [Launch, protocol and lifetime](#launch-protocol-and-lifetime)
+      - [Encoding and validation](#encoding-and-validation)
+      - [Mapped-file acquisition](#mapped-file-acquisition)
+    - [Privileged helper](#privileged-helper)
+      - [Ownership inventory](#ownership-inventory)
+      - [On-demand observations, threads, and maps](#on-demand-observations-threads-and-maps)
+      - [FDs and peers](#fds-and-peers)
+      - [RDMA queue pairs](#rdma-queue-pairs)
+      - [Environment variables and auxiliary vectors](#environment-variables-and-auxiliary-vectors)
+      - [Initial/periodic snapshots and live sampling without stopping the target](#initialperiodic-snapshots-and-live-sampling-without-stopping-the-target)
+      - [Hardware acquisition limits](#hardware-acquisition-limits)
+      - [System-wide eBPF collection](#system-wide-ebpf-collection)
+      - [Installation, upgrades and containers](#installation-upgrades-and-containers)
+      - [Privilege separation verification](#privilege-separation-verification)
   - [SPACE recording and replay](#space-recording-and-replay)
     - [Recording JSON contract](#recording-json-contract)
     - [Static replay site and Cloudflare Pages size limit](#static-replay-site-and-cloudflare-pages-size-limit)
@@ -51,18 +58,17 @@
     - [Recording/replay verification](#recordingreplay-verification)
   - [Permissions](#permissions)
   - [Logging](#logging)
-  - [Verification](#verification-1)
+  - [Verification](#verification)
     - [Browser tests](#browser-tests)
     - [Generating communication/IPC load with Chromium](#generating-communicationipc-load-with-chromium)
     - [Live sensor tests](#live-sensor-tests)
   - [Related links](#related-links)
-  - [Acquisition and analysis boundary](#acquisition-and-analysis-boundary)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 # ProcInSh Development Guide
 
-ProcInSh is a web application for observing Linux x86-64 processes. Its Rust HTTP server collects information from `/proc`, perf, and eBPF and serves it to the browser.
+ProcInSh is a web application for observing Linux x86-64 processes. Its privileged helper collects information from `/proc`, perf, and eBPF; its Rust HTTP server analyzes the collected values and serves them to the browser.
 
 This guide describes the implementation, behavior, APIs, and development and verification procedures. Run the commands below from the repository root.
 
@@ -142,6 +148,9 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 
 ## Implementation structure
 
+The implementation is described from the browser toward the kernel: frontend, HTTP API, unprivileged backend, private IPC, and privileged helper. Here, **backend** means the `procinsh` HTTP process; **helper** means the separate `procinsh-privileged-helper` process.
+
+
 | Location | Responsibility |
 |---|---|
 | `src/http_server/entry.rs` | CLI, logger initialization, startup configuration validation |
@@ -170,7 +179,7 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 `main.rs` starts the unprivileged `http_server` module tree. The separate
 `procinsh-privileged-helper` target owns `privileged_helper/root.rs` and all
 inspection modules. The small library exposes only protocol definitions and
-bounded transport. See [privilege separation](#privileged-helper-boundary)
+bounded transport. See [privilege separation](#privileged-helper)
 for the ownership inventory, deployment, IPC limits and verification. Modules live at the lowest common ancestor of their direct consumers. Child module declarations are private; items needed by parents generally use `pub(super)`.
 
 Rust type names express responsibilities. Data and values describe their contents (`ProcessId`, `ProcessSummary`, `ProcessSnapshot`); types managing operations, state, or resources describe their roles (`ProcessScanner`, `ProcessMonitor`, `FileActivityCollector`, `PerfEventReader`, `PtraceGuard`). Helper methods alone do not determine this distinction, and types do not all require mechanical suffixes.
@@ -195,129 +204,216 @@ This manual list compensates for the pinned rustdoc's inability to show restrict
 Name links open the defining rustdoc page, whose **Source** link opens the implementation.
 CI treats `rustdoc::broken_intra_doc_links` as an error to catch broken links, but does not check that signatures written in comments match the code.
 
-## Privileged helper boundary
+### Acquisition and analysis boundary
 
-One Cargo package builds/installs `procinsh` and `procinsh-privileged-helper`;
-`default-run = "procinsh"` preserves `cargo run`. Cargo provisions no capabilities.
-The sibling helper is separately executed with Command, never a forked copy.
+The privileged helper owns protected reads and kernel resources. The HTTP process
+clears capabilities and interprets acquired values before exposing the existing
+HTTP API. No file descriptor crosses IPC.
 
-The main executable owns HTTP, routing, middleware, SSE, JSON formatting and
-per-viewer system snapshot delta encoding. Its module closure excludes all
-acquisition modules. Before starting any threads, it clears all
-effective/permitted/inheritable/ambient capabilities. Both executables retain
-the launching process's UID/GID and supplementary groups, including when launched
-as root. `SUDO_UID` and `SUDO_GID` are not interpreted.
-`no_new_privs` is set after helper exec and before Tokio/HTTP startup: setting it
-before exec would suppress the helper's file capabilities. Both disable dumps.
-
-### Ownership inventory
-
-| Helper modules | Privileged operations and resources |
+| Helper acquisition | Main interpretation |
 | --- | --- |
-| `process/{identity,procfs,discovery,details,threads,maps}` | Protected procfs, PID/start-time checks, summaries/environment |
-| `process/{fds,socket_metadata,socket_namespace,sockets}`, `netlink` | pidfds, pidfd_getfd duplicates, namespace handles, setns and complete diagnostic socket queries |
-| `process/snapshot/{ptrace,registers,capture}`, `process/memory` | Ptrace guards, process_vm_readv, bounded register/stack/code capture |
-| `process/snapshot/{perf,sample}`, `process/elf` | Perf FDs/mmaps, raw samples and identity-verified ELF byte acquisition |
-| `process/monitoring` | Per-viewer samplers, histories, cancellation/cleanup |
-| `system/{activity,ipc,sched,files,signals}` | BPF loading/attachment, links/maps and polling |
-| `system/{snapshot,ipoib}` | Protected process/FD metadata and namespace-scoped neighbor acquisition |
+| Protected procfs reads, process/FD identity checks and account-name acquisition | Process and thread rates, histories, environment/auxv formatting |
+| Raw executable-header bytes, ptrace/perf registers, stack bytes, instruction bytes and mapping metadata | Process architecture identification, register classification and roles, framehop unwinding and iced-x86 disassembly |
+| Open a currently executable mapped file, pin and verify its device/inode, read bounded bytes and recheck metadata | ELF/DWARF parsing, decompression, symbol/source lookup and caching |
+| FD ownership, socket metadata, namespace diagnostics and IPoIB neighbor observations | Peer/shared-holder relationships and destination enrichment |
+| BPF loading, attachment, bounded ring draining and map reads | File/IPC aggregation, CPU counter deltas and signal identity matching |
+| Character-device metadata and bounded raw sysfs/procfs hardware attributes | In-memory hardware topology, paths and device-handle grouping |
+| Observation sessions, acquisition cancellation, kernel resource cleanup and bounded reverse DNS workers/caches | Response formatting and hostname attachment |
 
-The helper intersects acquired capabilities with DAC_READ_SEARCH, SYS_PTRACE,
-SYS_ADMIN, PERFMON and BPF, clears inheritable/ambient sets, and sets
-`no_new_privs`. It never binds HTTP. Missing capabilities reduce coverage;
-operation permissions still depend on kernel/namespace policy. The helper sends
-raw register/stack snapshots and instruction bytes. Closed mapped-ELF requests
-return verified file bytes through IPC; no descriptor is transferred. Main
-parses bounded ELF/DWARF sections without loading external DWO/DWP files,
-unwinds stacks, resolves symbols and decodes instructions. Main also derives
-rates and histories, resolves usernames and DNS, constructs FD relationships,
-aggregates BPF observations and reads unprivileged hardware topology.
+`src/` contains only `ipc`, `privileged_helper` and `http_server`. The two executable
+subsystems expose only `run`; analysis, JSON adapters and presentation models are
+private children of `http_server`. IPC modules are visible only within the crate.
+Each executable includes the same
+IPC source definitions; main supplies their serde implementations through remote
+derives and JSON adapters. IPC has no serde or JSON values. The normal helper build
+does not include main's HTTP, JSON, ELF/DWARF, framehop, iced-x86, hardware-topology
+or DNS code. Helper tests include main's presentation adapters to exercise the
+existing HTTP contracts without putting that code into the installed helper.
 
-### Launch, protocol and lifetime
+### Frontend processing
 
-The helper is always resolved next to `current_exe()` as
-`procinsh-privileged-helper`. PATH is never searched. The sibling path must
-identify a regular file; user-owned build/install directories are supported.
-The invoking user and the sibling executable are trusted. Command clears the
-environment and uses null stdin. Only stdio and a private socketpair endpoint
-at FD 3 survive exec; no acquisition FDs exist in
-main. The helper validates SO_PEERCRED against its parent PID/real UID, sets
-PDEATHSIG, checks its parent again and reports PID/package version; main matches
-these against its Command child. There is no public IPC socket or SCM_RIGHTS.
+The list, process detail, and SPACE pages have separate HTML and TypeScript entry points, with ordinary links between them. Each page manages its own state and connections. TypeScript loads as ES modules; every page's title is `procinsh`.
 
-Closed requests list processes, read specific process resources, observe
-process/system activity, poll or cancel. None accepts paths, arbitrary addresses,
-syscall numbers or caller-controlled limits. The helper checks PID/start time
-independently before acquisition and after resource reads. Namespace readers
-retain existing pinned-namespace validation. Only structured data/events cross
-IPC. System delta selection remains in the application.
+#### Page entry points and file responsibilities
 
-Native-endian four-byte frame lengths and a versioned, application-defined binary
-codec bound requests to 1 KiB and replies to 1 GiB, including
-encoding allocation. Numbers use native bytes, enums use explicit tags, and
-strings/collections have lengths. ELF uses a raw byte block. HTTP/SSE output
-remains JSON. Frame I/O and client exchanges have 30-second
-deadlines. One dispatcher bounds in-flight work, a 64-entry client queue bounds
-waiting requests, and monitors limit viewers to 32 per kind. Sessions expire
-15 seconds after their last poll. Drop queues Close; expiry covers cancellation
-during setup or a full queue. Procfs maps/status text is capped at 16 MiB and per-process inspection at
-1024 threads. Oversized targets report an error. Existing capture/queue/history
-limits and observation rates remain. Malformed/truncated frames and deadlines close IPC. Oversized replies
-return bounded errors. A missing/crashed helper leaves UI/config available;
-inspection returns 503. Restart main to establish a new helper connection.
-HTTP input cannot select or launch replacement executables.
+| Location/file | Responsibility |
+|---|---|
+| [list/index.html](web/list/index.html), [list/style.css](web/src/list/style.css), [list/app.ts](web/src/list/app.ts) | `/list` HTML/CSS and startup; `app.ts` connects data, search, and rendering; Vite bundles `list/app.ts` |
+| [list/data.ts](web/src/list/data.ts) | Fetching list/update interval, observation state, periodic refresh, cancellation on page departure, stale-response rejection |
+| [list/search.ts](web/src/list/search.ts) | PID/name/command-line search, CPU/RSS/PID sorting, interaction events |
+| [list/renderer.ts](web/src/list/renderer.ts) | DOM updates for the list table, identity-bearing detail links, counts, retrieval errors |
+| [process/index.html](web/process/index.html), [process/style.css](web/src/process/style.css), [process/app.ts](web/src/process/app.ts) | `/process/{pid}` HTML/CSS and startup; `app.ts` connects networking, rendering, and interactions; Vite bundles `process/app.ts` |
+| [process/data.ts](web/src/process/data.ts) | URL PID/start-time validation, identity resolution, detail SSE, observation/sample/additional GET state, periodic fetching for open panels, stale-notification/response rejection |
+| [process/renderer.ts](web/src/process/renderer.ts) | DOM updates for process summary, metrics, exit/error state, memory maps |
+| [process/selection.ts](web/src/process/selection.ts) | Retaining/switching thread selection, thread table and selected-thread attributes |
+| [process/samples.ts](web/src/process/samples.ts) | DOM updates for selected-thread registers, Call Stack, disassembly |
+| [process/history.ts](web/src/process/history.ts) | CPU/RSS graphs, axes, and legends drawn from history on Canvas 2D |
+| [process/details.ts](web/src/process/details.ts) | Environment, Auxiliary Vector, Pipe / Socket DOM updates and panel toggle events |
+| [process/search.ts](web/src/process/search.ts) | Searching retained environment variables/FDs and input events |
+| [space/index.html](web/space/index.html), [space/style.css](web/src/space/style.css), [space/app.ts](web/src/space/app.ts) | `/` and `/space` HTML/CSS and startup; `app.ts` connects data, scene, and interaction components; Vite bundles `space/app.ts` |
+| [space/types.ts](web/src/space/types.ts), [space/contracts.ts](web/src/space/contracts.ts) | Shared layout/activity/selection/rendering data types and component input/callback contracts |
+| [space/model.ts](web/src/space/model.ts) | Pure functions for process/resource identities, labels, UID colors |
+| [space/data.ts](web/src/space/data.ts) | SSE, observation/activity state, structure-event merging, retained layout state; independent of Three.js/DOM |
+| [space/process-layout.ts](web/src/space/process-layout.ts) | Pure functions for full parent/child tree layout and added-process placement preserving existing coordinates |
+| [space/scene.ts](web/src/space/scene.ts) | Building/updating Three.js objects from layout data and releasing unused Geometry/Material resources |
+| [space/renderer.ts](web/src/space/renderer.ts) | Render loop, activity animations, Canvas 2D text labels, FPS/render-resolution adjustment |
+| [space/search.ts](web/src/space/search.ts) | PID/name filtering and search events |
+| [space/selection.ts](web/src/space/selection.ts) | Selection/hover state, click/drag detection, scene hit testing |
+| [space/camera.ts](web/src/space/camera.ts) | OrbitControls, camera bounds/projection, fit-all, focusing selection |
+| [space/details.ts](web/src/space/details.ts) | DOM updates for selected process/connection/file details and process links |
+| [shared/api.ts](web/src/shared/api.ts) | JSON fetching and API error handling shared by list/details |
+| [shared/display.ts](web/src/shared/display.ts) | Formatting bytes, percentages, per-second rates, permissions, schedulers, sockets |
+| [shared/dom.ts](web/src/shared/dom.ts), [shared/style.css](web/src/shared/style.css) | List/detail element creation and shared header/form/table styles |
+| [shared/navigation.ts](web/src/shared/navigation.ts) | Process identity matching, API queries, detail links preserving start time |
+| [shared/api-types.ts](web/src/shared/api-types.ts) | TypeScript types matching Rust JSON/SSE responses; no runtime input validation |
+| [list/dom-types.ts](web/src/list/dom-types.ts), [process/dom-types.ts](web/src/process/dom-types.ts), [space/dom-types.ts](web/src/space/dom-types.ts) | HTML element ID/type mappings: `ListElements`, `ProcessElements`, `SpaceElements`; shared typed element lookup through `listElement`, `processElement`, `spaceElement` |
+| [web.rs](src/http_server/web.rs) | Embedding HTML/CSS, generated JavaScript, vendor files in the Rust binary and serving them at their URLs |
 
-Normal shutdown closes IPC, cancels subscriptions, joins collectors and reaps
-the helper; a 10-second parent guard bounds this. Parent death/disconnection
-independently stops the helper. Process termination releases kernel tracing,
-perf and BPF resources. Kernel calls/third-party parsers have no general hard
-wall-clock bound; deadlines isolate HTTP and ptrace guards/process exit cleanup
-remain essential.
+TypeScript build settings are in [tsconfig.json](web/tsconfig.json), commands in [package.json](web/package.json). Generated HTML goes to `web/dist/{list,process,space}/index.html`, JS/CSS to `web/dist/assets/`. Browser routes `/`, `/list`, `/process/{pid}`, and `/space` serve the corresponding generated HTML; HTML references assets under `/assets/`. To view changes, build the web assets and Rust binary as described in [Build and runtime environment](#build-and-runtime-environment).
 
-### Installation, upgrades and containers
+#### Process list `/list`
 
-Cargo builds and installs both executables next to each other. Apply file
-capabilities only to the helper, then launch the main executable as an ordinary
-user. In a checkout:
+[list/app.ts](web/src/list/app.ts) connects `ListDataStore`, search, and table rendering. See [`ListDataStore.start`](web/src/list/data.ts#L61)/[`ListDataStore.refresh`](web/src/list/data.ts#L26) for networking/state, [`matchingProcesses`](web/src/list/search.ts#L3) for search/sorting, and [`renderProcesses`](web/src/list/renderer.ts#L8) for DOM updates. Creating the data component does not start networking; data updates and searches calculate visible rows and update the table.
 
-```sh
-cargo build --release --locked
-sudo setcap \
-  cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search,cap_sys_admin=ep \
-  target/release/procinsh-privileged-helper
-./target/release/procinsh --listen 127.0.0.1:9090
-```
+The list page contains only list DOM and does not open detail SSE.
 
-For Cargo installation use `~/.cargo/bin/procinsh-privileged-helper` and
-`~/.cargo/bin/procinsh` instead. Replacing/rebuilding the helper clears its file
-capabilities, so apply `setcap` after each build/install. The selected executable
-and its build/install account are trusted. Main never needs file capabilities;
-remove old grants once with `sudo setcap -r /path/to/old/procinsh`.
+| API used | Timing and purpose |
+|---|---|
+| `GET /api/config` | Fetch update interval on initialization or restoration from the page cache |
+| `GET /api/processes` | Fetch list for initial display and periodic refresh |
 
-`./scripts/dev_run.sh` runs `sudo -n setcap` on the debug helper at every startup,
-then directly executes the debug main binary.
+The refresh interval is the greater of the configured interval and 1,000 ms. Refreshes are skipped while a list request is in progress. PID/name/command-line search and descending CPU/RSS or ascending PID sorting run in the browser against fetched data.
 
-Container images must include both executables. Grant required file capabilities
-only to helper, with matching container bounding capabilities, BTF access and
-security policy. Container `no-new-privileges` before exec prevents
-file-capability acquisition; main sets its own restriction after helper startup.
-Tests retain default seccomp/AppArmor, configure the built helper with `setcap`
-inside Docker and directly execute the built main. Do not weaken kernel security
-settings to enable inspection.
+Process names link to `/process/{pid}?start_time_ticks={start_time}` using [`processUrl`](web/src/shared/navigation.ts#L8). Normal navigation opens details while preserving the observed `{pid, start_time_ticks}`. The header's Go to space view opens `/space`.
 
-### Verification
+When other hosts are known, the header shows a host selector ([`mountHostControls`](web/src/shared/hosts.ts)). Selecting a host sets `?host=` in the page URL and lists that host's processes; process links and Go to space view keep the host.
 
-Docker ordinary runs all Rust tests, IPC framing/deadlines, PID reuse,
-cancellation/disconnection, HTTP/SSE contracts, actual per-thread capabilities,
-executable separation, descriptor ownership and parent/helper crashes. Kernel
-and browser suites exercise live sensors and UI delivery. Run
-`bash scripts/docker_test.sh ordinary`, `checks`, `kernel`, and `browser`.
+`pagehide` stops periodic refresh and cancels an in-flight list request. Restoring from the page cache refetches configuration/list and resumes refresh.
 
-Privilege separation does not authenticate HTTP: a compromised main can invoke
-any allowed helper operation. The helper remains a sensitive privileged parser
-and collector. Restrict network access accordingly.
+#### Process details `/process/{pid}`
 
-## HTTP API
+[process/app.ts](web/src/process/app.ts) connects data, rendering, and selection; handles page startup/shutdown; and preserves the identity-bearing URL. [`ProcessDataStore.connect`](web/src/process/data.ts#L165) establishes SSE; [`ProcessDataStore.acceptTarget`](web/src/process/data.ts#L209) → [`renderTarget`](web/src/process/renderer.ts#L22) applies received state. See [`ProcessDataStore.loadDetails`](web/src/process/data.ts#L127) for additional panels, [`drawHistory`](web/src/process/history.ts#L10) for history graphs, and [`renderLiveSample`](web/src/process/samples.ts#L43) for selected-thread samples.
+
+`ProcessDataStore` is DOM-independent and retains observations by checking PID, start time, connection generation, and additional GET generation. Search filters fetched values; `ThreadSelection` retains the selected thread. State notifications update individual rendering components; history graphs receive history data and a Canvas.
+
+| API used | Timing and purpose |
+|---|---|
+| `GET /api/processes` | At initialization, match PID and URL start time; resolve the PID's start time if absent from the URL |
+| `GET /api/processes/events` | Connect with an identity query and update summary, observation, history, threads, maps, exit state |
+| `GET /api/processes/environment`, `GET /api/processes/auxv`, `GET /api/processes/fds` | When opening each panel and every five seconds while open (skip while fetching) |
+
+A `?host=` in the page URL sends every request above to that remote host and shows the host in the heading. Peer process links, Go to list view, and Go to space view keep the host; choosing another host in the header selector opens that host's list.
+
+The detail page contains only detail DOM and does not periodically refresh the process list. At startup it fetches the list once, matches PID and URL `start_time_ticks`, and connects SSE. If start time is absent, it resolves the current identity and retains start time in the URL. Invalid start time, missing target, or identity mismatch produces a detail-page error with a list link. It never connects to a mismatched process. Additional GETs use the same identity query. Regular updates use SSE `observation`, not single observation/threads/maps GETs.
+
+Received summaries/observations update metrics and the thread list; history draws CPU/RSS graphs on Canvas. Map display updates when capture time changes or capture errors occur. The thread list shows sample age, Waiting for sample before capture, and retrieval errors.
+
+The latest sample for each thread is retained; the selected thread's registers, Call Stack, and disassembly are shown. Call Stack spans all detail-grid columns and shows frame addresses, symbols, source locations, inline frames, unwind stop reasons, and errors. Addresses in maps/registers/stacks/disassembly/auxv and strings such as environment variables are displayed with `textContent`.
+
+Environment, Auxiliary Vector, and Pipe / Socket use a single GET whenever opened, then refresh only open panels every five seconds. A refresh is skipped while a request of the same kind is pending. Environment and Pipe / Socket searches use fetched data. Failed refreshes retain previous results when available and show an error.
+
+The list link, header application name, and FD peer links use normal navigation. FD links also preserve observed start time. Each detail page has independent details, panel-open state, and searches. Connection generation/identity checks ignore stale SSE notifications. Additional GETs check request generation/identity and response identity to discard stale responses. Process exit and `pagehide` stop panel refresh and invalidate pending responses.
+
+Connection loss displays an error; EventSource reconnects automatically with the same identity. A new observation clears the error, and history restarts for the new connection. It does not switch to another process with the same PID. Receiving `exited: true` closes the connection and retains the final state/exit indication. `pagehide` closes the connection; `pageshow` after page-cache restoration reconnects non-exited targets with the same identity.
+
+##### List and process detail verification entry points
+
+| Coverage | Test source | Command |
+|---|---|---|
+| List search/sorting/refresh cancellation; detail identity validation/SSE/additional GETs/selection | [page-data.test.ts](web/tests/page-data.test.ts), in-source tests in [list/search.ts](web/src/list/search.ts) and [process/data.ts](web/src/process/data.ts) | `bash scripts/docker_test.sh web` |
+| CPU/RSS axes/scales, missing samples, rendering scale | [history.ts in-source tests](web/src/process/history.ts) | `bash scripts/docker_test.sh web` |
+| List-to-detail navigation, extra panels, samples, mobile, page cache/exit | [browser.ts](web/tests/browser/browser.ts) | `bash scripts/docker_test.sh browser` after [browser test preparation](#browser-tests) |
+
+#### SPACE `/` and `/space`
+
+SPACE shows system-wide processes, virtual address spaces, parent/child relations, IPC/network connections, and file I/O in 3D. [space/app.ts](web/src/space/app.ts) creates/connects components and handles page startup/shutdown. Data flows through `data.ts` → `scene.ts` → `renderer.ts`; search changes visibility, selection changes highlighting/details, and the camera changes the viewpoint.
+
+`SpaceDataStore` in `data.ts` owns SSE, observation state, activity aggregates, and layout, providing numeric `{x, y, z}` coordinates. At the rendering boundary, `scene.ts` converts them to Three.js Vector3 and rendering objects. Creating data components does not start networking; layout/state updates can be tested with Node.js alone.
+
+`treeLayout` and `stableLayout` in [process-layout.ts](web/src/space/process-layout.ts) calculate process positions. Input is `ProcessLayoutNode[]` (process/parent identities); output is `Map<string, TreePosition>` keyed by identity (`x`, `y`, normalized `depth`, `parent`). `treeLayout` handles initial layout and Rearrange; `stableLayout` preserves existing coordinates and places new processes during regular updates. Spacing is configurable through `xGap` (default `4.8`) and `yGap` (default `6.5`). Test layout without starting a server or rendering with `bash scripts/docker_test.sh web src/space/process-layout.ts`.
+
+Components use shared contracts in [contracts.ts](web/src/space/contracts.ts) and [types.ts](web/src/space/types.ts), without importing each other's concrete types. `app.ts` passes structure, layout, and visible targets to the scene and explicitly provides selection to `updateSelection`. Structure/file updates proceed through selection retention, scene update, selection highlighting, particle retention, camera bounds adjustment, and detail display in that order.
+
+Hit testing receives current Three.js objects and display data for each event and reports selection/hover to `app.ts` through callbacks. Rendering receives scene, camera, rendering data, and selection; before-render notifications let `app.ts` update OrbitControls and remove expired files about every second. The camera derives bounds and fog density from coordinates; `app.ts` passes fog density to the scene. The detail panel receives selection/display data and reports connection-selection actions through callbacks.
+
+##### Receiving data and updating structure
+
+On initial display or redisplay, `app.ts` calls [`SpaceDataStore.start`](web/src/space/data.ts), connecting EventSource to `GET /api/system/events`. The initial structure also arrives through SSE; the page is registered as a backend viewer only while connected. See [api-types.ts `SystemSnapshotUpdate`](web/src/shared/api-types.ts#L409)/[`SpaceActivity`](web/src/shared/api-types.ts#L455) for event types and the [HTTP API description](#get-apisystemevents) for contents.
+
+| Event | Applied changes | Main implementation |
+|---|---|---|
+| `snapshot` | `full` replaces structure; `delta` merges into retained structure after checking `base_sequence` against retained `sequence`; applies maps/FD-relation deltas, preserving omitted maps for the same process identity | [`mergeSnapshot`](web/src/space/data.ts) → [`SpaceDataStore.replaceSnapshot`](web/src/space/data.ts) → [`buildScene`](web/src/space/scene.ts#L99) |
+| `activity` | Updates CPU glow, IPC/network particles, recent file I/O | [`SpaceDataStore.ingestActivity`](web/src/space/data.ts) → [`activity`](web/src/space/renderer.ts#L292) |
+| `gap` | Clears rendered particles and applies the following `full` snapshot | [`SpaceDataStore.connect` event handlers](web/src/space/data.ts) |
+
+##### Layout of processes, peers, and files
+
+[`SpaceDataStore.replaceSnapshot`](web/src/space/data.ts) builds layout state from received structure; [`buildScene`](web/src/space/scene.ts#L99) builds process boxes, memory regions, parent/child lines, and connection lines. Structure updates add/remove objects while preserving existing process/peer positions.
+
+| Target | Layout and display | Main implementation |
+|---|---|---|
+| Processes and parent/child relations | Initial layout/Rearrange groups leaf children in one wrapping region. This region sits in a horizontal row alongside regions for sibling branches with descendants. Regions containing processes with more distinct socket peers sit nearer the center; within leaf regions, processes with more peers get central positions first. Peer counts use verified local connections for current identities, deduplicate multiple FDs to the same peer, and exclude shared FDs, candidates, external peers, and self-connections. Without processes having multiple peers, the leaf region occupies the first leaf's position in PID/start-time order. Branch regions do not stack vertically; separate root trees can wrap as whole units. Wrapped rows shift right by one process width each. Leaf wrapping can place nodes at different vertical positions despite equal depth. Regular updates retain positions and put new processes in free space near their parents, without enforcing horizontal branch separation | [`treeLayout`, `stableLayout`](web/src/space/process-layout.ts) |
+| Virtual address spaces | Stack memory regions in address order, compress gaps, normalize height per process; equal heights across processes do not imply equal addresses | [`layoutMaps`](web/src/space/data.ts), [`regionColor`](web/src/space/scene.ts#L81) |
+| User identity | Top/bottom box frames use real UID colors; vertical frames use effective UID colors | [`userColor`, `processColors`](web/src/space/model.ts) |
+| IPC/network connections | Solid FD-relation lines: green tones for confirmed inter-process connections, pale ochre for candidates, pale blue-gray for shared FDs. Network peers are grouped by process/protocol/peer IP/port and placed above processes. IPoIB peer labels include “IB”; details show peer InfiniBand GID | [`buildScene`](web/src/space/scene.ts#L99), [`networkGroups`](web/src/space/data.ts), [`networkLayout`](web/src/space/data.ts) |
+| Recently accessed files | File markers and connection lines below processes, updated in a group separate from structure | [`fileLayout`](web/src/space/data.ts), [`refreshFileScene`](web/src/space/scene.ts#L400) |
+| RDMA queue pairs | Purple icosahedron markers group unpaired QPs by anchor, consumer, QP type, and remote address, like network peers, sharing their lattice above the anchor. A QP owned by a shown process rises from its roof. Kernel QPs, and QPs of processes outside the snapshot, rise from a thin purple device plate: on the device's NIC in the hardware bay when it is shown, otherwise in a column right of the processes on the host's layer. Management QPs (SMI, GSI) are hidden. Connected QPs on one host, and QPs matched across hosts in the merged view, are joined by purple curves; between host layers the curve runs from the upper anchor's base to the lower anchor's roof. Details show QP type/state, local LID/GID, remote QPN/GID, CM state, port space, and addresses; a device shows its ports | [`rdmaModel`, `rdmaDeviceLayout`](web/src/space/rdma.ts), [`buildRdma`](web/src/space/scene.ts) |
+| Hardware | PCIe tree to the left (−x) of the lowest-PID process (usually systemd). Devices form a y-axis column closest to that process; root ports, switches, and host bridges extend left, with parents centered on children. Overlap with process boxes shifts the whole tree left. Hardware labels are placed before regular labels to keep them visible. GPUs are amber boxes, RDMA NICs purple boxes, bridges small platforms. PCIe links to bridges are floor strips, with width by lane count and color by generation; links below both endpoints' limits are orange. A line always connects each process's front face to each device it opens (one per process/device pair; amber for GPUs, purple for RDMA NICs; search-hidden processes excluded). Selecting that line selects the device. Selecting a device/process highlights related lines. Selecting a device highlights paths to other devices by class color and shows class/bottleneck. Details include ID, driver, NUMA, IOMMU group, BAR, GPU/RDMA information, downstream devices, paths, processes | [`hardwareLayout`](web/src/space/hardware.ts), [`buildHardware`](web/src/space/scene.ts) |
+
+##### Activity display and render loop
+
+[`SpaceDataStore.ingestActivity`](web/src/space/data.ts) updates activity data and rendering paths; [`animate`](web/src/space/renderer.ts#L338) updates particles and CPU glow on each `requestAnimationFrame`. The render loop stops while the tab is hidden.
+
+| Display | Behavior | Main implementation |
+|---|---|---|
+| CPU glow | Strengthens while running and decays in about 500 ms after activity stops | [`cpuGlowLevel`](web/src/space/renderer.ts#L67) |
+| IPC/network particles | Generated according to read/write direction and operation count; if no unique peer is identified, only the source port glows. `prefers-reduced-motion` reduces particle lifetime/count | [`edgeDirection`](web/src/space/data.ts), [`ipcParticlePlan`](web/src/space/renderer.ts#L48), [`SpaceDataStore.ingestActivity`](web/src/space/data.ts) |
+| Netlink communication | Visible Netlink sockets except USERSOCK retain an orange hexagonal plate and connection below the process while present in snapshots, regardless of traffic. Duplicate FDs group by process/socket resource; counts are zero before communication. Only send/receive events emit particles: sends toward the plate, receives toward the process. No time/count expiry; removed when the socket disappears, its process exits, SSE resets, or state becomes listening/unconnected. Plates conceptually represent kernel-side interfaces; actual peer Netlink addresses are not observed | [NetlinkSocketStore](web/src/space/netlink.ts), [refreshFileScene](web/src/space/scene.ts) |
+| File I/O | Read/write particles and retained-file byte/operation counts; retain for 30 seconds after last access, at most 32 per process and 512 total; remove exited processes' files | [`RecentFiles`](web/src/space/data.ts), [`fileDetails`](web/src/space/details.ts#L72) |
+| Process/peer labels | Project 3D positions to screen coordinates and draw on a Canvas 2D separate from WebGL. Overlapping unselected labels retain the nearer one. Labels visible in the previous frame take priority, avoiding per-frame switching between similar depths. Visibility fades over about 150 ms, or switches immediately with `prefers-reduced-motion` | [`drawLabels`](web/src/space/renderer.ts#L284), [`placeLabels`](web/src/space/renderer.ts#L107) |
+
+[`AdaptiveRenderScale`](web/src/space/renderer.ts#L12) adjusts rendering resolution using FPS measurements about every second. Three consecutive readings below 24 FPS lower pixel ratio by 10%; five consecutive readings at or above 45 FPS recover toward the original resolution. The upper bound is the initial device pixel ratio (capped at 1.5); the lower bound is 0.5, or the initial value if smaller. The header shows FPS and resolution percentage.
+
+Signals use `raw_tp/signal_generate`, normalizing source/destination to thread group leaders and delivering only events whose start times match current structure. The kernel ring buffer is 256 KiB; delivery windows retain up to 1,024 events, counting overflow in `signals_lost`. Disable signal collection with `PROCINSH_DISABLE_SIGNALS=1 ./scripts/dev_run.sh ...`. Other observations and SPACE continue when signals are disabled, permissions are insufficient, or hooks are unavailable.
+
+SPACE retains up to 256 signals with both endpoints visible. Purple lights and faint trails travel to destinations over about 1,700 ms; arrival glows at the destination base for 400 ms. At most 12 signal-name labels appear simultaneously. This animates observation events, not measured delivery latency. `prefers-reduced-motion` omits trails and reduces travel to 300 ms. Search, process disappearance, and SSE resets discard invalid displays.
+
+##### Search, selection, and camera controls
+
+Interactions run in the browser. Selection does not call detail APIs; retained structure/activity updates the right-hand details panel. Open process details uses [`processUrl`](web/src/shared/navigation.ts#L8) to preserve observed start time and navigate to `/process/{pid}?start_time_ticks={start_time}`.
+
+| Interaction | Behavior | Main implementation |
+|---|---|---|
+| PID/process-name search | Filters rendered targets; Enter selects the first match and focuses the camera | [`visibleIds`](web/src/space/search.ts#L4), [search events](web/src/space/search.ts#L19) |
+| Click/hover | Selects/describes processes, connection lines, network peers, Netlink plates, files; double-clicking a process focuses the camera | [`hit`, `edgeHit`](web/src/space/selection.ts#L75), [pointer events](web/src/space/selection.ts#L60), [`details`](web/src/space/details.ts#L138) |
+| Drag/right-drag/scroll, keys | Rotate/pan/zoom camera. Keys are matched by physical position (`KeyboardEvent.code`), so AZERTY's Z/Q/S/D act as W/A/S/D. Held W/A/S/D move over the ground plane at about the target distance per second (Shift is three times faster); held ←/→ orbit like a drag in that direction and ↑/↓ raise or lower the camera, a quarter turn per second (Shift doubles it); the two keys right of M (`,` and `.` on QWERTY) zoom in and out | [OrbitControls configuration](web/src/space/camera.ts#L6), [`move`, `zoom`](web/src/space/camera.ts), [key events](web/src/space/app.ts) |
+| Host layers (merged view) | The layer picker at the bottom right and keys 1-9 frame that host layer, ALL and 0 every layer. A rotation pivots on the layer in view: where the view ray meets it, so the picture does not jump. Until the camera is moved, each host layer that arrives refits the scene | [`layerPivot`](web/src/space/camera.ts), [`focusLayer`, `renderLayerPicker`](web/src/space/app.ts) |
+| Fit all | Clears search/selection and fits the whole scene | [`fit`](web/src/space/camera.ts#L109), [button events](web/src/space/app.ts#L214) |
+| Rearrange | Clears particles, rearranges processes/network peers/Netlink plates/files, and fits the scene | [`SpaceDataStore.replaceSnapshot`](web/src/space/data.ts), [button events](web/src/space/app.ts#L208) |
+
+##### Connection and page lifecycle
+
+See [`SpaceDataStore.start`](web/src/space/data.ts) for connection startup, [`SpaceDataStore.stop`](web/src/space/data.ts) for shutdown, and [`visibilitychange`/`pagehide`/`pageshow` handlers](web/src/space/app.ts#L234) for starting/stopping connections and rendering based on page visibility.
+
+- Hiding the tab or `pagehide` stops SSE/reconnect timers and clears particles, CPU glow, Netlink plates, and files. Redisplay or page-cache restoration reconnects.
+- Connection errors close the current EventSource, display an error, and create a new connection after three seconds only while visible. Successful connection clears the error; events from old connections are ignored.
+- Structure parsing/merging failures close the connection and immediately reconnect while visible to obtain initial structure.
+- Visibility changes, page departure, and page-cache restoration reset FPS measurements and consecutive-resolution-adjustment counters.
+
+##### SPACE verification entry points
+
+| Coverage | Test source | Command |
+|---|---|---|
+| Scene inputs, hit testing/selection, camera bounds, detail links/actions, render notifications/stop/resume | [space-components.test.ts](web/tests/space-components.test.ts) | `bash scripts/docker_test.sh web` |
+| Process layout | In-source tests in [process-layout.ts](web/src/space/process-layout.ts) and socket-peer/layout-stability regressions in [process-layout.test.ts](web/tests/process-layout.test.ts) | `bash scripts/docker_test.sh web src/space/process-layout.ts tests/process-layout.test.ts` |
+| Data merging, peer/file layout, activity model, resolution adjustment, label placement/fading | In-source tests in [data.ts](web/src/space/data.ts) and [renderer.ts](web/src/space/renderer.ts) | `bash scripts/docker_test.sh web` |
+| Persistent Netlink display, classification, shared FDs, exit/state changes, layout | [space-netlink.test.ts](web/tests/space-netlink.test.ts) | `bash scripts/docker_test.sh web` |
+| Display labels and UID colors | [space-formatting.test.ts](web/tests/space-formatting.test.ts) | `bash scripts/docker_test.sh web` |
+| Observation state/activity paths, SSE stop/resynchronization/stale-notification rejection | [data.ts in-source tests](web/src/space/data.ts) | `bash scripts/docker_test.sh web` |
+| WebGL rendering, layout/selection/camera, connection management | [space-browser.ts](web/tests/browser/space-browser.ts), calling [space-netlink.ts](web/tests/browser/space-netlink.ts), [space-network.ts](web/tests/browser/space-network.ts), [space-files.ts](web/tests/browser/space-files.ts) for network/Netlink/files | `bash scripts/docker_test.sh browser` after [browser test preparation](#browser-tests) |
+| Live CPU/IPC/file I/O sensors | [space-live.py](tests/space-live.py), [space-files-live.py](tests/space-files-live.py) | See [live sensor tests](#live-sensor-tests) |
+
+### HTTP API
 
 A process identity in JSON is `{ "pid": 123, "start_time_ticks": 456 }`. Addresses are hexadecimal strings to preserve precision in JavaScript.
 
@@ -343,7 +439,7 @@ Missing or malformed identity queries return 400. PID must be a positive integer
 
 SSE keeps a connection open with `Content-Type: text/event-stream`, using `event:` for the event name and `data:` for JSON. Immediately after connecting, `GET /api/processes/events` sends `observation` and `GET /api/system/events` sends `snapshot`. Keep-alive messages are not data updates.
 
-### `GET /api/processes/events`
+#### `GET /api/processes/events`
 
 This endpoint sends SSE `observation` events. Supply an identity query such as `?pid=123&start_time_ticks=456`. The connection starts with an initial observation, then sends the entire target state below on each periodic observation (one second by default). Events include history and retained maps every time, rather than deltas. The entire event is never null.
 
@@ -365,7 +461,7 @@ Times are milliseconds since the Unix epoch, memory sizes are bytes, and 100% CP
 
 Maps are captured about every five seconds, so their capture time differs from the latest observation time. On target exit, the server sends a final state with `exited: true` and ends the stream. Registers, call stacks, and disassembly arrive in `live_samples`. FD details, environment variables, and auxv use separate APIs.
 
-### `GET /api/system/events`
+#### `GET /api/system/events`
 
 This endpoint sends the SSE events below. `captured_at` is milliseconds since the Unix epoch; `window_ms` is the aggregation window in milliseconds.
 
@@ -419,7 +515,70 @@ Sensor status is `{state: "idle" | "observing"}` or `{state: "unavailable" | "er
 
 Activity arrays are empty when there is no matching activity or when a sensor is unavailable. An empty array alone does not establish that no activity occurred; also check sensor `state` values in `status` (observing, unavailable, error).
 
-### Multiple hosts (hub and agent)
+### Backend processing
+
+The HTTP process validates requests, dispatches acquisition through IPC, interprets the returned values, and formats JSON/SSE. Collection details are described under [Privileged helper](#privileged-helper).
+
+#### Common processing and state management
+
+Axum extracts queries for each route and passes them to handlers. Responses passing Host, Origin, and Fetch Metadata validation receive no-store and security headers. Handlers dispatch acquisition through `MonitorClient`, whose bounded queue feeds an IPC worker. `ObservationProcessor` interprets replies under a mutex before HTTP serialization.
+
+Targets use `{pid, start_time_ticks}`, not PID alone. Every request verifies the actual process identity and liveness. There is no server-wide selected target. Single-request APIs work without SSE and independently of requests from other processes or tabs.
+
+#### Configuration and process list
+
+- `GET /api/config`: returns the package version, update interval specified at startup, and history retention in seconds.
+- `GET /api/processes`: the helper's `ProcessScanner` scans `/proc` on each request and returns process identities, names, commands, users, memory sizes, and other information. The backend calculates CPU usage from the difference against the previous collection; it is null when no difference is available, including the first collection.
+
+#### Analysis, caches, and session state
+
+Main first reads the ELF header and file identity. A previously cached identity
+requires no further data transfer. Otherwise, main reads the program/section
+headers and section-name table, then selects symbol/string tables, DWARF and
+unwind sections. Executable code and unrelated sections are omitted. A sparse
+reader lets the parser access only those captured ranges. Each reply must retain
+the same file identity throughout acquisition. Parsing, decompression limits,
+caching and source lookup all run in main. Unsupported or changed files retain
+raw stack addresses.
+
+Main owns per-session rates, histories, CPU deltas and analysis caches. Closing an
+observation releases that session's state. Mapping epochs travel with captured
+stack/register samples so a retained sample uses its original mapping context.
+Observation leases release abandoned helper collectors; lagged system subscribers
+receive a current typed snapshot for resynchronization.
+
+#### Hardware interpretation
+
+The privileged helper acquires fixed read-only sysfs/procfs hardware attributes, directory entries and resolved links using [hardware_capture](src/privileged_helper/system/hardware_capture.rs). IPC carries these bounded raw values. The HTTP server interprets them entirely in memory using [analysis/hardware](src/http_server/analysis/hardware.rs) to identify GPUs, RDMA NICs, accelerators, NVSwitches, their upstream PCIe bridges and device holders. It never opens sysfs/procfs files.
+
+- Discovery: upstream chains come from each device's real path under `/sys/bus/pci/devices`, such as `/sys/devices/pci0000:80/0000:80:03.4/0000:85:00.0`. Devices with `infiniband/` or class 0x0c06 are RDMA NICs; classes 0x0300/0x0302 are GPUs (excluding ASPEED/Matrox BMCs); class 0x12 denotes accelerators; NVIDIA class 0x0680 denotes NVSwitch. Only their upstream bridges are included.
+- Attributes: reads class, vendor, device, driver, numa_node, `current/max_link_speed`, `current/max_link_width`, power_state, `power/runtime_status`, iommu_group, and BARs from `resource`. It does not open `config` or BAR resize files, which could trigger runtime resume. Link speeds are not read for runtime-suspended devices. NVIDIA GPU model, UUID, and device minor come from `/proc/driver/nvidia/gpus/<address>/information`; vendor libraries such as NVML are not used.
+- Paths: device pairs are classified from common upstream nodes as in `nvidia-smi topo -m`. Different host bridges yield `node` on the same NUMA node or `sys` otherwise (unknown NUMA counts as the same node when only one NUMA node is online). A shared host bridge ancestor yields `phb`; traversing at most one PCIe switch (upstream port and its downstream ports) yields `pix`, otherwise `pxb`. The negotiated link with the lowest bandwidth after encoding across all hops is the `bottleneck`.
+- Processes: FD scans record character device rdev and derive PCI address/type (`drm/renderD*`, `drm/card*`, `infiniband_verbs`, `infiniband_mad`, `accel`) from `/sys/dev/char/<major>:<minor>` symlink targets. `/dev/nvidiaN` has no sysfs node, so GPUs are matched using the `nvidia` major number in `/proc/devices` and device minor. Control devices such as `nvidiactl` are excluded. FDs with the same process, device, and type are grouped.
+- Traffic: GPU/NIC DMA is not observed, so PCIe links have no particles.
+
+#### Process detail monitoring over SSE
+
+`GET /api/processes/events` reserves a connection slot, validates identity, and captures the initial observation and maps. The helper creates a dedicated OS thread and watch channel for the connection and observes at the configured interval. The backend calculates rates and retains the latest 60 seconds of history. Maps/smaps refresh about every five seconds.
+
+The response stream owns an RAII guard that closes the IPC observation session even if dropped unread. Closing the helper session releases its connection slot and sets its stop flag. In-progress collection stops after completing. Application shutdown also stops collection and joins collector threads. Target exit sends a final state and ends collection and streaming.
+
+Each connection has its own watch channel. Slow subscribers receive the latest value without accumulating old states. Keep-alive is every 10 seconds. Network failure detection may be delayed, allowing collection to continue until disconnection is detected.
+
+#### System-wide state/structure and viewing sessions
+
+- `GET /api/system/events`: checks the connection limit while incrementing the count and starts the collection worker on the first connection. The response stream owns an RAII guard that decrements the count on completion/drop, including unread responses.
+When the last connection closes, collection pauses and sensors are released when the worker next checks state. The worker thread remains until application shutdown and resumes collection on reconnection. Network failure can delay server-side disconnect detection; there is no upper bound on the time until collection stops.
+
+After completing structure collection and delivery, the worker waits about one second before collecting again. The actual interval includes processing and waiting. Global FD scans are limited to 100,000 FDs and four seconds, mappings to 4,096 per PID, and the connection graph to about 20,000 connections. Process parent/child relations, maps, pipes/sockets, and network peers are discovered without stopping targets; unavailable data, truncation, and loss are represented as state. Network peer name resolution is cached.
+
+#### System-wide activity and SSE delivery
+
+`GET /api/system/events` registers a viewer and subscribes to a broadcast channel. It first returns retained structure as `snapshot`, then streams structure and activity. Sensor states and collection statistics are in `activity.status`. Disconnection or delivery completion unregisters the viewer; application shutdown ends the stream.
+
+When a subscriber falls behind, it receives `gap` and the latest `full` snapshot; lost activity is not replayed. Keep-alive is every 10 seconds. Activity is aggregated/delivered about every second, with the actual window in `window_ms`.
+
+#### Multiple hosts (hub and agent)
 
 A hub accepts agent TCP links on `--accept-agents`. An agent links to a hub with `--connect` and answers the hub's requests with its own privileged helper. The hub forwards the same closed helper requests (`MonitorRequest`) it sends its own helper, so every process and system API works for a remote host with `host=<name>`, including observation sessions. Browsers connect only to the hub, under the same Origin and CSP rules.
 
@@ -431,22 +590,122 @@ A hub accepts agent TCP links on `--accept-agents`. An agent links to a hub with
 - Cross-host matching ([correlate.rs](src/http_server/hosts/correlate.rs)): an external TCP/UDP connection without a local peer matches when exactly one connection on another host has the reversed `(local, remote)` tuple. Loopback and unspecified addresses, and tuples duplicated by NAT or otherwise, stay unmatched. RDMA QPs match when connected QPs on two hosts have swapped QPNs and remote QPNs. A remote GID equal to the other end's port GID, or swapped CM addresses, is evidence; any contradicting address rejects the match. Without evidence, a swap matches only when it is unique among all hosts and both ports have the same link layer.
 - Limits: the link is not encrypted. Non-loopback `--accept-agents` requires `--allow-non-loopback` and a token. Run hubs and agents only on a secure network; an agent trusts whichever hub answers at its `--connect` address.
 
-## Backend processing
+### IPC between backend and privileged helper
 
-### Common processing and state management
+The private local protocol connects the HTTP process to its helper. It is separate from the [hub/agent TCP protocol](#multiple-hosts-hub-and-agent).
 
-Axum extracts queries for each route and passes them to handlers. Responses passing Host, Origin, and Fetch Metadata validation receive no-store and security headers. Blocking process observation APIs run in `spawn_blocking`; mutexes protect state in `AppState`.
+#### Launch, protocol and lifetime
 
-Targets use `{pid, start_time_ticks}`, not PID alone. Every request verifies the actual process identity and liveness. There is no server-wide selected target. Single-request APIs work without SSE and independently of requests from other processes or tabs.
+The helper is always resolved next to `current_exe()` as
+`procinsh-privileged-helper`. PATH is never searched. The sibling path must
+identify a regular file; user-owned build/install directories are supported.
+The invoking user and the sibling executable are trusted. Command clears the
+environment and uses null stdin. Only stdio and a private socketpair endpoint
+at FD 3 survive exec; no acquisition FDs exist in
+main. The helper validates SO_PEERCRED against its parent PID/real UID, sets
+PDEATHSIG, checks its parent again and reports its PID and capability mask; main matches
+the PID against its Command child. There is no public IPC socket or SCM_RIGHTS.
 
-### Configuration and process list
+Closed requests list processes, read specific process resources, observe
+process/system activity, poll or cancel. None accepts paths, arbitrary addresses,
+syscall numbers or caller-controlled limits. The helper checks PID/start time
+independently before acquisition and after resource reads. Namespace readers
+retain existing pinned-namespace validation. Only structured data/events cross
+IPC. System delta selection remains in the application.
 
-- `GET /api/config`: returns the package version, update interval specified at startup, and history retention in seconds.
-- `GET /api/processes`: `ProcessScanner` scans `/proc` on each request and returns process identities, names, commands, users, memory sizes, and other information. CPU usage is calculated from the difference against the previous collection; it is null when no difference is available, including the first collection.
+Native-endian four-byte frame lengths and an application-defined binary
+codec bound requests to 1 KiB and replies to 1 GiB, including
+encoding allocation. Numbers use native bytes, enums use explicit tags, and
+strings/collections have lengths. ELF uses a raw byte block. HTTP/SSE output
+remains JSON. Frame I/O and client exchanges have 30-second
+deadlines. One dispatcher bounds in-flight work, a 64-entry client queue bounds
+waiting requests, and monitors limit viewers to 32 per kind. Sessions expire
+15 seconds after their last poll. Drop queues Close; expiry covers cancellation
+during setup or a full queue. Procfs maps/status text is capped at 16 MiB and per-process inspection at
+1024 threads. Oversized targets report an error. Existing capture/queue/history
+limits and observation rates remain. Malformed/truncated frames and deadlines close IPC. Oversized replies
+return bounded errors. A missing/crashed helper leaves UI/config available;
+inspection returns 503. Restart main to establish a new helper connection.
+HTTP input cannot select or launch replacement executables.
 
-### On-demand observations, threads, and maps
+Normal shutdown closes IPC, cancels subscriptions, joins collectors and reaps
+the helper; a 10-second parent guard bounds this. Parent death/disconnection
+independently stops the helper. Process termination releases kernel tracing,
+perf and BPF resources. Kernel calls/third-party parsers have no general hard
+wall-clock bound; deadlines isolate HTTP and ptrace guards/process exit cleanup
+remain essential.
 
-These APIs validate the identity and read `/proc` on each request. They do not use state retained by SSE connections or stop the target with ptrace.
+#### Encoding and validation
+
+IPC requests are limited to 1 KiB and replies to 1 GiB. The same-machine codec
+uses native-endian numbers, explicit enum tags and length-prefixed UTF-8 strings
+and collections. Structs are encoded field by field, without copying Rust padding
+or pointers. No protocol or package version matching is performed; the installed
+executables are built together. PID and Unix peer identity checks remain part of
+helper authentication. Frame lengths, collection lengths, tags, UTF-8 and socket
+deadlines are validated.
+
+#### Mapped-file acquisition
+
+A mapped-file request selects a process identity, the start address of a current
+executable mapping and up to 60 file ranges. It cannot select a pathname or an
+arbitrary process-memory range. The helper pins and verifies a regular file against
+the mapping's device/inode, checks the ranges against the file length, reads at
+most 64 MiB per request, and rechecks the file metadata before replying. Source
+files are limited to 128 MiB. Descriptors remain inside the helper.
+
+<a id="privileged-helper-boundary"></a>
+
+### Privileged helper
+
+One Cargo package builds/installs `procinsh` and `procinsh-privileged-helper`;
+`default-run = "procinsh"` preserves `cargo run`. Cargo provisions no capabilities.
+The sibling helper is separately executed with Command, never a forked copy.
+
+The main executable owns HTTP, routing, middleware, SSE, JSON formatting and
+per-viewer system snapshot delta encoding. Its module closure excludes all
+acquisition modules. Before starting any threads, it clears all
+effective/permitted/inheritable/ambient capabilities. Both executables retain
+the launching process's UID/GID and supplementary groups, including when launched
+as root. `SUDO_UID` and `SUDO_GID` are not interpreted.
+`no_new_privs` is set after helper exec and before Tokio/HTTP startup: setting it
+before exec would suppress the helper's file capabilities. Both disable dumps.
+
+During startup, the launcher locates and executes the sibling helper. After its
+handshake, the HTTP process sets `no_new_privs` before starting its worker threads.
+Embedded web assets, IPC data and in-memory analysis require no file reads.
+Logs continue through inherited stderr; inherited descriptors other than stdio
+are closed at startup.
+The helper reads `/etc/passwd` for account names and runs reverse DNS, including
+libc/NSS configuration reads. Neither operation runs in HTTP workers.
+
+#### Ownership inventory
+
+| Helper modules | Privileged operations and resources |
+| --- | --- |
+| `process/{identity,procfs,discovery,details,threads,maps}` | Protected procfs, PID/start-time checks, summaries/environment |
+| `process/{fds,socket_metadata,socket_namespace,sockets}`, `netlink` | pidfds, pidfd_getfd duplicates, namespace handles, setns and complete diagnostic socket queries |
+| `process/snapshot/{ptrace,registers,capture}`, `process/memory` | Ptrace guards, process_vm_readv, bounded register/stack/code capture |
+| `process/snapshot/{perf,sample}`, `process/elf` | Perf FDs/mmaps, raw samples and identity-verified ELF byte acquisition |
+| `process/monitoring` | Per-viewer samplers, cancellation/cleanup |
+| `system/{activity,ipc,sched,files,signals}` | BPF loading/attachment, links/maps and polling |
+| `system/{snapshot,ipoib}` | Protected process/FD metadata and namespace-scoped neighbor acquisition |
+
+The helper intersects acquired capabilities with DAC_READ_SEARCH, SYS_PTRACE,
+SYS_ADMIN, PERFMON and BPF, clears inheritable/ambient sets, and sets
+`no_new_privs`. It never binds HTTP. Missing capabilities reduce coverage;
+operation permissions still depend on kernel/namespace policy. The helper sends
+raw register/stack snapshots and instruction bytes. Closed mapped-ELF requests
+return verified file bytes through IPC; no descriptor is transferred. Main
+parses bounded ELF/DWARF sections without loading external DWO/DWP files,
+unwinds stacks, resolves symbols and decodes instructions. Main also derives
+rates and histories, constructs FD relationships, aggregates BPF observations
+and interprets helper-acquired hardware attributes. The helper acquires account
+names and reverse DNS results.
+
+#### On-demand observations, threads, and maps
+
+The helper validates the identity and reads `/proc` for each request dispatched by these APIs. They do not use state retained by SSE connections or stop the target with ptrace.
 
 - `GET /api/processes/observation`: returns one observation of CPU, RSS/VMS, faults, I/O, context switches, threads, and other fields. CPU usage and `rates` are null because there is no previous observation for comparison.
 - `GET /api/processes/threads`: returns the threads from a single observation. Per-thread CPU usage is null.
@@ -454,7 +713,7 @@ These APIs validate the identity and read `/proc` on each request. They do not u
 
 Use SSE for continuous CPU usage, per-second increments, and history. Ordinary `/proc` reads do not stop the target, and individual fields are not captured at precisely the same instant.
 
-### FDs and peers
+#### FDs and peers
 
 `GET /api/processes/fds` verifies identity and liveness, then collects pipe/FIFO/socket FDs, access direction, candidate peers, and owners sharing the same resource. UNIX domain socket peers are discovered with socket diagnostics. TCP/UDP candidates are found using information from the target process's network namespace. Shared owners and communication peers are distinct; no reads consume data. Scans are limited to three seconds, 100,000 FDs, and 8,192 matching FDs; results report truncation and similar conditions.
 
@@ -472,19 +731,9 @@ Rust tests for pidfd type retrieval and separate network namespaces run with `ba
 
 UNIX diagnostics use a network namespace FD opened after checking the target PID and start time. For a different namespace, a short-lived dedicated thread calls `setns(CLONE_NEWNET)`, creates a diagnostic Netlink socket, returns its FD to the caller, and exits. Requests and responses use the socket belonging to that namespace; HTTP and collection threads keep their own namespaces. SPACE groups discovered namespaces by device/inode and diagnoses each once per scan. The total diagnostic budget across namespaces is 500 ms. The process FD list uses the shorter of 750 ms and its overall three-second deadline. If diagnostics fail, existing procfs information is retained and warnings include the target PID and failure reason.
 
-Switching network namespaces requires `CAP_SYS_ADMIN`. [dev_run.sh](scripts/dev_run.sh) also grants this capability. Only the helper receives capabilities; see the [deployment guide](#privileged-helper-boundary). The application does not modify sudoers or kernel settings.
+Switching network namespaces requires `CAP_SYS_ADMIN`. [dev_run.sh](scripts/dev_run.sh) also grants this capability. Only the helper receives capabilities; see the [deployment guide](#privileged-helper). The application does not modify sudoers or kernel settings.
 
-### Hardware
-
-The privileged helper acquires fixed read-only sysfs/procfs hardware attributes, directory entries and resolved links using [hardware_capture](src/privileged_helper/system/hardware_capture.rs). IPC carries these bounded raw values. The HTTP server interprets them entirely in memory using [analysis/hardware](src/http_server/analysis/hardware.rs) to identify GPUs, RDMA NICs, accelerators, NVSwitches, their upstream PCIe bridges and device holders. It never opens sysfs/procfs files.
-
-- Discovery: upstream chains come from each device's real path under `/sys/bus/pci/devices`, such as `/sys/devices/pci0000:80/0000:80:03.4/0000:85:00.0`. Devices with `infiniband/` or class 0x0c06 are RDMA NICs; classes 0x0300/0x0302 are GPUs (excluding ASPEED/Matrox BMCs); class 0x12 denotes accelerators; NVIDIA class 0x0680 denotes NVSwitch. Only their upstream bridges are included.
-- Attributes: reads class, vendor, device, driver, numa_node, `current/max_link_speed`, `current/max_link_width`, power_state, `power/runtime_status`, iommu_group, and BARs from `resource`. It does not open `config` or BAR resize files, which could trigger runtime resume. Link speeds are not read for runtime-suspended devices. NVIDIA GPU model, UUID, and device minor come from `/proc/driver/nvidia/gpus/<address>/information`; vendor libraries such as NVML are not used.
-- Paths: device pairs are classified from common upstream nodes as in `nvidia-smi topo -m`. Different host bridges yield `node` on the same NUMA node or `sys` otherwise (unknown NUMA counts as the same node when only one NUMA node is online). A shared host bridge ancestor yields `phb`; traversing at most one PCIe switch (upstream port and its downstream ports) yields `pix`, otherwise `pxb`. The negotiated link with the lowest bandwidth after encoding across all hops is the `bottleneck`.
-- Processes: FD scans record character device rdev and derive PCI address/type (`drm/renderD*`, `drm/card*`, `infiniband_verbs`, `infiniband_mad`, `accel`) from `/sys/dev/char/<major>:<minor>` symlink targets. `/dev/nvidiaN` has no sysfs node, so GPUs are matched using the `nvidia` major number in `/proc/devices` and device minor. Control devices such as `nvidiactl` are excluded. FDs with the same process, device, and type are grouped.
-- Traffic: GPU/NIC DMA is not observed, so PCIe links have no particles.
-
-### RDMA queue pairs
+#### RDMA queue pairs
 
 The system snapshot uses [system/rdma](src/privileged_helper/system/rdma.rs) to read RDMA resources visible in the helper's network and PID namespaces.
 
@@ -496,7 +745,7 @@ The system snapshot uses [system/rdma](src/privileged_helper/system/rdma.rs) to 
 - Names: reverse DNS of the IP CM destination fills `remote_hostname` after collection, like socket destinations.
 - Traffic: verbs data transfers bypass the kernel, so queue pairs carry no per-QP traffic observation or particles.
 
-### Environment variables and auxiliary vectors
+#### Environment variables and auxiliary vectors
 
 Both are retrieved on demand after identity/liveness checks, rather than recollected as part of periodic observations.
 
@@ -505,7 +754,7 @@ These APIs read files exposed by procfs. Only auxv string references additionall
 - `GET /api/processes/environment`: reads up to 1 MiB from procfs [`/proc/<pid>/environ`](https://man7.org/linux/man-pages/man5/proc_pid_environ.5.html), splitting NUL-delimited entries at the first `=` into names and values. Duplicate names, empty values, and `=` within values are preserved. This usually reflects the environment region at exec time, not every subsequent change. See [file reading](src/privileged_helper/process/details.rs) and [environment parsing](src/privileged_helper/process/details.rs).
 - `GET /api/processes/auxv`: determines 32/64-bit mode from the ELF header of `/proc/<pid>/exe` and reads up to 64 KiB from procfs [`/proc/<pid>/auxv`](https://man7.org/linux/man-pages/man5/proc_pid_auxv.5.html). It parses tag/value pairs, handling known and unknown tags. String references for `AT_EXECFN`, `AT_PLATFORM`, and `AT_BASE_PLATFORM` are resolved with `process_vm_readv`, up to 4,096 bytes each. Numeric values remain when references cannot be read. Big-endian ELF is unsupported. See [ELF header and auxv reading](src/privileged_helper/process/details.rs), [string reference resolution](src/privileged_helper/process/details.rs), and [memory reading](src/privileged_helper/process/memory.rs).
 
-### Initial/periodic snapshots and live sampling without stopping the target
+#### Initial/periodic snapshots and live sampling without stopping the target
 
 Before delivering the initial watch value, each SSE collector enumerates threads, opens ordinary perf events, then independently stops each TID with `PTRACE_SEIZE` → `PTRACE_INTERRUPT` → `waitpid(__WALL)`. It captures registers with `PTRACE_GETREGSET(NT_PRSTATUS)` and up to 16 KiB of stack from RSP (bounded by the containing mapping) with `process_vm_readv`, then detaches on both success and failure. Initial/10-second ptrace captures and continuous perf share `RawSample`, unwinding, symbol resolution, and register classification. Ptrace CPU is null. In addition to the initial capture, ptrace recaptures all TIDs 10 seconds after capture completion, including TIDs receiving perf updates. Delays do not trigger catch-up captures; failures also wait 10 seconds before retrying. Unavailable TIDs retain their previous samples while perf monitoring continues. Periodic results are delivered on the regular observation cycle.
 
@@ -521,26 +770,13 @@ The Disassembly panel shows instructions and retrieval errors. Disassembly is be
 
 PERF_RECORD_LOST, ring overruns, and invalid records count as loss. RAII releases FDs/mmap mappings on thread exit, target exit, SSE disconnection, and server shutdown. CAP_SYS_PTRACE and process_vm_readv are used for ptrace snapshots, auxv, and live disassembly.
 
-### Process detail monitoring over SSE
+#### Hardware acquisition limits
 
-`GET /api/processes/events` reserves a connection slot, validates identity, and captures the initial observation and maps. It creates a dedicated OS thread and watch channel for the connection, observes at the configured interval, and updates the latest 60 seconds of history. Maps/smaps refresh about every five seconds.
+Hardware acquisition reads fixed attribute names only, never PCI config space or
+BAR memory, and caps raw records at 16 MiB, directory lists at 4096 entries and
+individual text reads at 64 KiB. A truncated capture adds a snapshot warning.
 
-The response stream owns an RAII guard that releases the connection slot and sets a stop flag even if dropped unread. In-progress collection stops after completing. Application shutdown also stops collection and joins collector threads. Target exit sends a final state and ends collection and streaming.
-
-Each connection has its own watch channel. Slow subscribers receive the latest value without accumulating old states. Keep-alive is every 10 seconds. Network failure detection may be delayed, allowing collection to continue until disconnection is detected.
-
-### System-wide state/structure and viewing sessions
-
-- `GET /api/system/events`: checks the connection limit while incrementing the count and starts the collection worker on the first connection. The response stream owns an RAII guard that decrements the count on completion/drop, including unread responses.
-When the last connection closes, collection pauses and sensors are released when the worker next checks state. The worker thread remains until application shutdown and resumes collection on reconnection. Network failure can delay server-side disconnect detection; there is no upper bound on the time until collection stops.
-
-After completing structure collection and delivery, the worker waits about one second before collecting again. The actual interval includes processing and waiting. Global FD scans are limited to 100,000 FDs and four seconds, mappings to 4,096 per PID, and the connection graph to about 20,000 connections. Process parent/child relations, maps, pipes/sockets, and network peers are discovered without stopping targets; unavailable data, truncation, and loss are represented as state. Network peer name resolution is cached.
-
-### System-wide activity collection and SSE delivery
-
-`GET /api/system/events` registers a viewer and subscribes to a broadcast channel. It first returns retained structure as `snapshot`, then streams structure and activity. Sensor states and collection statistics are in `activity.status`. Disconnection or delivery completion unregisters the viewer; application shutdown ends the stream.
-
-When a subscriber falls behind, it receives `gap` and the latest `full` snapshot; lost activity is not replayed. Keep-alive is every 10 seconds. Activity is aggregated/delivered about every second, with the actual window in `window_ms`.
+#### System-wide eBPF collection
 
 All sensors use CO-RE eBPF. CPU scheduling, IPC, and file I/O use independent eBPF programs with independent loading, state, and release. SPACE uses delivered `CpuActivity` for CPU glow. Scheduler events aggregate in kernel maps, read by userspace during activity aggregation.
 
@@ -552,188 +788,52 @@ All sensors use CO-RE eBPF. CPU scheduling, IPC, and file I/O use independent eB
 
 File paths are captured at operation time; unavailable paths use identifiers such as device/inode. Unavailable BPF hooks produce per-sensor reasons in the status API and logs while collection of available information continues. Required kernel features and permissions vary by sensor.
 
-## Frontend processing
+#### Installation, upgrades and containers
 
-The list, process detail, and SPACE pages have separate HTML and TypeScript entry points, with ordinary links between them. Each page manages its own state and connections. TypeScript loads as ES modules; every page's title is `procinsh`.
+Cargo builds and installs both executables next to each other. Apply file
+capabilities only to the helper, then launch the main executable as an ordinary
+user. In a checkout:
 
-### Page entry points and file responsibilities
+```sh
+cargo build --release --locked
+sudo setcap \
+  cap_sys_ptrace,cap_bpf,cap_perfmon,cap_dac_read_search,cap_sys_admin=ep \
+  target/release/procinsh-privileged-helper
+./target/release/procinsh --listen 127.0.0.1:9090
+```
 
-| Location/file | Responsibility |
-|---|---|
-| [list/index.html](web/list/index.html), [list/style.css](web/src/list/style.css), [list/app.ts](web/src/list/app.ts) | `/list` HTML/CSS and startup; `app.ts` connects data, search, and rendering; Vite bundles `list/app.ts` |
-| [list/data.ts](web/src/list/data.ts) | Fetching list/update interval, observation state, periodic refresh, cancellation on page departure, stale-response rejection |
-| [list/search.ts](web/src/list/search.ts) | PID/name/command-line search, CPU/RSS/PID sorting, interaction events |
-| [list/renderer.ts](web/src/list/renderer.ts) | DOM updates for the list table, identity-bearing detail links, counts, retrieval errors |
-| [process/index.html](web/process/index.html), [process/style.css](web/src/process/style.css), [process/app.ts](web/src/process/app.ts) | `/process/{pid}` HTML/CSS and startup; `app.ts` connects networking, rendering, and interactions; Vite bundles `process/app.ts` |
-| [process/data.ts](web/src/process/data.ts) | URL PID/start-time validation, identity resolution, detail SSE, observation/sample/additional GET state, periodic fetching for open panels, stale-notification/response rejection |
-| [process/renderer.ts](web/src/process/renderer.ts) | DOM updates for process summary, metrics, exit/error state, memory maps |
-| [process/selection.ts](web/src/process/selection.ts) | Retaining/switching thread selection, thread table and selected-thread attributes |
-| [process/samples.ts](web/src/process/samples.ts) | DOM updates for selected-thread registers, Call Stack, disassembly |
-| [process/history.ts](web/src/process/history.ts) | CPU/RSS graphs, axes, and legends drawn from history on Canvas 2D |
-| [process/details.ts](web/src/process/details.ts) | Environment, Auxiliary Vector, Pipe / Socket DOM updates and panel toggle events |
-| [process/search.ts](web/src/process/search.ts) | Searching retained environment variables/FDs and input events |
-| [space/index.html](web/space/index.html), [space/style.css](web/src/space/style.css), [space/app.ts](web/src/space/app.ts) | `/` and `/space` HTML/CSS and startup; `app.ts` connects data, scene, and interaction components; Vite bundles `space/app.ts` |
-| [space/types.ts](web/src/space/types.ts), [space/contracts.ts](web/src/space/contracts.ts) | Shared layout/activity/selection/rendering data types and component input/callback contracts |
-| [space/model.ts](web/src/space/model.ts) | Pure functions for process/resource identities, labels, UID colors |
-| [space/data.ts](web/src/space/data.ts) | SSE, observation/activity state, structure-event merging, retained layout state; independent of Three.js/DOM |
-| [space/process-layout.ts](web/src/space/process-layout.ts) | Pure functions for full parent/child tree layout and added-process placement preserving existing coordinates |
-| [space/scene.ts](web/src/space/scene.ts) | Building/updating Three.js objects from layout data and releasing unused Geometry/Material resources |
-| [space/renderer.ts](web/src/space/renderer.ts) | Render loop, activity animations, Canvas 2D text labels, FPS/render-resolution adjustment |
-| [space/search.ts](web/src/space/search.ts) | PID/name filtering and search events |
-| [space/selection.ts](web/src/space/selection.ts) | Selection/hover state, click/drag detection, scene hit testing |
-| [space/camera.ts](web/src/space/camera.ts) | OrbitControls, camera bounds/projection, fit-all, focusing selection |
-| [space/details.ts](web/src/space/details.ts) | DOM updates for selected process/connection/file details and process links |
-| [shared/api.ts](web/src/shared/api.ts) | JSON fetching and API error handling shared by list/details |
-| [shared/display.ts](web/src/shared/display.ts) | Formatting bytes, percentages, per-second rates, permissions, schedulers, sockets |
-| [shared/dom.ts](web/src/shared/dom.ts), [shared/style.css](web/src/shared/style.css) | List/detail element creation and shared header/form/table styles |
-| [shared/navigation.ts](web/src/shared/navigation.ts) | Process identity matching, API queries, detail links preserving start time |
-| [shared/api-types.ts](web/src/shared/api-types.ts) | TypeScript types matching Rust JSON/SSE responses; no runtime input validation |
-| [list/dom-types.ts](web/src/list/dom-types.ts), [process/dom-types.ts](web/src/process/dom-types.ts), [space/dom-types.ts](web/src/space/dom-types.ts) | HTML element ID/type mappings: `ListElements`, `ProcessElements`, `SpaceElements`; shared typed element lookup through `listElement`, `processElement`, `spaceElement` |
-| [web.rs](src/http_server/web.rs) | Embedding HTML/CSS, generated JavaScript, vendor files in the Rust binary and serving them at their URLs |
+For Cargo installation use `~/.cargo/bin/procinsh-privileged-helper` and
+`~/.cargo/bin/procinsh` instead. Replacing/rebuilding the helper clears its file
+capabilities, so apply `setcap` after each build/install. The selected executable
+and its build/install account are trusted. Main never needs file capabilities;
+remove old grants once with `sudo setcap -r /path/to/old/procinsh`.
 
-TypeScript build settings are in [tsconfig.json](web/tsconfig.json), commands in [package.json](web/package.json). Generated HTML goes to `web/dist/{list,process,space}/index.html`, JS/CSS to `web/dist/assets/`. Browser routes `/`, `/list`, `/process/{pid}`, and `/space` serve the corresponding generated HTML; HTML references assets under `/assets/`. To view changes, build the web assets and Rust binary as described in [Build and runtime environment](#build-and-runtime-environment).
+`./scripts/dev_run.sh` runs `sudo -n setcap` on the debug helper at every startup,
+then directly executes the debug main binary.
 
-### Process list `/list`
+Container images must include both executables. Grant required file capabilities
+only to helper, with matching container bounding capabilities, BTF access and
+security policy. Container `no-new-privileges` before exec prevents
+file-capability acquisition; main sets its own restriction after helper startup.
+Tests retain default seccomp/AppArmor, configure the built helper with `setcap`
+inside Docker and directly execute the built main. Do not weaken kernel security
+settings to enable inspection.
 
-[list/app.ts](web/src/list/app.ts) connects `ListDataStore`, search, and table rendering. See [`ListDataStore.start`](web/src/list/data.ts#L61)/[`ListDataStore.refresh`](web/src/list/data.ts#L26) for networking/state, [`matchingProcesses`](web/src/list/search.ts#L3) for search/sorting, and [`renderProcesses`](web/src/list/renderer.ts#L8) for DOM updates. Creating the data component does not start networking; data updates and searches calculate visible rows and update the table.
+#### Privilege separation verification
 
-The list page contains only list DOM and does not open detail SSE.
+Docker ordinary runs all Rust tests, IPC framing/deadlines, PID reuse,
+cancellation/disconnection, HTTP/SSE contracts, actual per-thread capabilities,
+executable separation, descriptor ownership and parent/helper crashes. Kernel
+and browser suites exercise live sensors and UI delivery. Run
+`bash scripts/docker_test.sh ordinary`, `checks`, `kernel`, and `browser`.
 
-| API used | Timing and purpose |
-|---|---|
-| `GET /api/config` | Fetch update interval on initialization or restoration from the page cache |
-| `GET /api/processes` | Fetch list for initial display and periodic refresh |
+Privilege separation does not authenticate HTTP: a compromised main can invoke
+any allowed helper operation. The helper remains a sensitive privileged parser
+and collector. Restrict network access accordingly.
 
-The refresh interval is the greater of the configured interval and 1,000 ms. Refreshes are skipped while a list request is in progress. PID/name/command-line search and descending CPU/RSS or ascending PID sorting run in the browser against fetched data.
-
-Process names link to `/process/{pid}?start_time_ticks={start_time}` using [`processUrl`](web/src/shared/navigation.ts#L8). Normal navigation opens details while preserving the observed `{pid, start_time_ticks}`. The header's Go to space view opens `/space`.
-
-When other hosts are known, the header shows a host selector ([`mountHostControls`](web/src/shared/hosts.ts)). Selecting a host sets `?host=` in the page URL and lists that host's processes; process links and Go to space view keep the host.
-
-`pagehide` stops periodic refresh and cancels an in-flight list request. Restoring from the page cache refetches configuration/list and resumes refresh.
-
-### Process details `/process/{pid}`
-
-[process/app.ts](web/src/process/app.ts) connects data, rendering, and selection; handles page startup/shutdown; and preserves the identity-bearing URL. [`ProcessDataStore.connect`](web/src/process/data.ts#L165) establishes SSE; [`ProcessDataStore.acceptTarget`](web/src/process/data.ts#L209) → [`renderTarget`](web/src/process/renderer.ts#L22) applies received state. See [`ProcessDataStore.loadDetails`](web/src/process/data.ts#L127) for additional panels, [`drawHistory`](web/src/process/history.ts#L10) for history graphs, and [`renderLiveSample`](web/src/process/samples.ts#L43) for selected-thread samples.
-
-`ProcessDataStore` is DOM-independent and retains observations by checking PID, start time, connection generation, and additional GET generation. Search filters fetched values; `ThreadSelection` retains the selected thread. State notifications update individual rendering components; history graphs receive history data and a Canvas.
-
-| API used | Timing and purpose |
-|---|---|
-| `GET /api/processes` | At initialization, match PID and URL start time; resolve the PID's start time if absent from the URL |
-| `GET /api/processes/events` | Connect with an identity query and update summary, observation, history, threads, maps, exit state |
-| `GET /api/processes/environment`, `GET /api/processes/auxv`, `GET /api/processes/fds` | When opening each panel and every five seconds while open (skip while fetching) |
-
-A `?host=` in the page URL sends every request above to that remote host and shows the host in the heading. Peer process links, Go to list view, and Go to space view keep the host; choosing another host in the header selector opens that host's list.
-
-The detail page contains only detail DOM and does not periodically refresh the process list. At startup it fetches the list once, matches PID and URL `start_time_ticks`, and connects SSE. If start time is absent, it resolves the current identity and retains start time in the URL. Invalid start time, missing target, or identity mismatch produces a detail-page error with a list link. It never connects to a mismatched process. Additional GETs use the same identity query. Regular updates use SSE `observation`, not single observation/threads/maps GETs.
-
-Received summaries/observations update metrics and the thread list; history draws CPU/RSS graphs on Canvas. Map display updates when capture time changes or capture errors occur. The thread list shows sample age, Waiting for sample before capture, and retrieval errors.
-
-The latest sample for each thread is retained; the selected thread's registers, Call Stack, and disassembly are shown. Call Stack spans all detail-grid columns and shows frame addresses, symbols, source locations, inline frames, unwind stop reasons, and errors. Addresses in maps/registers/stacks/disassembly/auxv and strings such as environment variables are displayed with `textContent`.
-
-Environment, Auxiliary Vector, and Pipe / Socket use a single GET whenever opened, then refresh only open panels every five seconds. A refresh is skipped while a request of the same kind is pending. Environment and Pipe / Socket searches use fetched data. Failed refreshes retain previous results when available and show an error.
-
-The list link, header application name, and FD peer links use normal navigation. FD links also preserve observed start time. Each detail page has independent details, panel-open state, and searches. Connection generation/identity checks ignore stale SSE notifications. Additional GETs check request generation/identity and response identity to discard stale responses. Process exit and `pagehide` stop panel refresh and invalidate pending responses.
-
-Connection loss displays an error; EventSource reconnects automatically with the same identity. A new observation clears the error, and history restarts for the new connection. It does not switch to another process with the same PID. Receiving `exited: true` closes the connection and retains the final state/exit indication. `pagehide` closes the connection; `pageshow` after page-cache restoration reconnects non-exited targets with the same identity.
-
-#### List and process detail verification entry points
-
-| Coverage | Test source | Command |
-|---|---|---|
-| List search/sorting/refresh cancellation; detail identity validation/SSE/additional GETs/selection | [page-data.test.ts](web/tests/page-data.test.ts), in-source tests in [list/search.ts](web/src/list/search.ts) and [process/data.ts](web/src/process/data.ts) | `bash scripts/docker_test.sh web` |
-| CPU/RSS axes/scales, missing samples, rendering scale | [history.ts in-source tests](web/src/process/history.ts) | `bash scripts/docker_test.sh web` |
-| List-to-detail navigation, extra panels, samples, mobile, page cache/exit | [browser.ts](web/tests/browser/browser.ts) | `bash scripts/docker_test.sh browser` after [browser test preparation](#browser-tests) |
-
-### SPACE `/` and `/space`
-
-SPACE shows system-wide processes, virtual address spaces, parent/child relations, IPC/network connections, and file I/O in 3D. [space/app.ts](web/src/space/app.ts) creates/connects components and handles page startup/shutdown. Data flows through `data.ts` → `scene.ts` → `renderer.ts`; search changes visibility, selection changes highlighting/details, and the camera changes the viewpoint.
-
-`SpaceDataStore` in `data.ts` owns SSE, observation state, activity aggregates, and layout, providing numeric `{x, y, z}` coordinates. At the rendering boundary, `scene.ts` converts them to Three.js Vector3 and rendering objects. Creating data components does not start networking; layout/state updates can be tested with Node.js alone.
-
-`treeLayout` and `stableLayout` in [process-layout.ts](web/src/space/process-layout.ts) calculate process positions. Input is `ProcessLayoutNode[]` (process/parent identities); output is `Map<string, TreePosition>` keyed by identity (`x`, `y`, normalized `depth`, `parent`). `treeLayout` handles initial layout and Rearrange; `stableLayout` preserves existing coordinates and places new processes during regular updates. Spacing is configurable through `xGap` (default `4.8`) and `yGap` (default `6.5`). Test layout without starting a server or rendering with `bash scripts/docker_test.sh web src/space/process-layout.ts`.
-
-Components use shared contracts in [contracts.ts](web/src/space/contracts.ts) and [types.ts](web/src/space/types.ts), without importing each other's concrete types. `app.ts` passes structure, layout, and visible targets to the scene and explicitly provides selection to `updateSelection`. Structure/file updates proceed through selection retention, scene update, selection highlighting, particle retention, camera bounds adjustment, and detail display in that order.
-
-Hit testing receives current Three.js objects and display data for each event and reports selection/hover to `app.ts` through callbacks. Rendering receives scene, camera, rendering data, and selection; before-render notifications let `app.ts` update OrbitControls and remove expired files about every second. The camera derives bounds and fog density from coordinates; `app.ts` passes fog density to the scene. The detail panel receives selection/display data and reports connection-selection actions through callbacks.
-
-#### Receiving data and updating structure
-
-On initial display or redisplay, `app.ts` calls [`SpaceDataStore.start`](web/src/space/data.ts), connecting EventSource to `GET /api/system/events`. The initial structure also arrives through SSE; the page is registered as a backend viewer only while connected. See [api-types.ts `SystemSnapshotUpdate`](web/src/shared/api-types.ts#L409)/[`SpaceActivity`](web/src/shared/api-types.ts#L455) for event types and the [HTTP API description](#get-apisystemevents) for contents.
-
-| Event | Applied changes | Main implementation |
-|---|---|---|
-| `snapshot` | `full` replaces structure; `delta` merges into retained structure after checking `base_sequence` against retained `sequence`; applies maps/FD-relation deltas, preserving omitted maps for the same process identity | [`mergeSnapshot`](web/src/space/data.ts) → [`SpaceDataStore.replaceSnapshot`](web/src/space/data.ts) → [`buildScene`](web/src/space/scene.ts#L99) |
-| `activity` | Updates CPU glow, IPC/network particles, recent file I/O | [`SpaceDataStore.ingestActivity`](web/src/space/data.ts) → [`activity`](web/src/space/renderer.ts#L292) |
-| `gap` | Clears rendered particles and applies the following `full` snapshot | [`SpaceDataStore.connect` event handlers](web/src/space/data.ts) |
-
-#### Layout of processes, peers, and files
-
-[`SpaceDataStore.replaceSnapshot`](web/src/space/data.ts) builds layout state from received structure; [`buildScene`](web/src/space/scene.ts#L99) builds process boxes, memory regions, parent/child lines, and connection lines. Structure updates add/remove objects while preserving existing process/peer positions.
-
-| Target | Layout and display | Main implementation |
-|---|---|---|
-| Processes and parent/child relations | Initial layout/Rearrange groups leaf children in one wrapping region. This region sits in a horizontal row alongside regions for sibling branches with descendants. Regions containing processes with more distinct socket peers sit nearer the center; within leaf regions, processes with more peers get central positions first. Peer counts use verified local connections for current identities, deduplicate multiple FDs to the same peer, and exclude shared FDs, candidates, external peers, and self-connections. Without processes having multiple peers, the leaf region occupies the first leaf's position in PID/start-time order. Branch regions do not stack vertically; separate root trees can wrap as whole units. Wrapped rows shift right by one process width each. Leaf wrapping can place nodes at different vertical positions despite equal depth. Regular updates retain positions and put new processes in free space near their parents, without enforcing horizontal branch separation | [`treeLayout`, `stableLayout`](web/src/space/process-layout.ts) |
-| Virtual address spaces | Stack memory regions in address order, compress gaps, normalize height per process; equal heights across processes do not imply equal addresses | [`layoutMaps`](web/src/space/data.ts), [`regionColor`](web/src/space/scene.ts#L81) |
-| User identity | Top/bottom box frames use real UID colors; vertical frames use effective UID colors | [`userColor`, `processColors`](web/src/space/model.ts) |
-| IPC/network connections | Solid FD-relation lines: green tones for confirmed inter-process connections, pale ochre for candidates, pale blue-gray for shared FDs. Network peers are grouped by process/protocol/peer IP/port and placed above processes. IPoIB peer labels include “IB”; details show peer InfiniBand GID | [`buildScene`](web/src/space/scene.ts#L99), [`networkGroups`](web/src/space/data.ts), [`networkLayout`](web/src/space/data.ts) |
-| Recently accessed files | File markers and connection lines below processes, updated in a group separate from structure | [`fileLayout`](web/src/space/data.ts), [`refreshFileScene`](web/src/space/scene.ts#L400) |
-| RDMA queue pairs | Purple icosahedron markers group unpaired QPs by anchor, consumer, QP type, and remote address, like network peers, sharing their lattice above the anchor. A QP owned by a shown process rises from its roof. Kernel QPs, and QPs of processes outside the snapshot, rise from a thin purple device plate: on the device's NIC in the hardware bay when it is shown, otherwise in a column right of the processes on the host's layer. Management QPs (SMI, GSI) are hidden. Connected QPs on one host, and QPs matched across hosts in the merged view, are joined by purple curves; between host layers the curve runs from the upper anchor's base to the lower anchor's roof. Details show QP type/state, local LID/GID, remote QPN/GID, CM state, port space, and addresses; a device shows its ports | [`rdmaModel`, `rdmaDeviceLayout`](web/src/space/rdma.ts), [`buildRdma`](web/src/space/scene.ts) |
-| Hardware | PCIe tree to the left (−x) of the lowest-PID process (usually systemd). Devices form a y-axis column closest to that process; root ports, switches, and host bridges extend left, with parents centered on children. Overlap with process boxes shifts the whole tree left. Hardware labels are placed before regular labels to keep them visible. GPUs are amber boxes, RDMA NICs purple boxes, bridges small platforms. PCIe links to bridges are floor strips, with width by lane count and color by generation; links below both endpoints' limits are orange. A line always connects each process's front face to each device it opens (one per process/device pair; amber for GPUs, purple for RDMA NICs; search-hidden processes excluded). Selecting that line selects the device. Selecting a device/process highlights related lines. Selecting a device highlights paths to other devices by class color and shows class/bottleneck. Details include ID, driver, NUMA, IOMMU group, BAR, GPU/RDMA information, downstream devices, paths, processes | [`hardwareLayout`](web/src/space/hardware.ts), [`buildHardware`](web/src/space/scene.ts) |
-
-#### Activity display and render loop
-
-[`SpaceDataStore.ingestActivity`](web/src/space/data.ts) updates activity data and rendering paths; [`animate`](web/src/space/renderer.ts#L338) updates particles and CPU glow on each `requestAnimationFrame`. The render loop stops while the tab is hidden.
-
-| Display | Behavior | Main implementation |
-|---|---|---|
-| CPU glow | Strengthens while running and decays in about 500 ms after activity stops | [`cpuGlowLevel`](web/src/space/renderer.ts#L67) |
-| IPC/network particles | Generated according to read/write direction and operation count; if no unique peer is identified, only the source port glows. `prefers-reduced-motion` reduces particle lifetime/count | [`edgeDirection`](web/src/space/data.ts), [`ipcParticlePlan`](web/src/space/renderer.ts#L48), [`SpaceDataStore.ingestActivity`](web/src/space/data.ts) |
-| Netlink communication | Visible Netlink sockets except USERSOCK retain an orange hexagonal plate and connection below the process while present in snapshots, regardless of traffic. Duplicate FDs group by process/socket resource; counts are zero before communication. Only send/receive events emit particles: sends toward the plate, receives toward the process. No time/count expiry; removed when the socket disappears, its process exits, SSE resets, or state becomes listening/unconnected. Plates conceptually represent kernel-side interfaces; actual peer Netlink addresses are not observed | [NetlinkSocketStore](web/src/space/netlink.ts), [refreshFileScene](web/src/space/scene.ts) |
-| File I/O | Read/write particles and retained-file byte/operation counts; retain for 30 seconds after last access, at most 32 per process and 512 total; remove exited processes' files | [`RecentFiles`](web/src/space/data.ts), [`fileDetails`](web/src/space/details.ts#L72) |
-| Process/peer labels | Project 3D positions to screen coordinates and draw on a Canvas 2D separate from WebGL. Overlapping unselected labels retain the nearer one. Labels visible in the previous frame take priority, avoiding per-frame switching between similar depths. Visibility fades over about 150 ms, or switches immediately with `prefers-reduced-motion` | [`drawLabels`](web/src/space/renderer.ts#L284), [`placeLabels`](web/src/space/renderer.ts#L107) |
-
-[`AdaptiveRenderScale`](web/src/space/renderer.ts#L12) adjusts rendering resolution using FPS measurements about every second. Three consecutive readings below 24 FPS lower pixel ratio by 10%; five consecutive readings at or above 45 FPS recover toward the original resolution. The upper bound is the initial device pixel ratio (capped at 1.5); the lower bound is 0.5, or the initial value if smaller. The header shows FPS and resolution percentage.
-
-Signals use `raw_tp/signal_generate`, normalizing source/destination to thread group leaders and delivering only events whose start times match current structure. The kernel ring buffer is 256 KiB; delivery windows retain up to 1,024 events, counting overflow in `signals_lost`. Disable signal collection with `PROCINSH_DISABLE_SIGNALS=1 ./scripts/dev_run.sh ...`. Other observations and SPACE continue when signals are disabled, permissions are insufficient, or hooks are unavailable.
-
-SPACE retains up to 256 signals with both endpoints visible. Purple lights and faint trails travel to destinations over about 1,700 ms; arrival glows at the destination base for 400 ms. At most 12 signal-name labels appear simultaneously. This animates observation events, not measured delivery latency. `prefers-reduced-motion` omits trails and reduces travel to 300 ms. Search, process disappearance, and SSE resets discard invalid displays.
-
-#### Search, selection, and camera controls
-
-Interactions run in the browser. Selection does not call detail APIs; retained structure/activity updates the right-hand details panel. Open process details uses [`processUrl`](web/src/shared/navigation.ts#L8) to preserve observed start time and navigate to `/process/{pid}?start_time_ticks={start_time}`.
-
-| Interaction | Behavior | Main implementation |
-|---|---|---|
-| PID/process-name search | Filters rendered targets; Enter selects the first match and focuses the camera | [`visibleIds`](web/src/space/search.ts#L4), [search events](web/src/space/search.ts#L19) |
-| Click/hover | Selects/describes processes, connection lines, network peers, Netlink plates, files; double-clicking a process focuses the camera | [`hit`, `edgeHit`](web/src/space/selection.ts#L75), [pointer events](web/src/space/selection.ts#L60), [`details`](web/src/space/details.ts#L138) |
-| Drag/right-drag/scroll, keys | Rotate/pan/zoom camera. Keys are matched by physical position (`KeyboardEvent.code`), so AZERTY's Z/Q/S/D act as W/A/S/D. Held W/A/S/D move over the ground plane at about the target distance per second (Shift is three times faster); held ←/→ orbit like a drag in that direction and ↑/↓ raise or lower the camera, a quarter turn per second (Shift doubles it); the two keys right of M (`,` and `.` on QWERTY) zoom in and out | [OrbitControls configuration](web/src/space/camera.ts#L6), [`move`, `zoom`](web/src/space/camera.ts), [key events](web/src/space/app.ts) |
-| Host layers (merged view) | The layer picker at the bottom right and keys 1-9 frame that host layer, ALL and 0 every layer. A rotation pivots on the layer in view: where the view ray meets it, so the picture does not jump. Until the camera is moved, each host layer that arrives refits the scene | [`layerPivot`](web/src/space/camera.ts), [`focusLayer`, `renderLayerPicker`](web/src/space/app.ts) |
-| Fit all | Clears search/selection and fits the whole scene | [`fit`](web/src/space/camera.ts#L109), [button events](web/src/space/app.ts#L214) |
-| Rearrange | Clears particles, rearranges processes/network peers/Netlink plates/files, and fits the scene | [`SpaceDataStore.replaceSnapshot`](web/src/space/data.ts), [button events](web/src/space/app.ts#L208) |
-
-#### Connection and page lifecycle
-
-See [`SpaceDataStore.start`](web/src/space/data.ts) for connection startup, [`SpaceDataStore.stop`](web/src/space/data.ts) for shutdown, and [`visibilitychange`/`pagehide`/`pageshow` handlers](web/src/space/app.ts#L234) for starting/stopping connections and rendering based on page visibility.
-
-- Hiding the tab or `pagehide` stops SSE/reconnect timers and clears particles, CPU glow, Netlink plates, and files. Redisplay or page-cache restoration reconnects.
-- Connection errors close the current EventSource, display an error, and create a new connection after three seconds only while visible. Successful connection clears the error; events from old connections are ignored.
-- Structure parsing/merging failures close the connection and immediately reconnect while visible to obtain initial structure.
-- Visibility changes, page departure, and page-cache restoration reset FPS measurements and consecutive-resolution-adjustment counters.
-
-#### SPACE verification entry points
-
-| Coverage | Test source | Command |
-|---|---|---|
-| Scene inputs, hit testing/selection, camera bounds, detail links/actions, render notifications/stop/resume | [space-components.test.ts](web/tests/space-components.test.ts) | `bash scripts/docker_test.sh web` |
-| Process layout | In-source tests in [process-layout.ts](web/src/space/process-layout.ts) and socket-peer/layout-stability regressions in [process-layout.test.ts](web/tests/process-layout.test.ts) | `bash scripts/docker_test.sh web src/space/process-layout.ts tests/process-layout.test.ts` |
-| Data merging, peer/file layout, activity model, resolution adjustment, label placement/fading | In-source tests in [data.ts](web/src/space/data.ts) and [renderer.ts](web/src/space/renderer.ts) | `bash scripts/docker_test.sh web` |
-| Persistent Netlink display, classification, shared FDs, exit/state changes, layout | [space-netlink.test.ts](web/tests/space-netlink.test.ts) | `bash scripts/docker_test.sh web` |
-| Display labels and UID colors | [space-formatting.test.ts](web/tests/space-formatting.test.ts) | `bash scripts/docker_test.sh web` |
-| Observation state/activity paths, SSE stop/resynchronization/stale-notification rejection | [data.ts in-source tests](web/src/space/data.ts) | `bash scripts/docker_test.sh web` |
-| WebGL rendering, layout/selection/camera, connection management | [space-browser.ts](web/tests/browser/space-browser.ts), calling [space-netlink.ts](web/tests/browser/space-netlink.ts), [space-network.ts](web/tests/browser/space-network.ts), [space-files.ts](web/tests/browser/space-files.ts) for network/Netlink/files | `bash scripts/docker_test.sh browser` after [browser test preparation](#browser-tests) |
-| Live CPU/IPC/file I/O sensors | [space-live.py](tests/space-live.py), [space-files-live.py](tests/space-files-live.py) | See [live sensor tests](#live-sensor-tests) |
+Test containers give perf/BPF suites the required capabilities and an unlimited
+memlock allowance so concurrent perf rings are not rejected by Docker's default
+locked-memory limit.
 
 ## SPACE recording and replay
 
@@ -1046,76 +1146,3 @@ tests/targets/bin/recursive --allow-inspector
 - [Rust module dependencies](https://akawashiro.github.io/procinsh/main/rust-architecture/)
 - [TypeScript module dependencies](https://akawashiro.github.io/procinsh/main/typescript-architecture/)
 - [Rust doc](https://akawashiro.github.io/procinsh/main/procinsh/index.html)
-
-
-## Acquisition and analysis boundary
-
-The privileged helper owns protected reads and kernel resources. The HTTP process
-clears capabilities and interprets acquired values before exposing the existing
-HTTP API. No file descriptor crosses IPC.
-
-During startup, the launcher locates and executes the sibling helper. After its
-handshake, the HTTP process sets `no_new_privs` before starting its worker threads.
-Embedded web assets, IPC data and in-memory analysis require no file reads.
-Logs continue through inherited stderr; inherited descriptors other than stdio
-are closed at startup.
-The helper reads `/etc/passwd` for account names and runs reverse DNS, including
-libc/NSS configuration reads. Neither operation runs in HTTP workers.
-
-Hardware acquisition reads fixed attribute names only, never PCI config space or
-BAR memory, and caps raw records at 16 MiB, directory lists at 4096 entries and
-individual text reads at 64 KiB. A truncated capture adds a snapshot warning.
-
-| Helper acquisition | Main interpretation |
-| --- | --- |
-| Protected procfs reads, process/FD identity checks and account-name acquisition | Process and thread rates, histories, environment/auxv formatting |
-| Raw executable-header bytes, ptrace/perf registers, stack bytes, instruction bytes and mapping metadata | Process architecture identification, register classification and roles, framehop unwinding and iced-x86 disassembly |
-| Open a currently executable mapped file, pin and verify its device/inode, read bounded bytes and recheck metadata | ELF/DWARF parsing, decompression, symbol/source lookup and caching |
-| FD ownership, socket metadata, namespace diagnostics and IPoIB neighbor observations | Peer/shared-holder relationships and destination enrichment |
-| BPF loading, attachment, bounded ring draining and map reads | File/IPC aggregation, CPU counter deltas and signal identity matching |
-| Character-device metadata and bounded raw sysfs/procfs hardware attributes | In-memory hardware topology, paths and device-handle grouping |
-| Observation sessions, acquisition cancellation, kernel resource cleanup and bounded reverse DNS workers/caches | Response formatting and hostname attachment |
-
-Test containers give perf/BPF suites the required capabilities and an unlimited
-memlock allowance so concurrent perf rings are not rejected by Docker's default
-locked-memory limit.
-
-IPC requests are limited to 1 KiB and replies to 1 GiB. The same-machine codec
-uses native-endian numbers, explicit enum tags and length-prefixed UTF-8 strings
-and collections. Structs are encoded field by field, without copying Rust padding
-or pointers. No protocol or package version matching is performed; the installed
-executables are built together. PID and Unix peer identity checks remain part of
-helper authentication. Frame lengths, collection lengths, tags, UTF-8 and socket
-deadlines are validated.
-
-`src/` contains only `ipc`, `privileged_helper` and `http_server`. The two executable
-subsystems expose only `run`; analysis, JSON adapters and presentation models are
-private children of `http_server`. IPC modules are visible only within the crate.
-Each executable includes the same
-IPC source definitions; main supplies their serde implementations through remote
-derives and JSON adapters. IPC has no serde or JSON values. The normal helper build
-does not include main's HTTP, JSON, ELF/DWARF, framehop, iced-x86, hardware-topology
-or DNS code. Helper tests include main's presentation adapters to exercise the
-existing HTTP contracts without putting that code into the installed helper.
-
-A mapped-file request selects a process identity, the start address of a current
-executable mapping and up to 60 file ranges. It cannot select a pathname or an
-arbitrary process-memory range. The helper pins and verifies a regular file against
-the mapping's device/inode, checks the ranges against the file length, reads at
-most 64 MiB per request, and rechecks the file metadata before replying. Source
-files are limited to 128 MiB. Descriptors remain inside the helper.
-
-Main first reads the ELF header and file identity. A previously cached identity
-requires no further data transfer. Otherwise, main reads the program/section
-headers and section-name table, then selects symbol/string tables, DWARF and
-unwind sections. Executable code and unrelated sections are omitted. A sparse
-reader lets the parser access only those captured ranges. Each reply must retain
-the same file identity throughout acquisition. Parsing, decompression limits,
-caching and source lookup all run in main. Unsupported or changed files retain
-raw stack addresses.
-
-Main owns per-session rates, histories, CPU deltas and analysis caches. Closing an
-observation releases that session's state. Mapping epochs travel with captured
-stack/register samples so a retained sample uses its original mapping context.
-Observation leases release abandoned helper collectors; lagged system subscribers
-receive a current typed snapshot for resynchronization.
