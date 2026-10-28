@@ -101,7 +101,7 @@ cd web
 npm run dev
 ```
 
-Open the URL printed by Vite (usually http://127.0.0.1:5173). Existing page URLs and process identity queries work as usual. HMR or a page reload applies frontend changes without rebuilding Rust. Vite proxies all of `/api` to the backend, allowing JSON and process/system SSE to use the same origin. Change the backend URL with `PROCINSH_BACKEND_URL=http://127.0.0.1:8080 npm run dev` or `web/.env.local`. The development header shows the version from Cargo.toml and a development indicator. In production, Rust inserts the Git SHA by replacing an HTML placeholder.
+Open the URL printed by Vite (usually http://127.0.0.1:5173). Existing page URLs and process identity queries work as usual. Vite proxies all of `/api` to the backend, allowing JSON and process/system SSE to use the same origin. Change the backend URL with `PROCINSH_BACKEND_URL=http://127.0.0.1:8080 npm run dev` or `web/.env.local`. The development header shows the version from Cargo.toml and a development indicator. In production, Rust inserts the Git SHA by replacing an HTML placeholder.
 
 In production, `rust-embed` embeds all of `web/dist/` in the binary and serves files with MIME types based on their extensions. Debug builds also use embedded files. After changing TypeScript, HTML, or CSS, run `npm --prefix web run build` and rebuild the Rust binary. Cargo watches generated files but does not check whether they are up to date with the sources. Node.js, npm, and external CDNs are unnecessary at runtime. SPACE requires WebGL2.
 
