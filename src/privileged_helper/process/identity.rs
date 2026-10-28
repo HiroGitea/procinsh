@@ -1,6 +1,6 @@
 use super::procfs;
+pub(in crate::privileged_helper) use crate::ipc::schema::ProcessId;
 use anyhow::{Result, bail, ensure};
-pub(in crate::privileged_helper) use procinsh_protocol::ipc::schema::ProcessId;
 
 #[cfg(test)]
 pub(in crate::privileged_helper) fn identity(pid: i32) -> Result<ProcessId> {

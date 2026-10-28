@@ -1,9 +1,9 @@
 use super::super::{AppState, client::ObservationSession, delivery::SnapshotEncoder};
+use crate::http_server::protocol::MonitorEvent;
 use axum::response::{
     IntoResponse, Response, Sse,
     sse::{Event, KeepAlive},
 };
-use procinsh_protocol::ipc::schema::MonitorEvent;
 use serde_json::Value;
 use std::{
     convert::Infallible,
@@ -19,6 +19,9 @@ pub(super) fn encode(
     delivery: &mut SnapshotEncoder,
 ) -> (Vec<(&'static str, String)>, Option<Arc<Value>>) {
     match event {
+        MonitorEvent::AcquiredSnapshot(_) | MonitorEvent::AcquisitionGap { .. } => {
+            unreachable!("acquisition snapshots must be processed before HTTP output")
+        }
         MonitorEvent::Observation(data) => (vec![("observation", data.to_string())], None),
         MonitorEvent::Activity(data) => (vec![("activity", data.to_string())], None),
         MonitorEvent::Snapshot(data) => {

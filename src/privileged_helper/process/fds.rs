@@ -19,7 +19,6 @@ use crate::privileged_helper::socket_types::{
 };
 use crate::privileged_helper::socket_types::{FdAccess, FdKind, InetAddress};
 use anyhow::Result;
-use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -28,53 +27,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct Key {
-    kind: FdKind,
-    device: u64,
-    inode: u64,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub(super) struct Endpoint {
-    pub(super) process_id: ProcessId,
-    pub(super) name: String,
-    pub(super) fd: u32,
-    pub(super) access: FdAccess,
-    pub(super) relation: String,
-}
-#[derive(Debug, Serialize)]
-pub(super) struct Descriptor {
-    pub(super) fd: u32,
-    pub(super) kind: FdKind,
-    pub(super) inode: String,
-    pub(super) target: String,
-    pub(super) access: FdAccess,
-    pub(super) protocol: Option<SocketProtocol>,
-    pub(super) state: Option<SocketState>,
-    /// Socket listener/peer availability; null for non-socket descriptors.
-    pub(super) connection_status: Option<SocketConnectionStatus>,
-    pub(super) local: Option<InetAddress>,
-    pub(super) remote: Option<InetAddress>,
-    pub(super) path: Option<String>,
-    pub(super) peer_inode: Option<String>,
-    pub(super) peers: Vec<Endpoint>,
-    pub(super) holders: Vec<Endpoint>,
-    pub(super) note: String,
-    #[serde(skip)]
-    key: Key,
-    #[serde(skip)]
-    mode: Option<u32>,
-    #[serde(skip)]
-    socket_device: Option<u64>,
-}
-#[derive(Debug, Serialize)]
-pub(super) struct FileDescriptors {
-    pub(super) process_id: ProcessId,
-    pub(super) captured_at: u64,
-    pub(super) entries: Vec<Descriptor>,
-    pub(super) warnings: Vec<String>,
-}
+pub(super) use crate::ipc::descriptors::{Descriptor, Endpoint, FileDescriptors, Key, Owner};
 
 fn inode(link: &str, prefix: &str) -> Option<u64> {
     link.strip_prefix(prefix)?.strip_suffix(']')?.parse().ok()
@@ -122,16 +75,12 @@ fn access(mode: Option<u32>) -> FdAccess {
     FdAccess::from_mode(mode)
 }
 
+#[cfg(test)]
 fn pipe_opposite(a: Option<u32>, b: Option<u32>) -> bool {
     matches!(
         (a, b),
         (Some(0), Some(1 | 2)) | (Some(1), Some(0 | 2)) | (Some(2), Some(0..=2))
     )
-}
-
-struct Owner {
-    endpoint: Endpoint,
-    mode: Option<u32>,
 }
 
 fn owners(
@@ -505,65 +454,22 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
     } else {
         owners(&keys, deadline, &mut warnings)?
     };
-    for entry in &mut entries {
-        if let Some(found) = owners.get(&entry.key) {
-            for owner in found {
-                if owner.endpoint.process_id == id && owner.endpoint.fd == entry.fd {
-                    continue;
-                }
-                let mut endpoint = owner.endpoint.clone();
-                if entry.kind != FdKind::Socket && pipe_opposite(entry.mode, owner.mode) {
-                    endpoint.relation = format!("{} end of the same pipe", endpoint.access);
-                    entry.peers.push(endpoint);
-                } else {
-                    endpoint.relation = if entry.kind == FdKind::Socket {
-                        "Holder of the same socket"
-                    } else {
-                        "Same pipe, same or unknown direction"
-                    }
-                    .into();
-                    entry.holders.push(endpoint);
-                }
-                if entry.peers.len() + entry.holders.len() >= 64 {
-                    entry.note = "Showing up to 64 peer/shared FDs.".into();
-                    break;
-                }
-            }
-        }
-        for key in peer_keys.get(&entry.fd).into_iter().flatten() {
-            if let Some(found) = owners.get(key) {
-                for owner in found {
-                    if entry.peers.len() >= 64 {
-                        entry.note = "Showing up to 64 peer FDs.".into();
-                        break;
-                    }
-                    let mut endpoint = owner.endpoint.clone();
-                    endpoint.relation = if entry.peer_inode.is_some() {
-                        "UNIX peer"
-                    } else {
-                        "Reversed address/port match (candidate)"
-                    }
-                    .into();
-                    entry.peers.push(endpoint);
-                }
-            }
-        }
-        if entry.peers.is_empty() && entry.note.is_empty() {
-            entry.note = if entry.state == Some(SocketState::Listen) {
-                "Listening (no peer PID)"
-            } else {
-                "Peer PID unknown (remote, unconnected, exited, unobserved, or access denied)"
-            }
-            .into();
-        }
-    }
     validate_process_identity(id)?;
-    Ok(FileDescriptors {
+    let result = FileDescriptors {
         process_id: id,
         captured_at: timestamp_ms(),
         entries,
         warnings,
-    })
+        raw_fd_owners: owners.into_iter().collect(),
+        raw_peer_keys: peer_keys.into_iter().collect(),
+    };
+    #[cfg(test)]
+    let result = {
+        let mut result = result;
+        crate::http_server::analysis::descriptors::complete(&mut result);
+        result
+    };
+    Ok(result)
 }
 
 #[cfg(test)]

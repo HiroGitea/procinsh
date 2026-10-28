@@ -1,6 +1,22 @@
 use super::{self as process, maps, memory, test_support::Target};
 use std::time::Duration;
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct EnvironmentSnapshot {
+    process_id: process::ProcessId,
+    captured_at: u64,
+    entries: Vec<crate::http_server::analysis::details::EnvironmentEntry>,
+    lossy_utf8: bool,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct AuxVectorSnapshot {
+    process_id: process::ProcessId,
+    captured_at: u64,
+    word_bits: u8,
+    entries: Vec<crate::http_server::analysis::details::AuxEntry>,
+}
+
 #[test]
 fn netns_fd_list_resolves_peers_separately_from_shared_holders() {
     use crate::privileged_helper::socket_types::{SocketConnectionStatus, SocketState};
@@ -60,7 +76,13 @@ fn memory_partial_reads_and_map_statistics() {
 #[test]
 fn environment_and_auxv_read_child_metadata_and_reject_stale_identity() {
     let mut target = Target::new("sleeping");
-    let environment = process::details::environment(target.id).unwrap();
+    let environment: EnvironmentSnapshot = serde_json::from_value(
+        serde_json::to_value(process::details::environment(target.id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(environment.process_id, target.id);
+    assert!(environment.captured_at > 0);
+    assert!(!environment.lossy_utf8);
     let entry = environment
         .entries
         .iter()
@@ -80,7 +102,12 @@ fn environment_and_auxv_read_child_metadata_and_reject_stale_identity() {
             .as_deref(),
         Some("")
     );
-    let auxv = process::details::auxv(target.id).unwrap();
+    let auxv: AuxVectorSnapshot = serde_json::from_value(
+        serde_json::to_value(process::details::auxv(target.id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(auxv.process_id, target.id);
+    assert!(auxv.captured_at > 0);
     assert_eq!(auxv.word_bits, 64);
     assert_eq!(
         auxv.entries

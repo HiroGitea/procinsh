@@ -1,136 +1,53 @@
-//! Collect process structure, descriptor relations, RDMA queue pairs and hardware,
-//! retaining kinds without peers.
+//! Acquire process structure and raw descriptor observations for main-side interpretation.
 //!
 //! # Interface
 //!
 //! | Definition | Visibility | Kind / signature |
 //! | --- | --- | --- |
-//! | [`ProcessSnapshot`] | `pub(super)` | `struct ProcessSnapshot` |
-//! | [`FdEndpoint`] | `pub(super)` | `struct FdEndpoint` |
-//! | [`SocketEndpoint`] | `pub(super)` | `struct SocketEndpoint` |
-//! | [`FdRelation`] | `pub(super)` | `struct FdRelation` |
+//! | [`ProcessSnapshot`] | `pub(in crate::privileged_helper)` | `struct ProcessSnapshot` |
+//! | [`FdEndpoint`] | `pub(in crate::privileged_helper)` | `struct FdEndpoint` |
+//! | [`NeighborSnapshot`] | `pub(in crate::privileged_helper)` | `struct NeighborSnapshot` |
 //! | [`SystemSnapshot`] | `pub(in crate::privileged_helper)` | `struct SystemSnapshot` |
 //! | [`process_from_summary`] | `pub(super)` | `fn process_from_summary(summary: `[`ProcessSummary`]`, parent_id: `[`Option`]`<`[`ProcessId`]`>) -> `[`ProcessSnapshot`] |
 //! | [`collect`] | `pub(super)` | `fn collect(discovery: &mut `[`ProcessScanner`]`) -> `[`SystemSnapshot`] |
 //! | [`collect_from`] | `pub(super)` | `fn collect_from(discovery: &mut `[`ProcessScanner`]`, sources: &`[`HardwareSources`]`) -> `[`SystemSnapshot`] |
 
-use super::hardware::{
-    DeviceHandle, HardwareDevice, HardwareObservation, HardwarePath, HardwareSources,
+#[cfg(test)]
+use super::hardware::HardwareObservation;
+use super::hardware::HardwareSources;
+use super::rdma;
+/// A Linux process and its observed structural address space, without RSS/PSS.
+/// CPU and RSS measurements belong to [`crate::privileged_helper::process::ProcessSummary`].
+pub(in crate::privileged_helper) use crate::ipc::model::system::{
+    FdEndpoint, NeighborSnapshot, ProcessSnapshot, SystemSnapshot,
 };
-use super::rdma::{self, RdmaPortInfo, RdmaRelation};
+#[cfg(test)]
+pub(in crate::privileged_helper) use crate::ipc::model::system::{FdRelation, SocketEndpoint};
 use crate::privileged_helper::process::{
-    self, MemoryMap, ProcessId, ProcessScanner, ProcessSummary, SocketInfo,
+    self, ProcessId, ProcessScanner, ProcessSummary, SocketInfo,
 };
 use crate::privileged_helper::resource::{DeviceId, IpcIdentity, IpcKind};
+#[cfg(test)]
+use crate::privileged_helper::socket_types::SocketState;
 use crate::privileged_helper::socket_types::{
-    AddressFamily, SocketConnectionStatus, SocketProtocol, SocketState, SocketType,
+    AddressFamily, SocketConnectionStatus, SocketProtocol, SocketType,
 };
-use crate::privileged_helper::socket_types::{FdAccess, FdKind, InetAddress};
-use serde::Serialize;
+use crate::privileged_helper::socket_types::{FdAccess, FdKind};
 use std::{
     collections::{HashMap, HashSet},
     fs,
     os::unix::fs::{FileTypeExt, MetadataExt},
     time::{Duration, Instant},
 };
-/// A Linux process and its observed structural address space, without RSS/PSS.
-/// CPU and RSS measurements belong to [`crate::privileged_helper::process::ProcessSummary`].
-#[derive(Clone, Serialize)]
-pub(super) struct ProcessSnapshot {
-    pub(super) identity: ProcessId,
-    pub(super) parent_id: Option<ProcessId>,
-    pub(super) name: String,
-    /// Complete argument vector from /proc; absent when it cannot be read.
-    pub(super) command_line: Option<Vec<String>>,
-    pub(super) uid: Option<u32>,
-    pub(super) username: Option<String>,
-    pub(super) euid: Option<u32>,
-    pub(super) effective_username: Option<String>,
-    pub(super) maps: Vec<MemoryMap>,
-    pub(super) maps_epoch: u64,
-    pub(super) maps_error: Option<String>,
-}
-/// A process-owned file descriptor endpoint, including coalesced shared FDs.
-#[derive(Clone, PartialEq, Eq, Serialize)]
-pub(super) struct FdEndpoint {
-    pub(super) process_id: ProcessId,
-    pub(super) fd: u32,
-    pub(super) fd_count: usize,
-    pub(super) resource: IpcIdentity,
-    pub(super) kind: FdKind,
-    pub(super) access: FdAccess,
-    /// Independent connection observation; null for non-socket resources.
-    pub(super) connection_status: Option<SocketConnectionStatus>,
-}
-#[derive(Clone, PartialEq, Eq, Serialize)]
-pub(super) struct SocketEndpoint {
-    pub(super) protocol: SocketProtocol,
-    /// Null when no state was observed, even if the socket kind is known.
-    pub(super) state: Option<SocketState>,
-    pub(super) local: Option<InetAddress>,
-    pub(super) remote: Option<InetAddress>,
-    pub(super) path: Option<String>,
-    pub(super) network_peer: bool,
-    pub(super) remote_hostname: Option<String>,
-    /// The remote InfiniBand port GID when the destination is an IPoIB neighbor.
-    pub(super) remote_gid: Option<String>,
-}
-impl From<&SocketInfo> for SocketEndpoint {
-    fn from(info: &SocketInfo) -> Self {
-        Self {
-            protocol: info.protocol,
-            remote_hostname: None,
-            remote_gid: None,
-            state: info.state,
-            local: info.local.map(InetAddress::from),
-            remote: info.remote.map(InetAddress::from),
-            path: info.path.clone(),
-            network_peer: info.protocol.is_tcp_or_udp()
-                && info.state != Some(SocketState::Listen)
-                && info
-                    .remote
-                    .is_some_and(|remote| remote.port() != 0 && !remote.ip().is_unspecified()),
-        }
-    }
-}
-/// A socket, pipe, or shared-ownership relation between file descriptor endpoints.
-/// An absent peer represents an external or unidentified process endpoint.
-#[derive(Clone, PartialEq, Eq, Serialize)]
-pub(super) struct FdRelation {
-    pub(super) id: String,
-    pub(super) endpoint: FdEndpoint,
-    pub(super) peer: Option<FdEndpoint>,
-    pub(super) label: String,
-    pub(super) socket: Option<SocketEndpoint>,
-    pub(super) candidate: bool,
-    pub(super) shared: bool,
-}
-/// A system-wide observation of processes and their file descriptor relations.
-#[derive(Clone, Default, Serialize)]
-// Re-exported by system for subscription consumers.
-pub(in crate::privileged_helper) struct SystemSnapshot {
-    pub(super) captured_at: u64,
-    pub(super) processes: Vec<ProcessSnapshot>,
-    pub(super) fd_relations: Vec<FdRelation>,
-    pub(super) rdma_ports: Vec<RdmaPortInfo>,
-    pub(super) rdma_relations: Vec<RdmaRelation>,
-    pub(super) hardware_devices: Vec<HardwareDevice>,
-    pub(super) hardware_paths: Vec<HardwarePath>,
-    pub(super) device_handles: Vec<DeviceHandle>,
-    pub(super) warnings: Vec<String>,
-    pub(super) inspected_processes: usize,
-    pub(super) inspected_fds: usize,
-}
 
 /// Adds IPoIB remote GIDs to network destinations of the collector's own network
 /// namespace. Neighbors are read only when an IPoIB interface exists.
 fn add_remote_gids(
     result: &mut SystemSnapshot,
-    inode_ns: &HashMap<u64, (u64, u64)>,
+    _inode_ns: &HashMap<u64, (u64, u64)>,
     sources: &HardwareSources,
 ) {
-    let wanted = |r: &FdRelation| r.socket.as_ref().is_some_and(|s| s.network_peer);
-    if !result.fd_relations.iter().any(wanted) || !super::ipoib::has_ipoib_interface(&sources.sys) {
+    if !super::ipoib::has_ipoib_interface(&sources.sys) {
         return;
     }
     let Ok(own) = fs::metadata("/proc/thread-self/ns/net") else {
@@ -145,15 +62,24 @@ fn add_remote_gids(
             return;
         }
     };
+    result.raw_neighbors = Some(NeighborSnapshot {
+        entries: neighbors
+            .iter()
+            .map(|(ip, gid)| (*ip, gid.clone()))
+            .collect(),
+        namespace: (own.dev(), own.ino()),
+    });
+    #[cfg(test)]
     apply_remote_gids(
         &mut result.fd_relations,
         &neighbors,
-        inode_ns,
+        _inode_ns,
         (own.dev(), own.ino()),
     );
 }
 
 /// Sets `remote_gid` of network destinations whose socket is in namespace `own`.
+#[cfg(test)]
 fn apply_remote_gids(
     relations: &mut [FdRelation],
     neighbors: &HashMap<std::net::IpAddr, String>,
@@ -203,8 +129,18 @@ pub(super) fn collect_from(
         captured_at: process::timestamp_ms(),
         ..Default::default()
     };
-    let hardware = HardwareObservation::observe(sources);
-    let mut handles = hardware.handles(sources);
+    result.raw_hardware = super::hardware_capture::capture(&sources.sys, &sources.proc);
+    if result.raw_hardware.truncated {
+        result
+            .warnings
+            .push("Hardware acquisition size limit reached".into());
+    }
+    #[cfg(test)]
+    let acquired = HardwareSources::acquired(result.raw_hardware.clone());
+    #[cfg(test)]
+    let hardware = HardwareObservation::observe(&acquired);
+    #[cfg(test)]
+    let mut handles = hardware.handles(&acquired);
     let summaries = match discovery.collect() {
         Ok(v) => v,
         Err(e) => {
@@ -333,6 +269,10 @@ pub(super) fn collect_from(
                         FdKind::Pipe
                     } else {
                         if meta.file_type().is_char_device() {
+                            result
+                                .raw_device_handles
+                                .push((n.identity, number, meta.rdev()));
+                            #[cfg(test)]
                             handles.observe(n.identity, number, meta.rdev());
                         }
                         continue;
@@ -435,185 +375,29 @@ pub(super) fn collect_from(
                 });
         }
     }
-    let mut unknown_socket_types = 0;
-    let mut unknown_connection_statuses = 0;
-    for (resource, endpoints) in &mut owners {
-        if resource.kind != IpcKind::Socket {
-            continue;
-        }
-        let observed = metadata
-            .get(resource)
-            .map_or(SocketConnectionStatus::Unknown, |m| m.connection_status);
-        let info = infos.get(&resource.inode);
-        let status = info.map_or(observed, |info| info.connection_status(observed));
-        for endpoint in endpoints {
-            endpoint.connection_status = Some(status);
-            if info.is_none() {
-                unknown_socket_types += endpoint.fd_count;
-            }
-            if status == SocketConnectionStatus::Unknown {
-                unknown_connection_statuses += endpoint.fd_count;
-            }
-        }
-    }
-    // Socket inodes are global, but reversed tuples must also share a namespace. Build candidates from same net table below only if unique.
-    let mut reverse: HashMap<_, Vec<u64>> = HashMap::new();
-    for (&inode, info) in &infos {
-        if info.protocol.is_tcp_or_udp()
-            && let (Some(local), Some(remote)) = (info.local, info.remote)
-            && remote.port() != 0
-            && !remote.ip().is_unspecified()
-            && info.state != Some(SocketState::Listen)
-        {
-            reverse
-                .entry((
-                    inode_ns.get(&inode).copied(),
-                    info.protocol.is_tcp(),
-                    local,
-                    remote,
-                ))
-                .or_default()
-                .push(inode);
-        }
-    }
-    let mut by_inode = HashMap::new();
-    for key in owners.keys() {
-        if key.kind == IpcKind::Socket {
-            by_inode.insert(key.inode, *key);
-        }
-    }
-    for endpoints in owners.values_mut() {
-        endpoints.sort_by_key(|p| (p.process_id.pid, p.process_id.start_time_ticks, p.fd));
-    }
-    let mut seen = HashSet::new();
-    for (key, endpoints) in &owners {
-        for endpoint in endpoints {
-            let mut matches: Vec<(&FdEndpoint, bool, bool, String)> = Vec::new();
-            for peer in endpoints {
-                if endpoint.process_id == peer.process_id && endpoint.fd == peer.fd {
-                    continue;
-                }
-                let shared =
-                    endpoint.kind == FdKind::Socket || !endpoint.access.opposite(peer.access);
-                // Shared ownership is a group, not a full mesh of communication links.
-                if shared
-                    && !std::ptr::eq(endpoint, &endpoints[0])
-                    && !std::ptr::eq(peer, &endpoints[0])
-                {
-                    continue;
-                }
-                matches.push((peer, false, shared, endpoint.kind.to_string()));
-            }
-            let inode = key.inode;
-            let info = if endpoint.kind == FdKind::Socket {
-                infos.get(&inode)
-            } else {
-                None
-            };
-            if let Some(info) = info {
-                let mut peers = Vec::new();
-                if let Some(peer) = info.peer_inode {
-                    peers.push((peer, false));
-                } else if info.protocol.is_tcp_or_udp()
-                    && let (Some(local), Some(remote)) = (info.local, info.remote)
-                    && let Some(ids) = reverse.get(&(
-                        inode_ns.get(&inode).copied(),
-                        info.protocol.is_tcp(),
-                        remote,
-                        local,
-                    ))
-                {
-                    peers.extend(ids.iter().filter(|&&v| v != inode).map(|&v| (v, true)));
-                }
-                for (peer, candidate) in peers {
-                    if let Some(peer_endpoints) = by_inode.get(&peer).and_then(|k| owners.get(k)) {
-                        for peer in peer_endpoints {
-                            matches.push((peer, candidate, false, info.protocol.to_string()));
-                        }
-                    }
-                }
-            }
-            // Shared ownership does not identify a network receiver.
-            if matches.is_empty()
-                || (info.is_some_and(|info| SocketEndpoint::from(info).network_peer)
-                    && matches.iter().all(|(_, _, shared, _)| *shared))
-            {
-                let label = info
-                    .map(|i| {
-                        format!(
-                            "{} {} {}",
-                            i.protocol,
-                            i.state.map(|s| s.to_string()).unwrap_or_default(),
-                            i.remote
-                                .map(|v| v.to_string())
-                                .or(i.path.clone())
-                                .unwrap_or_default()
-                        )
-                    })
-                    .map(|label| label.trim().to_owned())
-                    .unwrap_or_else(|| {
-                        if endpoint.kind == FdKind::Socket {
-                            "Socket · Type unavailable".into()
-                        } else {
-                            "Unknown peer".into()
-                        }
-                    });
-                result.fd_relations.push(FdRelation {
-                    id: format!(
-                        "{}:{}:{}:external",
-                        endpoint.process_id.pid, endpoint.process_id.start_time_ticks, endpoint.fd
-                    ),
-                    endpoint: endpoint.clone(),
-                    peer: None,
-                    label,
-                    socket: info.map(SocketEndpoint::from),
-                    candidate: false,
-                    shared: false,
-                });
-            }
-            matches.sort_by_key(|(_, _, shared, _)| *shared);
-            if matches.len() > 64 {
-                truncated = true;
-            }
-            for (peer, candidate, shared, label) in matches.into_iter().take(64) {
-                let label = if endpoint.kind == FdKind::Socket {
-                    info.map(|i| i.protocol.to_string())
-                        .unwrap_or_else(|| "Socket · Type unavailable".into())
-                } else {
-                    label
-                };
-                let mut ends = [
-                    format!(
-                        "{}:{}:{}",
-                        endpoint.process_id.pid, endpoint.process_id.start_time_ticks, endpoint.fd
-                    ),
-                    format!(
-                        "{}:{}:{}",
-                        peer.process_id.pid, peer.process_id.start_time_ticks, peer.fd
-                    ),
-                ];
-                ends.sort();
-                let id = ends.join("/");
-                if seen.insert(id.clone()) {
-                    result.fd_relations.push(FdRelation {
-                        id,
-                        endpoint: endpoint.clone(),
-                        peer: Some(peer.clone()),
-                        label,
-                        socket: info.map(SocketEndpoint::from),
-                        candidate,
-                        shared,
-                    });
-                }
-            }
-            if result.fd_relations.len() >= 20_000 {
-                truncated = true;
-                break;
-            }
-        }
-        if result.fd_relations.len() >= 20_000 {
-            break;
-        }
+    result.raw_owners = owners.into_iter().collect();
+    let resolver = {
+        static RESOLVER: std::sync::OnceLock<super::resolver::ReverseDnsResolver> =
+            std::sync::OnceLock::new();
+        RESOLVER.get_or_init(super::resolver::ReverseDnsResolver::new)
+    };
+    let ips: HashSet<_> = infos
+        .values()
+        .filter_map(|socket| socket.remote.map(|address| address.ip()))
+        .collect();
+    result.raw_hostnames = ips
+        .into_iter()
+        .filter_map(|ip| resolver.lookup(ip).map(|name| (ip, name)))
+        .collect();
+    result.raw_sockets = infos.into_iter().collect();
+    result.raw_namespaces = inode_ns.iter().map(|(inode, ns)| (*inode, *ns)).collect();
+    result.raw_connections = metadata
+        .into_iter()
+        .map(|(id, meta)| (id, meta.connection_status))
+        .collect();
+    #[cfg(test)]
+    {
+        truncated |= crate::http_server::analysis::relations::build(&mut result);
     }
     add_remote_gids(&mut result, &inode_ns, sources);
     let pids = result
@@ -628,25 +412,27 @@ pub(super) fn collect_from(
     );
     result.rdma_ports = observed.ports;
     result.rdma_relations = observed.relations;
+    for relation in &mut result.rdma_relations {
+        if relation.peer.is_none() {
+            relation.remote_hostname = relation
+                .cm
+                .as_ref()
+                .and_then(|cm| cm.destination?.ip())
+                .and_then(|ip| resolver.lookup(ip));
+        }
+    }
     result.warnings.extend(observed.warnings);
-    let live = result.processes.iter().map(|p| p.identity).collect();
-    result.device_handles = handles.finish(&live);
-    result.hardware_devices = hardware.devices;
-    result.hardware_paths = hardware.paths;
+    #[cfg(test)]
+    {
+        let live = result.processes.iter().map(|p| p.identity).collect();
+        result.device_handles = handles.finish(&live);
+        result.hardware_devices = hardware.devices;
+        result.hardware_paths = hardware.paths;
+    }
     if denied > 0 {
         result
             .warnings
             .push(format!("Access denied for {denied} processes/FDs"));
-    }
-    if unknown_socket_types > 0 {
-        result.warnings.push(format!(
-            "Socket type unavailable for {unknown_socket_types} FDs (closed, unobserved, unsupported, or access denied)."
-        ));
-    }
-    if unknown_connection_statuses > 0 {
-        result.warnings.push(format!(
-            "Socket connection status unavailable for {unknown_connection_statuses} FDs (closed, unobserved, unsupported, or access denied)."
-        ));
     }
     if truncated {
         result

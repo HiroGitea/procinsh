@@ -1,14 +1,6 @@
-use std::{process::Command, sync::OnceLock};
+//! Fixture compilation shared with the analysis contract tests.
+//!
+//! # Interface
+//! Test-only helpers; this module is absent from normal builds.
 
-pub(super) fn build_targets() {
-    static BUILD: OnceLock<()> = OnceLock::new();
-    BUILD.get_or_init(|| {
-        assert!(
-            Command::new("sh")
-                .arg("tests/targets/build.sh")
-                .status()
-                .unwrap()
-                .success()
-        );
-    });
-}
+pub(super) use crate::test_support::build_targets;

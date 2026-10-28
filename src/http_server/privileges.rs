@@ -1,5 +1,12 @@
+//! Clear HTTP process capabilities and seal privilege changes after helper startup.
+//!
+//! # Interface
+//! All entry points have `pub(super)` visibility.
+//! - [`close_inherited`]: `fn close_inherited() -> anyhow::Result<()>`.
+//! - [`drop_application_capabilities`]: `fn drop_application_capabilities() -> anyhow::Result<()>`.
+//! - [`seal_application`]: `fn seal_application() -> anyhow::Result<()>`.
 use anyhow::{Context, Result, ensure};
-use std::{io, os::fd::RawFd};
+use std::io;
 
 // Linux capability ABI v3 covers capabilities 0..63 on x86-64.
 #[repr(C)]
@@ -51,18 +58,12 @@ fn prctl(option: i32, arg: libc::c_ulong, operation: &str) -> Result<()> {
 }
 
 /// Close inherited resources before creating the socketpair or any runtime.
-/// Preserve only stdio. Enumeration is collected before closing its directory.
+/// Preserve only stdio; requires Linux close_range support.
 pub(super) fn close_inherited() -> Result<()> {
-    if unsafe { libc::syscall(libc::SYS_close_range, 3_u32, u32::MAX, 0_u32) } == 0 {
-        return Ok(());
-    }
-    let fds: Vec<RawFd> = std::fs::read_dir("/proc/self/fd")?
-        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
-        .collect();
-    for fd in fds.into_iter().filter(|fd| *fd >= 3) {
-        unsafe { libc::close(fd) };
-    }
-    Ok(())
+    check(
+        unsafe { libc::syscall(libc::SYS_close_range, 3_u32, u32::MAX, 0_u32) },
+        "close inherited resources",
+    )
 }
 
 fn clear_ambient() -> Result<()> {

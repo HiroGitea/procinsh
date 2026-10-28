@@ -1,27 +1,20 @@
-//! GPUs, RDMA NICs, accelerators and NVSwitches with the PCIe bridges between them,
-//! the paths between devices, and the processes holding their character devices.
-//!
-//! Everything comes from sysfs and procfs without privileges; `config` space and
-//! vendor libraries are not used, so no device is woken or modified.
+//! Sysfs location used by protected neighbor acquisition.
 //!
 //! # Interface
-//!
-//! | Definition | Visibility | Kind |
-//! | --- | --- | --- |
-//! | [`HardwareObservation`] | `pub(super)` | `struct HardwareObservation` |
-//! | [`HardwareSources`] | `pub(super)` | `struct HardwareSources` |
-//! | [`HardwareDevice`] | `pub(super)` | `struct HardwareDevice` |
-//! | [`HardwarePath`] | `pub(super)` | `struct HardwarePath` |
-//! | [`DeviceHandle`] | `pub(super)` | `struct DeviceHandle` |
-//!
-//! [`HardwareObservation::handles`] returns a [`handles::DeviceHandleCollector`].
-
-mod devices;
-mod handles;
-mod observation;
-mod paths;
-mod pci;
-pub(super) use devices::HardwareDevice;
-pub(super) use handles::DeviceHandle;
-pub(super) use observation::{HardwareObservation, HardwareSources};
-pub(super) use paths::HardwarePath;
+//! [`HardwareSources`] (`pub(super)`): `struct HardwareSources` supplies the sysfs root.
+#[cfg(test)]
+pub(super) use crate::http_server::analysis::hardware::*;
+#[cfg(not(test))]
+pub(super) struct HardwareSources {
+    pub sys: std::path::PathBuf,
+    pub proc: std::path::PathBuf,
+}
+#[cfg(not(test))]
+impl Default for HardwareSources {
+    fn default() -> Self {
+        Self {
+            sys: "/sys".into(),
+            proc: "/proc".into(),
+        }
+    }
+}

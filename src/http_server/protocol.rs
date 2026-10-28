@@ -1,0 +1,85 @@
+//! Convert native replies into main-owned values for HTTP analysis and output.
+//!
+//! # Interface
+//! - [`MonitorEvent`] (`pub(super)`): `enum MonitorEvent`.
+//! - [`MonitorResponse`] (`pub(super)`): `enum MonitorResponse`.
+//! - [`response`] (`pub(super)`): `fn response(raw: crate::ipc::schema::MonitorResponse) -> anyhow::Result<MonitorResponse>`.
+//!
+//! - [`HelperIdentity`] (`pub(super)`): `struct HelperIdentity` from [`crate::ipc::schema`].
+//! - [`MonitorRequest`] (`pub(super)`): `enum MonitorRequest` from [`crate::ipc::schema`].
+//! - [`ProcessId`] (`pub(super)`): `struct ProcessId` from [`crate::ipc::schema`].
+//! - [`ProcessResource`] (`pub(super)`): `enum ProcessResource` from [`crate::ipc::schema`].
+//! - [`MAX_REQUEST`] (`pub(super)`): `const MAX_REQUEST: usize` from [`crate::ipc::schema`].
+//! - [`MAX_RESPONSE`] (`pub(super)`): `const MAX_RESPONSE: usize` from [`crate::ipc::schema`].
+//! - [`TIMEOUT`] (`pub(super)`): `const TIMEOUT: std::time::Duration` from [`crate::ipc::schema`].
+//! - [`WireResponse`] (`pub(super)`): `type WireResponse = Result<crate::ipc::schema::MonitorResponse, String>` from [`crate::ipc::schema`].
+pub(super) use crate::ipc::schema::{
+    HelperIdentity, MAX_REQUEST, MAX_RESPONSE, MonitorRequest, ProcessId, ProcessResource, TIMEOUT,
+    WireResponse,
+};
+use anyhow::Result;
+use serde_json::Value;
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(super) enum MonitorEvent {
+    Observation(Value),
+    Snapshot(Value),
+    Activity(Value),
+    Gap {
+        dropped: u64,
+        snapshot: Value,
+    },
+    #[serde(skip)]
+    AcquiredSnapshot(std::sync::Arc<crate::ipc::model::system::SystemSnapshot>),
+    #[serde(skip)]
+    AcquisitionGap {
+        dropped: u64,
+        snapshot: std::sync::Arc<crate::ipc::model::system::SystemSnapshot>,
+    },
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(super) enum MonitorResponse {
+    Data(Value),
+    Started {
+        session: u64,
+        initial: MonitorEvent,
+    },
+    Event {
+        event: Option<MonitorEvent>,
+        closed: bool,
+    },
+    Closed,
+}
+fn event(raw: crate::ipc::schema::MonitorEvent) -> Result<MonitorEvent> {
+    use crate::ipc::schema::MonitorEvent as Raw;
+    Ok(match raw {
+        Raw::Observation(value) => MonitorEvent::Observation(serde_json::to_value(&*value)?),
+        Raw::Activity(value) => MonitorEvent::Activity(serde_json::to_value(&*value)?),
+        Raw::AcquiredSnapshot(value) => MonitorEvent::AcquiredSnapshot(value),
+        Raw::AcquisitionGap { dropped, snapshot } => {
+            MonitorEvent::AcquisitionGap { dropped, snapshot }
+        }
+    })
+}
+pub(super) fn response(raw: crate::ipc::schema::MonitorResponse) -> Result<MonitorResponse> {
+    use crate::ipc::schema::{AcquiredData, MonitorResponse as Raw};
+    Ok(match raw {
+        Raw::Data(value) => MonitorResponse::Data(match value {
+            AcquiredData::Processes(v) => serde_json::to_value(v)?,
+            AcquiredData::Observation(v) => serde_json::to_value(v)?,
+            AcquiredData::Maps(v) => serde_json::to_value(v)?,
+            AcquiredData::Environment(v) => serde_json::to_value(v)?,
+            AcquiredData::Auxv(v) => serde_json::to_value(v)?,
+            AcquiredData::Fds(v) => serde_json::to_value(v)?,
+        }),
+        Raw::Elf(_) => anyhow::bail!("unexpected mapped file reply"),
+        Raw::Started { session, initial } => MonitorResponse::Started {
+            session,
+            initial: event(initial)?,
+        },
+        Raw::Event { event: raw, closed } => MonitorResponse::Event {
+            event: raw.map(event).transpose()?,
+            closed,
+        },
+        Raw::Closed => MonitorResponse::Closed,
+    })
+}

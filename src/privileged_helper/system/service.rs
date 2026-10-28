@@ -1,5 +1,5 @@
 use super::model::{SystemActivity, SystemMonitorStatus};
-use super::{SystemSnapshot, activity, resolver, snapshot};
+use super::{SystemSnapshot, activity, snapshot};
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::privileged_helper) enum SubscribeError {
     Stopped,
@@ -130,10 +130,16 @@ impl SystemMonitor {
                 self.send(SystemMonitorEvent::Activity(Arc::new(SystemActivity {
                     captured_at: crate::privileged_helper::process::timestamp_ms(),
                     window_ms: last.elapsed().as_millis() as u64,
-                    files: batch.files,
-                    ipc: batch.ipc,
-                    cpu: batch.cpu,
-                    signals: batch.signals,
+                    files: Vec::new(),
+                    ipc: Vec::new(),
+                    cpu: Vec::new(),
+                    signals: Vec::new(),
+                    raw_activity: Some(crate::ipc::activity::RawActivity {
+                        files: batch.files,
+                        ipc: batch.ipc,
+                        cpu: batch.cpu,
+                        signals: batch.signals,
+                    }),
                     status,
                 })));
                 last = Instant::now();
@@ -155,7 +161,6 @@ impl SystemMonitor {
         workers.push(spawn_worker("snapshot", move || {
             log::info!("System snapshot worker started");
             let mut previous_warnings = Vec::new();
-            let resolver = resolver::ReverseDnsResolver::new();
             let mut discovery = crate::privileged_helper::process::ProcessScanner::default();
             let mut full = Instant::now() - Duration::from_secs(10);
             while !monitor.stopped() {
@@ -165,7 +170,7 @@ impl SystemMonitor {
                     continue;
                 }
                 if full.elapsed() >= Duration::from_secs(1) {
-                    let mut data = snapshot::collect(&mut discovery);
+                    let data = snapshot::collect(&mut discovery);
                     if data.warnings != previous_warnings {
                         if data.warnings.is_empty() {
                             log::info!("System snapshot recovered");
@@ -182,23 +187,6 @@ impl SystemMonitor {
                         data.fd_relations.len(),
                         data.rdma_relations.len()
                     );
-                    for relation in &mut data.fd_relations {
-                        if let Some(socket) = &mut relation.socket
-                            && socket.network_peer
-                        {
-                            socket.remote_hostname =
-                                socket.remote.and_then(|a| resolver.lookup(a.ip));
-                        }
-                    }
-                    for relation in &mut data.rdma_relations {
-                        if relation.peer.is_none() {
-                            relation.remote_hostname = relation
-                                .cm
-                                .as_ref()
-                                .and_then(|cm| cm.destination?.ip())
-                                .and_then(|ip| resolver.lookup(ip));
-                        }
-                    }
                     let data = Arc::new(data);
                     monitor.send(SystemMonitorEvent::Snapshot(data.clone()));
                     *monitor.snapshot.write().unwrap() = data;

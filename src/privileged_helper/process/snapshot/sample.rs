@@ -1,10 +1,5 @@
 use super::registers::RegisterSet;
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SampleSource {
-    CpuClock,
-    Ptrace,
-    ContextSwitch { preempted: bool },
-}
+pub use crate::ipc::acquisition::SampleSource;
 pub(super) struct RawSample {
     pub(super) source: SampleSource,
     pub(super) tid: i32,

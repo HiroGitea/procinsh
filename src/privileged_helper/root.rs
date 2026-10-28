@@ -12,9 +12,9 @@
 #[cfg(test)]
 #[path = "test_http/api/root.rs"]
 mod api;
-mod helper;
+mod launch;
 mod privileges;
-pub(crate) use helper::run;
+pub(crate) use launch::run;
 mod helper_service;
 #[cfg(test)]
 #[path = "../http_server/middleware.rs"]
@@ -53,3 +53,5 @@ mod helper_tests;
 #[cfg(test)]
 #[path = "../http_server/delivery.rs"]
 mod http_delivery;
+
+pub(crate) mod abi;

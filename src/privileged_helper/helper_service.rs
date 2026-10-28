@@ -1,7 +1,6 @@
+use crate::ipc::{schema::*, transport};
 use crate::privileged_helper::{process, system};
 use anyhow::{Result, ensure};
-use procinsh_protocol::ipc::{schema::*, transport};
-use serde_json::to_value;
 use std::{
     collections::HashMap,
     os::{fd::AsRawFd, unix::net::UnixStream},
@@ -92,23 +91,30 @@ impl MonitorService {
         }
         ensure!(!self.state.monitoring.is_stopped(), "Server is stopping");
         match request {
-            MonitorRequest::Processes => Ok(MonitorResponse::Data(to_value(
+            MonitorRequest::MappedElf {
+                id,
+                mapping_start,
+                ranges,
+            } => process::mapped_elf(id, mapping_start, ranges),
+            MonitorRequest::Processes => Ok(MonitorResponse::Data(AcquiredData::Processes(
                 self.state.discovery.lock().unwrap().collect()?,
-            )?)),
+            ))),
             MonitorRequest::Process { id, resource } => {
-                // Never rely on the HTTP child's query validation. Recheck
-                // identity after acquisition, too, before releasing the result.
                 process::validate_process_identity(id)?;
-                let value = match resource {
-                    ProcessResource::Observation => to_value(process::observation(id)?)?,
-                    ProcessResource::Threads => to_value(process::threads(id)?)?,
-                    ProcessResource::Maps => to_value(process::maps(id)?)?,
-                    ProcessResource::Environment => to_value(process::environment(id)?)?,
-                    ProcessResource::Auxv => to_value(process::auxv(id)?)?,
-                    ProcessResource::Fds => to_value(process::fds(id)?)?,
+                let data = match resource {
+                    ProcessResource::Observation => {
+                        AcquiredData::Observation(process::observation(id)?)
+                    }
+                    ProcessResource::Threads => AcquiredData::Observation(process::threads(id)?),
+                    ProcessResource::Maps => AcquiredData::Maps(process::maps(id)?),
+                    ProcessResource::Environment => {
+                        AcquiredData::Environment(process::environment(id)?)
+                    }
+                    ProcessResource::Auxv => AcquiredData::Auxv(process::auxv(id)?),
+                    ProcessResource::Fds => AcquiredData::Fds(process::fds(id)?),
                 };
                 process::validate_process_identity(id)?;
-                Ok(MonitorResponse::Data(value))
+                Ok(MonitorResponse::Data(data))
             }
             MonitorRequest::ObserveProcess { id } => {
                 process::validate_process_identity(id)?;
@@ -122,7 +128,7 @@ impl MonitorService {
                     )
                 })?;
                 let mut subscription = self.state.monitoring.observe(id, permit)?;
-                let initial = to_value(subscription.receiver.borrow_and_update().clone())?;
+                let initial = Arc::new(subscription.receiver.borrow_and_update().clone());
                 self.start(
                     Subscription::Process(subscription),
                     MonitorEvent::Observation(initial),
@@ -138,7 +144,7 @@ impl MonitorService {
                         }
                     )
                 })?;
-                let initial = MonitorEvent::Snapshot(to_value(&*subscription.initial)?);
+                let initial = MonitorEvent::AcquiredSnapshot(subscription.initial.clone());
                 self.start(Subscription::System(subscription), initial)
             }
             MonitorRequest::Poll { session } => {
@@ -154,7 +160,7 @@ impl MonitorService {
                             Ok(true) => {
                                 let data = subscription.receiver.borrow_and_update().clone();
                                 closed = data.exited;
-                                Some(MonitorEvent::Observation(to_value(data)?))
+                                Some(MonitorEvent::Observation(Arc::new(data)))
                             }
                             Ok(false) => None,
                             Err(_) => {
@@ -162,23 +168,23 @@ impl MonitorService {
                                 // final value has not been consumed. Forward it
                                 // before ending the HTTP observation stream.
                                 closed = true;
-                                Some(MonitorEvent::Observation(to_value(
+                                Some(MonitorEvent::Observation(Arc::new(
                                     subscription.receiver.borrow_and_update().clone(),
-                                )?))
+                                )))
                             }
                         }
                     }
                     Subscription::System(subscription) => match subscription.receiver.try_recv() {
                         Ok(system::SystemMonitorEvent::Snapshot(data)) => {
-                            Some(MonitorEvent::Snapshot(to_value(&*data)?))
+                            Some(MonitorEvent::AcquiredSnapshot(data))
                         }
                         Ok(system::SystemMonitorEvent::Activity(data)) => {
-                            Some(MonitorEvent::Activity(to_value(&*data)?))
+                            Some(MonitorEvent::Activity(data))
                         }
                         Err(tokio::sync::broadcast::error::TryRecvError::Lagged(dropped)) => {
-                            Some(MonitorEvent::Gap {
+                            Some(MonitorEvent::AcquisitionGap {
                                 dropped,
-                                snapshot: to_value(&*self.state.system_monitor.snapshot())?,
+                                snapshot: self.state.system_monitor.snapshot(),
                             })
                         }
                         Err(tokio::sync::broadcast::error::TryRecvError::Empty) => None,
@@ -224,7 +230,7 @@ impl MonitorService {
             // Oversize replies return a bounded error rather than corrupting
             // framing or killing an otherwise usable observation connection.
             if let Err(error) = transport::write(&mut socket, &response, MAX_RESPONSE) {
-                if error.downcast_ref::<serde_json::Error>().is_some() {
+                if error.is::<crate::ipc::codec::LimitExceeded>() {
                     let response: WireResponse = Err("monitor response exceeds size limit".into());
                     transport::write(&mut socket, &response, MAX_RESPONSE)?;
                 } else {
@@ -299,7 +305,7 @@ mod exit_tests {
             panic!("final observation expected")
         };
         assert!(closed);
-        assert_eq!(data["exited"], true);
+        assert!(data.exited);
         state.stop();
         state.join_collectors().unwrap();
     }

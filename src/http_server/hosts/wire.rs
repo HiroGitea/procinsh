@@ -2,14 +2,18 @@
 //! [`Message`]. Larger messages are gzip-compressed; snapshots compress well.
 //!
 //! The hub sends the same closed [`MonitorRequest`]s the HTTP layer sends to its
-//! own helper, and the agent answers with the [`WireResponse`] of its helper.
+//! own helper. The agent processes acquisition replies on its host and returns
+//! an [`AgentResponse`] ready for HTTP output. JSON framing supports links
+//! between hosts with different architectures.
 
+use crate::http_server::protocol::{MAX_RESPONSE, MonitorRequest};
 use anyhow::{Context, Result, bail, ensure};
 use flate2::{Compression, read::GzDecoder, write::GzEncoder};
-use procinsh_protocol::ipc::schema::{MAX_RESPONSE, MonitorRequest, WireResponse};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
+pub(super) type AgentResponse = Result<crate::http_server::protocol::MonitorResponse, String>;
 
 pub(super) const PROTOCOL: u32 = 2;
 /// The largest message, compressed or not, including its encoding byte.
@@ -49,7 +53,7 @@ pub(super) enum Message {
     },
     Response {
         id: u64,
-        response: WireResponse,
+        response: AgentResponse,
     },
     Ping,
     Pong,
@@ -129,13 +133,30 @@ pub(super) fn same_secret(expected: &str, actual: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use procinsh_protocol::ipc::schema::MonitorResponse;
+    use crate::http_server::protocol::MonitorResponse;
     use serde_json::json;
 
     #[tokio::test]
     async fn messages_round_trip_compressed_and_reject_bad_frames() {
         let mut buffer = Vec::new();
         write(&mut buffer, Message::Ping).await.unwrap();
+        let mut request = Vec::new();
+        write(
+            &mut request,
+            Message::Request {
+                id: 3,
+                request: MonitorRequest::Poll { session: 42 },
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            read(&mut request.as_slice()).await.unwrap(),
+            Message::Request {
+                id: 3,
+                request: MonitorRequest::Poll { session: 42 }
+            }
+        ));
         let large = json!({"processes": vec!["x".repeat(100); 100]});
         write(
             &mut buffer,

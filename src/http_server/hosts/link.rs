@@ -1,8 +1,9 @@
 //! The hub's handle on one connected agent: requests out, matching responses in.
 
+use super::wire::AgentResponse;
 use super::wire::Message;
+use crate::http_server::protocol::{MonitorRequest, MonitorResponse, TIMEOUT};
 use anyhow::{Context, Result, bail};
-use procinsh_protocol::ipc::schema::{MonitorRequest, MonitorResponse, TIMEOUT, WireResponse};
 use std::{
     collections::HashMap,
     sync::{
@@ -21,7 +22,7 @@ const REQUEST_TIMEOUT: Duration = TIMEOUT.saturating_add(Duration::from_secs(5))
 pub(in crate::http_server) struct AgentLink {
     outgoing: mpsc::Sender<Message>,
     /// `None` once the link has closed; dropping the senders fails every waiter.
-    pending: Mutex<Option<HashMap<u64, oneshot::Sender<WireResponse>>>>,
+    pending: Mutex<Option<HashMap<u64, oneshot::Sender<AgentResponse>>>>,
     next: AtomicU64,
 }
 
@@ -92,7 +93,7 @@ impl AgentLink {
     }
 
     /// Delivers a response; responses to forgotten or fire-and-forget requests are dropped.
-    pub(super) fn complete(&self, id: u64, response: WireResponse) {
+    pub(super) fn complete(&self, id: u64, response: AgentResponse) {
         let reply = self
             .pending
             .lock()

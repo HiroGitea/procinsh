@@ -1,73 +1,14 @@
 //! Queue pair relations: owners, connection manager addresses, remote GIDs and
 //! queue pairs connected within this host.
 
-use super::codes::{IbGid, RdmaAddress, RdmaCmState, RdmaPortSpace, RdmaQpState, RdmaQpType};
 use super::nldev::{CmIdEntry, NldevResources, QueuePairEntry, ResourceOwner};
-use super::ports::RdmaPortInfo;
 use crate::privileged_helper::process::ProcessId;
-use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     net::IpAddr,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(in crate::privileged_helper::system) enum RdmaEndpointOwner {
-    Process {
-        process_id: ProcessId,
-    },
-    /// Kernel consumer, such as `rpcrdma` or `ib_ipoib`.
-    Kernel {
-        name: String,
-    },
-    /// A PID absent from this snapshot, or no owner information.
-    Unknown {
-        pid: Option<u32>,
-    },
-}
-
-/// A local queue pair.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub(in crate::privileged_helper::system) struct RdmaEndpoint {
-    pub(in crate::privileged_helper::system) owner: RdmaEndpointOwner,
-    pub(in crate::privileged_helper::system) device: String,
-    /// Null until the QP is bound to a port.
-    pub(in crate::privileged_helper::system) port: Option<u32>,
-    pub(in crate::privileged_helper::system) qpn: u32,
-    pub(in crate::privileged_helper::system) qp_type: RdmaQpType,
-    pub(in crate::privileged_helper::system) state: RdmaQpState,
-}
-
-/// The connection manager ID bound to a queue pair.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub(in crate::privileged_helper::system) struct RdmaCmInfo {
-    pub(in crate::privileged_helper::system) id: Option<u32>,
-    /// The CM consumer, which can differ from the QP owner (for example
-    /// `rpcrdma` uses QPs created by `rdma_cm`).
-    pub(in crate::privileged_helper::system) owner: RdmaEndpointOwner,
-    pub(in crate::privileged_helper::system) state: RdmaCmState,
-    pub(in crate::privileged_helper::system) port_space: RdmaPortSpace,
-    pub(in crate::privileged_helper::system) source: Option<RdmaAddress>,
-    pub(in crate::privileged_helper::system) destination: Option<RdmaAddress>,
-}
-
-/// A queue pair and, when it is connected to another QP on this host, that peer.
-/// Remote fields describe the endpoint's destination.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub(in crate::privileged_helper::system) struct RdmaRelation {
-    pub(in crate::privileged_helper::system) id: String,
-    pub(in crate::privileged_helper::system) endpoint: RdmaEndpoint,
-    pub(in crate::privileged_helper::system) peer: Option<RdmaEndpoint>,
-    /// Destination QPN of a connected QP; null for datagram types and before connection.
-    pub(in crate::privileged_helper::system) remote_qpn: Option<u32>,
-    pub(in crate::privileged_helper::system) cm: Option<RdmaCmInfo>,
-    /// Remote port GID from an IB CM destination or the IPoIB neighbor of an IP destination.
-    pub(in crate::privileged_helper::system) remote_gid: Option<IbGid>,
-    /// Reverse DNS of an IP CM destination, filled after collection.
-    pub(in crate::privileged_helper::system) remote_hostname: Option<String>,
-    pub(in crate::privileged_helper::system) label: String,
-}
+pub(in crate::privileged_helper::system) use crate::ipc::rdma::*;
 
 struct Endpoint<'a> {
     entry: &'a QueuePairEntry,

@@ -1,28 +1,11 @@
 // Visibility is scoped to the consumers of the parent process façade.
 use super::{ProcessId, procfs};
 use anyhow::Result;
-use serde::Serialize;
-use std::{collections::HashMap, fs, time::Instant};
+#[cfg(test)]
+use std::time::Instant;
+use std::{collections::HashMap, fs};
 
-#[derive(Clone, Debug, Serialize)]
-pub(in crate::privileged_helper) struct ProcessSummary {
-    pub(in crate::privileged_helper) identity: ProcessId,
-    #[serde(skip)]
-    pub(in crate::privileged_helper) parent_pid: i32,
-    pub(in crate::privileged_helper) name: String,
-    pub(super) executable: Option<String>,
-    pub(in crate::privileged_helper) command_line: Option<Vec<String>>,
-    pub(in crate::privileged_helper) uid: Option<u32>,
-    pub(in crate::privileged_helper) username: Option<String>,
-    pub(in crate::privileged_helper) euid: Option<u32>,
-    pub(in crate::privileged_helper) effective_username: Option<String>,
-    pub(super) state: String,
-    /// Unix milliseconds derived from boot time and process start ticks; absent if unavailable.
-    pub(super) started_at: Option<u64>,
-    pub(in crate::privileged_helper) cpu_percent: Option<f64>,
-    pub(in crate::privileged_helper) rss_bytes: u64,
-    pub(super) thread_count: u32,
-}
+pub use crate::ipc::acquisition::ProcessSummary;
 
 pub(super) fn summary(stat: &procfs::Stat, users: &HashMap<u32, String>) -> ProcessSummary {
     let base = format!("/proc/{}", stat.pid);
@@ -55,6 +38,8 @@ pub(super) fn summary(stat: &procfs::Stat, users: &HashMap<u32, String>) -> Proc
         cpu_percent: None,
         rss_bytes: stat.rss,
         thread_count: stat.thread_count,
+        raw_ticks: stat.ticks,
+        raw_measured_ns: crate::ipc::model::process::monotonic_ns(),
     }
 }
 
@@ -77,25 +62,30 @@ fn start_timestamp(boot_seconds: u64, ticks: u64, ticks_per_second: f64) -> Opti
 }
 
 pub(super) fn users() -> HashMap<u32, String> {
-    fs::read_to_string("/etc/passwd")
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|line| {
-            let p: Vec<_> = line.split(':').collect();
-            Some((p.get(2)?.parse().ok()?, p.first()?.to_string()))
-        })
-        .collect()
+    {
+        fs::read_to_string("/etc/passwd")
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| {
+                let p: Vec<_> = line.split(':').collect();
+                Some((p.get(2)?.parse().ok()?, p.first()?.to_string()))
+            })
+            .collect()
+    }
 }
 
 #[derive(Default)]
-/// Scans procfs for process summaries and retains counters for CPU-rate calculation.
+/// Scans protected procfs for process summaries and raw CPU counters.
 pub(in crate::privileged_helper) struct ProcessScanner {
+    #[cfg(test)]
     previous: HashMap<ProcessId, (u64, Instant)>,
 }
 impl ProcessScanner {
     pub(in crate::privileged_helper) fn collect(&mut self) -> Result<Vec<ProcessSummary>> {
         let users = users();
+        #[cfg(test)]
         let now = Instant::now();
+        #[cfg(test)]
         let mut next = HashMap::new();
         let mut result = Vec::new();
         for entry in fs::read_dir("/proc")?.flatten() {
@@ -109,22 +99,31 @@ impl ProcessScanner {
             let Ok(stat) = procfs::read_stat(&format!("/proc/{pid}/stat")) else {
                 continue;
             };
-            let mut item = summary(&stat, &users);
-            if let Some((ticks, time)) = self.previous.get(&item.identity) {
-                let elapsed = now.duration_since(*time).as_secs_f64();
-                if elapsed > 0.0 {
-                    item.cpu_percent = Some(
-                        stat.ticks.saturating_sub(*ticks) as f64
-                            / procfs::ticks_per_second()
-                            / elapsed
-                            * 100.0,
-                    );
+            let item = summary(&stat, &users);
+            #[cfg(test)]
+            let item = {
+                let mut item = item;
+                if let Some((ticks, time)) = self.previous.get(&item.identity) {
+                    let elapsed = now.duration_since(*time).as_secs_f64();
+                    if elapsed > 0.0 {
+                        item.cpu_percent = Some(
+                            stat.ticks.saturating_sub(*ticks) as f64
+                                / procfs::ticks_per_second()
+                                / elapsed
+                                * 100.0,
+                        );
+                    }
                 }
-            }
-            next.insert(item.identity, (stat.ticks, now));
+                next.insert(item.identity, (stat.ticks, now));
+                item
+            };
             result.push(item);
         }
-        self.previous = next;
+        #[cfg(test)]
+        {
+            self.previous = next;
+        }
+        #[cfg(test)]
         result.sort_by(|a, b| {
             b.cpu_percent
                 .unwrap_or(0.0)

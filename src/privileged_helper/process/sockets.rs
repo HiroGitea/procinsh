@@ -13,9 +13,9 @@
 
 use super::socket_namespace::NetworkNamespaceReader;
 use crate::privileged_helper::netlink;
-use crate::privileged_helper::socket_types::{
-    SocketConnectionStatus, SocketProtocol, SocketState, SocketType,
-};
+#[cfg(test)]
+use crate::privileged_helper::socket_types::SocketConnectionStatus;
+use crate::privileged_helper::socket_types::{SocketProtocol, SocketState, SocketType};
 // Visibility is scoped to the consumers of the parent process façade.
 use anyhow::{Context, Result, bail, ensure};
 use std::{
@@ -27,41 +27,7 @@ use std::{
     time::Instant,
 };
 
-#[derive(Clone, Debug)]
-/// Socket kind and independently observed connection metadata.
-/// A known protocol does not imply a known state, address or peer.
-pub(in crate::privileged_helper) struct SocketInfo {
-    pub(in crate::privileged_helper) protocol: SocketProtocol,
-    pub(in crate::privileged_helper) state: Option<SocketState>,
-    pub(in crate::privileged_helper) local: Option<SocketAddr>,
-    pub(in crate::privileged_helper) remote: Option<SocketAddr>,
-    pub(in crate::privileged_helper) path: Option<String>,
-    pub(in crate::privileged_helper) peer_inode: Option<u64>,
-}
-
-impl SocketInfo {
-    /// Preserve direct observations; table fallbacks only confirm positive facts.
-    /// CLOSE, zero addresses, and UNIX state names never prove ENOTCONN.
-    pub(in crate::privileged_helper) fn connection_status(
-        &self,
-        observed: SocketConnectionStatus,
-    ) -> SocketConnectionStatus {
-        if observed != SocketConnectionStatus::Unknown {
-            observed
-        } else if self.state == Some(SocketState::Listen) {
-            SocketConnectionStatus::Listening
-        } else if self.peer_inode.is_some()
-            || (self.protocol.is_tcp_or_udp()
-                && self
-                    .remote
-                    .is_some_and(|remote| remote.port() != 0 && !remote.ip().is_unspecified()))
-        {
-            SocketConnectionStatus::PeerPresent
-        } else {
-            SocketConnectionStatus::Unknown
-        }
-    }
-}
+pub(in crate::privileged_helper) use crate::ipc::model::sockets::SocketInfo;
 
 pub(super) fn read_text(path: &str) -> Result<String> {
     let mut bytes = Vec::new();

@@ -1,23 +1,21 @@
 //! Initial and ten-second ptrace snapshots, non-stopping perf samples,
-//! sampled-stack unwind and best-effort live disassembly.
+//! raw register/stack snapshots and best-effort instruction-byte capture.
 //!
 //! # Interface
 //!
 //! | Definition | Visibility | Kind |
 //! | --- | --- | --- |
 //! | [`Sampler`] | `pub(super)` | `struct `[`Sampler`] |
-//! | [`ThreadSample`] | `pub(super)` | `struct `[`ThreadSample`] |
 
 mod arch;
 mod capture;
-mod disasm;
+mod instruction_bytes;
 mod perf;
 mod ptrace;
 mod registers;
 mod sample;
+#[cfg(test)]
 mod stack;
-mod symbol;
-mod unwind;
 #[cfg(test)]
 mod unwind_fp;
-pub(super) use capture::{Sampler, ThreadSample};
+pub(super) use capture::Sampler;

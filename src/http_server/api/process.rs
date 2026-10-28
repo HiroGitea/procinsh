@@ -1,12 +1,12 @@
 use super::super::AppState;
 use super::hosts::{HostQuery, client};
+use crate::http_server::protocol::{MonitorRequest, MonitorResponse, ProcessId, ProcessResource};
 use axum::{
     Json,
     extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use procinsh_protocol::ipc::schema::{MonitorRequest, MonitorResponse, ProcessId, ProcessResource};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;

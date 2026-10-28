@@ -1,6 +1,7 @@
+use super::protocol::*;
 use super::{client::MonitorClient, privileges};
+use crate::ipc::transport;
 use anyhow::{Context, Result, ensure};
-use procinsh_protocol::ipc::{schema::*, transport};
 use std::{
     net::Shutdown,
     os::{
@@ -14,10 +15,6 @@ use std::{
 
 fn validate_helper_path(path: &Path) -> Result<()> {
     ensure!(path.is_absolute(), "helper path must be absolute");
-    ensure!(
-        std::fs::metadata(path)?.is_file(),
-        "helper must be a regular file"
-    );
     Ok(())
 }
 
@@ -132,10 +129,7 @@ pub(crate) fn run(config: super::ServerConfig) -> Result<()> {
         };
         let hello: HelperIdentity =
             transport::read_timeout(&mut application, MAX_REQUEST, Duration::from_secs(5))?;
-        ensure!(
-            hello.pid == guard.child.id() && hello.version == env!("CARGO_PKG_VERSION"),
-            "helper identity/version mismatch"
-        );
+        ensure!(hello.pid == guard.child.id(), "helper identity mismatch");
         log::info!(
             "privileged helper pid={} capabilities={:#x}",
             hello.pid,

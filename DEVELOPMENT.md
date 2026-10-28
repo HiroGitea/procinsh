@@ -82,22 +82,26 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 
 | Location | Responsibility |
 |---|---|
-| `src/main.rs` | CLI, logger initialization, startup configuration validation |
+| `src/http_server/entry.rs` | CLI, logger initialization, startup configuration validation |
 | `src/http_server/` | Unprivileged HTTP, helper supervision, IPC client and SSE formatting |
 | `src/privileged_helper/` | Privileged acquisition, collectors and IPC request dispatch |
 | `src/ipc/` | Message schema and bounded transport shared by both executables |
 | `src/http_server/api/` | HTTP input/responses, domain error to status conversion, JSON and SSE (Server-Sent Events) |
 | `src/http_server/web.rs` | Static web UI serving |
-| `src/http_server/hosts/` | Multiple hosts: agent links (framing, authentication, reconnection), forwarding helper requests to agents, the host list, cross-host connection matching |
-| `src/privileged_helper/process/monitoring/` | Independent observations per connection, 60-second history, latest-state delivery |
+| `src/privileged_helper/process/monitoring/` | Independent acquisition per connection, latest-state delivery |
 | `src/privileged_helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
-| `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, DWARF CFI unwinding with framehop, disassembly |
-| `src/privileged_helper/process/snapshot/symbol/` | ELF retrieval/caching, address conversion, symbol/source location resolution using ELF/DWARF |
-| `src/privileged_helper/process/snapshot/stack.rs` | Frame types shared by sampling and symbol resolution |
-| `src/privileged_helper/system/` | Structure of all processes, subscriptions, BPF collection, name resolution |
-| `src/privileged_helper/system/rdma/` | RDMA queue pairs, connection manager IDs, and ports via RDMA netlink, IPoIB neighbors, and sysfs |
-| `src/privileged_helper/system/hardware/` | GPUs, RDMA NICs, accelerators, NVSwitches, PCIe bridges, inter-device paths, and processes holding devices open, using sysfs/procfs |
+| `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, instruction-byte capture |
+| `src/privileged_helper/process/elf.rs` | Identity-verified acquisition of mapped ELF bytes |
+| `src/http_server/analysis/snapshot/` | ELF/DWARF parsing, caching, framehop unwinding, register classification and symbol/source resolution in main |
+| `src/http_server/processing.rs` | Main-side interpretation of raw IPC responses before HTTP output |
+| `src/ipc/model/` | Native data values shared through IPC, without serde |
+| `src/http_server/model/`, `src/http_server/json/` | Main-only JSON representations of shared values |
+| `src/ipc/stack.rs` | Stack frame values |
+| `src/privileged_helper/system/` | Protected system snapshots, subscriptions and BPF collection |
+| `src/http_server/analysis/hardware/` | Interpret helper-acquired hardware attributes into GPUs, RDMA NICs, accelerators, NVSwitches, PCIe paths, and device holders |
 | `src/privileged_helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
+| `src/http_server/hosts/` | Agent links, host registry, and cross-host connection matching |
+| `src/privileged_helper/system/rdma/` | RDMA acquisition through netlink and sysfs |
 | `web/src/` | TypeScript pages, SPACE, rendering models, and CSS (HTML entry points: `web/{list,process,space}/index.html`) |
 | `tests/` | Rust, browser, log, and live sensor tests, plus C fixtures |
 
@@ -113,11 +117,11 @@ Hierarchical modules use `foo.rs` plus `foo/`, without `mod.rs`. `foo.rs` contai
 
 HTTP startup/shutdown lives in `http_server/server.rs`, shared state in `http_server/state.rs`, router assembly in `http_server/router.rs` and `http_server/api/router.rs`, and HTTP guards/access logs in `http_server/middleware.rs`. The process façade is implemented in `process/identity.rs` and `process/resources.rs`, observation lifecycle in `monitoring/service.rs`, and snapshot orchestration in `snapshot/capture.rs`. Symbol handling is split into `symbol/cache.rs` and `symbol/resolve.rs`; system monitoring uses `system/service.rs` and state logging in `status.rs`. `activity.rs` owns BPF sensors and manages collection, status, and loss counts. Dependency diagrams include these child modules; overview diagrams group them by subsystem.
 
-HTTP handlers use the shared IPC schema in `ipc/schema.rs` and the client in `http_server/client.rs`. Helper-side system monitoring uses the `privileged_helper/process.rs` façade. Within `process`, `monitoring` handles continuous observation; `snapshot` handles stopped-state capture with ptrace initially and every 10 seconds, plus continuous perf sampling without stopping the target. Each collector's sampler owns perf FDs, mmap mappings, and an ELF cache. `process` and `system` do not depend on Axum types.
+HTTP handlers use the shared IPC schema in `ipc/schema.rs` and the client in `http_server/client.rs`. Helper-side system monitoring uses the `privileged_helper/process.rs` façade. Within `process`, `monitoring` handles continuous observation; `snapshot` handles stopped-state capture with ptrace initially and every 10 seconds, plus continuous perf sampling without stopping the target. Each collector's sampler owns perf FDs and mmap mappings; main owns ELF and unwind caches. `process` and `system` do not depend on Axum types.
 
 As an exception, domain types and subscription operations re-exported through façades use `pub(in crate::privileged_helper)`. This visibility allows parents to re-export items from private children; it does not expose them outside the crate. Internal tests live in their respective modules. `tests/http.rs` starts the binary to verify HTTP, SSE, and SIGTERM shutdown.
 
-Tokio/Axum handles HTTP and SSE. Detail APIs send bounded IPC requests to the helper. Periodic process observation and system-wide structure/activity collection run on helper OS threads. Process detail monitoring has independent state per connection. HTTP `AppState` holds the IPC client and shutdown state; helper `MonitorState` owns the process scanner and collection subsystems. Process monitoring manages connection counts and collectors; each collector manages its perf lifecycle and symbol cache.
+Tokio/Axum handles HTTP and SSE. Detail APIs send bounded IPC requests to the helper. Periodic process observation and system-wide structure/activity collection run on helper OS threads. Process detail monitoring has independent state per connection. HTTP `AppState` holds the IPC client and shutdown state; helper `MonitorState` owns the process scanner and collection subsystems. Process monitoring manages connection counts and collectors; each collector manages its perf lifecycle. Main owns symbol/unwind caches, per-session rate calculations and histories. See [Acquisition and analysis boundary](#acquisition-and-analysis-boundary).
 
 Web UI API types live in `web/src/shared/api-types.ts` and are maintained alongside Rust JSON responses. The contract includes null handling and hexadecimal address strings. These are compile-time types, not runtime input validation. Vite bundles Three.js as an npm dependency; TypeScript and type definitions are build-only npm dependencies.
 
@@ -151,18 +155,21 @@ before exec would suppress the helper's file capabilities. Both disable dumps.
 | `process/{identity,procfs,discovery,details,threads,maps}` | Protected procfs, PID/start-time checks, summaries/environment |
 | `process/{fds,socket_metadata,socket_namespace,sockets}`, `netlink` | pidfds, pidfd_getfd duplicates, namespace handles, setns and complete diagnostic socket queries |
 | `process/snapshot/{ptrace,registers,capture}`, `process/memory` | Ptrace guards, process_vm_readv, bounded register/stack/code capture |
-| `process/snapshot/{perf,sample,unwind*,symbol}` | Perf FDs/mmaps, unwinding, identity-verified ELF descriptors and bounded in-memory DWARF |
+| `process/snapshot/{perf,sample}`, `process/elf` | Perf FDs/mmaps, raw samples and identity-verified ELF byte acquisition |
 | `process/monitoring` | Per-viewer samplers, histories, cancellation/cleanup |
 | `system/{activity,ipc,sched,files,signals}` | BPF loading/attachment, links/maps and polling |
-| `system/{snapshot,hardware,ipoib,resolver}` | Protected process/device acquisition and complete snapshots |
+| `system/{snapshot,ipoib}` | Protected process/FD metadata and namespace-scoped neighbor acquisition |
 
 The helper intersects acquired capabilities with DAC_READ_SEARCH, SYS_PTRACE,
 SYS_ADMIN, PERFMON and BPF, clears inheritable/ambient sets, and sets
 `no_new_privs`. It never binds HTTP. Missing capabilities reduce coverage;
-operation permissions still depend on kernel/namespace policy. ELF parsing
-uses verified open descriptors and bounded sections, without loading external
-DWO/DWP paths; unsupported files retain raw-frame fallbacks. Symbol resolution,
-unwinding and disassembly finish in the helper before results cross IPC.
+operation permissions still depend on kernel/namespace policy. The helper sends
+raw register/stack snapshots and instruction bytes. Closed mapped-ELF requests
+return verified file bytes through IPC; no descriptor is transferred. Main
+parses bounded ELF/DWARF sections without loading external DWO/DWP files,
+unwinds stacks, resolves symbols and decodes instructions. Main also derives
+rates and histories, resolves usernames and DNS, constructs FD relationships,
+aggregates BPF observations and reads unprivileged hardware topology.
 
 ### Launch, protocol and lifetime
 
@@ -183,8 +190,11 @@ independently before acquisition and after resource reads. Namespace readers
 retain existing pinned-namespace validation. Only structured data/events cross
 IPC. System delta selection remains in the application.
 
-Four-byte frame lengths bound requests to 1 KiB and replies to 32 MiB, including
-serialization allocation. Frame I/O and client exchanges have 30-second
+Native-endian four-byte frame lengths and a versioned, application-defined binary
+codec bound requests to 1 KiB and replies to 1 GiB, including
+encoding allocation. Numbers use native bytes, enums use explicit tags, and
+strings/collections have lengths. ELF uses a raw byte block. HTTP/SSE output
+remains JSON. Frame I/O and client exchanges have 30-second
 deadlines. One dispatcher bounds in-flight work, a 64-entry client queue bounds
 waiting requests, and monitors limit viewers to 32 per kind. Sessions expire
 15 seconds after their last poll. Drop queues Close; expiry covers cancellation
@@ -404,7 +414,7 @@ Switching network namespaces requires `CAP_SYS_ADMIN`. [dev_run.sh](scripts/dev_
 
 ### Hardware
 
-The system snapshot uses [system/hardware](src/privileged_helper/system/hardware.rs) to read GPUs, RDMA NICs, accelerators, NVSwitches, and their upstream PCIe bridges up to host bridges from sysfs. This requires no privileges.
+The privileged helper acquires fixed read-only sysfs/procfs hardware attributes, directory entries and resolved links using [hardware_capture](src/privileged_helper/system/hardware_capture.rs). IPC carries these bounded raw values. The HTTP server interprets them entirely in memory using [analysis/hardware](src/http_server/analysis/hardware.rs) to identify GPUs, RDMA NICs, accelerators, NVSwitches, their upstream PCIe bridges and device holders. It never opens sysfs/procfs files.
 
 - Discovery: upstream chains come from each device's real path under `/sys/bus/pci/devices`, such as `/sys/devices/pci0000:80/0000:80:03.4/0000:85:00.0`. Devices with `infiniband/` or class 0x0c06 are RDMA NICs; classes 0x0300/0x0302 are GPUs (excluding ASPEED/Matrox BMCs); class 0x12 denotes accelerators; NVIDIA class 0x0680 denotes NVSwitch. Only their upstream bridges are included.
 - Attributes: reads class, vendor, device, driver, numa_node, `current/max_link_speed`, `current/max_link_width`, power_state, `power/runtime_status`, iommu_group, and BARs from `resource`. It does not open `config` or BAR resize files, which could trigger runtime resume. Link speeds are not read for runtime-suspended devices. NVIDIA GPU model, UUID, and device minor come from `/proc/driver/nvidia/gpus/<address>/information`; vendor libraries such as NVML are not used.
@@ -439,13 +449,13 @@ Before delivering the initial watch value, each SSE collector enumerates threads
 
 Each SSE collector opens a software CPU-clock event per TID with `perf_event_open(pid=tid, cpu=-1)`, following CPU migration. The initial interval is 10 ms of running user CPU time (about 100 Hz), with a 16,384-byte user stack dump. Transitions to waiting use an additional `PERF_COUNT_SW_CONTEXT_SWITCHES` event (period 1, stack dump 16,384 bytes). With `context_switch` and `sample_id_all` enabled, the following SWITCH_OUT record in the same ring is checked for TID, CPU, time, and PREEMPT flag to distinguish voluntary/preempted switches. Associations are discarded without a matching sample or on loss, throttle, or switch-in. The latest samples from both events are compared by monotonic time; only newer samples are accepted. TID/TIME/CPU/REGS_USER/STACK_USER are read from the ring buffer, retaining only the latest values. Rings are drained and thread additions/exits checked about every 50 ms. TID and start time detect reuse, and process identity is validated before and after capture.
 
-The 18 registers and stack come from the same perf sample or ptrace stop. Framehop unwinds up to 256 frames using only sampled RSP/RBP/RIP and captured bytes. Each sampler retains module and rule caches, rebuilding them when executable mappings change. ELF retrieval uses existing device/inode validation and caching, correcting load bias for PIE, non-PIE, and shared libraries. It reads `.eh_frame`/`.eh_frame_hdr` (a CFI index if the header is missing) and `.debug_frame`; when metadata is unavailable, framehop falls back to frame pointers. ELF files with `.debug_frame` prefer it to avoid application CFI being hidden by CRT-only `.eh_frame`. Existing symbol, source, and inline-frame resolution is reused.
+The 18 registers and stack come from the same perf sample or ptrace stop. Framehop unwinds up to 256 frames using only sampled RSP/RBP/RIP and captured bytes. Main retains module and rule caches, rebuilding them when executable mappings change. ELF retrieval uses helper-side device/inode validation and main-side caching, correcting load bias for PIE, non-PIE, and shared libraries. It reads `.eh_frame`/`.eh_frame_hdr` (a CFI index if the header is missing) and `.debug_frame`; when metadata is unavailable, framehop falls back to frame pointers. ELF files with `.debug_frame` prefer it to avoid application CFI being hidden by CRT-only `.eh_frame`. Existing symbol, source, and inline-frame resolution is reused.
 
-`unwind_stop` reports normal completion, the 256-frame limit, insufficient stack snapshot coverage, out-of-range addresses, failed module retrieval, or missing module metadata. The last two note fallback use. Even with a section present, missing/unsupported CFI for a particular PC can trigger framehop's internal fallback, which cannot be distinguished in that detail. Unwinding does not read additional live stack data or stop the target with ptrace. Failed modules are not fetched again until executable mappings change.
+`unwind_stop` reports normal completion, the 256-frame limit, insufficient stack snapshot coverage, out-of-range addresses, failed module retrieval, or missing module metadata. The last two note fallback use. Even with a section present, missing/unsupported CFI for a particular PC can trigger framehop's internal fallback, which cannot be distinguished in that detail. Unwinding does not read additional live stack data or stop the target with ptrace. ELF acquisition is retried when the captured maps epoch changes; unwinder modules are rebuilt when executable mappings change.
 
 SSE `live_samples` includes TID, `sampled_at` (Unix ms), `sample_age_ms` (monotonic clock), CPU, `lost_samples`, registers, call_stack, disassembly, unwind_stop, and error. Before capture, time is null and the UI shows Waiting for sample; captured values show age in the Threads list. Sleeping/blocked threads attempt updates through ptrace every 10 seconds, retaining the last values otherwise. These are saved user-space states, not the current values of sleeping threads. Threads sleeping before observation can be captured in the initial delivery if ptrace is allowed. An initial failure waits for the next execution/switch-out or a ptrace retry after 10 seconds. The Registers panel shows only the register table. Capture source and voluntary/preempted distinctions remain internal and are not exposed through the GUI or HTTP API. Simultaneous state across all threads is not guaranteed. Insufficient perf permissions appear as thread errors in Threads. Collector errors are retained in API `sampling_error` while ordinary observations continue.
 
-The Disassembly panel shows instructions and retrieval errors. Disassembly is best effort, reading after sampling from the sampled RIP using `process_vm_readv`. Iced-x86 decodes up to 256 bytes and 32 instructions. JIT/self-modifying code bytes may not match the sampled RIP's state. 32-bit compatibility mode is unsupported.
+The Disassembly panel shows instructions and retrieval errors. Disassembly is best effort, reading after sampling from the sampled RIP using `process_vm_readv`. The helper captures up to 256 bytes; the unprivileged HTTP process uses iced-x86 to decode up to 32 instructions. JIT/self-modifying code bytes may not match the sampled RIP's state. 32-bit compatibility mode is unsupported.
 
 PERF_RECORD_LOST, ring overruns, and invalid records count as loss. RAII releases FDs/mmap mappings on thread exit, target exit, SSE disconnection, and server shutdown. CAP_SYS_PTRACE and process_vm_readv are used for ptrace snapshots, auxv, and live disassembly.
 
@@ -974,3 +984,76 @@ tests/targets/bin/recursive --allow-inspector
 - [Rust module dependencies](https://akawashiro.github.io/procinsh/main/rust-architecture/)
 - [TypeScript module dependencies](https://akawashiro.github.io/procinsh/main/typescript-architecture/)
 - [Rust doc](https://akawashiro.github.io/procinsh/main/procinsh/index.html)
+
+
+## Acquisition and analysis boundary
+
+The privileged helper owns protected reads and kernel resources. The HTTP process
+clears capabilities and interprets acquired values before exposing the existing
+HTTP API. No file descriptor crosses IPC.
+
+During startup, the launcher locates and executes the sibling helper. After its
+handshake, the HTTP process sets `no_new_privs` before starting its worker threads.
+Embedded web assets, IPC data and in-memory analysis require no file reads.
+Logs continue through inherited stderr; inherited descriptors other than stdio
+are closed at startup.
+The helper reads `/etc/passwd` for account names and runs reverse DNS, including
+libc/NSS configuration reads. Neither operation runs in HTTP workers.
+
+Hardware acquisition reads fixed attribute names only, never PCI config space or
+BAR memory, and caps raw records at 16 MiB, directory lists at 4096 entries and
+individual text reads at 64 KiB. A truncated capture adds a snapshot warning.
+
+| Helper acquisition | Main interpretation |
+| --- | --- |
+| Protected procfs reads, process/FD identity checks and account-name acquisition | Process and thread rates, histories, environment/auxv formatting |
+| Raw executable-header bytes, ptrace/perf registers, stack bytes, instruction bytes and mapping metadata | Process architecture identification, register classification and roles, framehop unwinding and iced-x86 disassembly |
+| Open a currently executable mapped file, pin and verify its device/inode, read bounded bytes and recheck metadata | ELF/DWARF parsing, decompression, symbol/source lookup and caching |
+| FD ownership, socket metadata, namespace diagnostics and IPoIB neighbor observations | Peer/shared-holder relationships and destination enrichment |
+| BPF loading, attachment, bounded ring draining and map reads | File/IPC aggregation, CPU counter deltas and signal identity matching |
+| Character-device metadata and bounded raw sysfs/procfs hardware attributes | In-memory hardware topology, paths and device-handle grouping |
+| Observation sessions, acquisition cancellation, kernel resource cleanup and bounded reverse DNS workers/caches | Response formatting and hostname attachment |
+
+Test containers give perf/BPF suites the required capabilities and an unlimited
+memlock allowance so concurrent perf rings are not rejected by Docker's default
+locked-memory limit.
+
+IPC requests are limited to 1 KiB and replies to 1 GiB. The same-machine codec
+uses native-endian numbers, explicit enum tags and length-prefixed UTF-8 strings
+and collections. Structs are encoded field by field, without copying Rust padding
+or pointers. No protocol or package version matching is performed; the installed
+executables are built together. PID and Unix peer identity checks remain part of
+helper authentication. Frame lengths, collection lengths, tags, UTF-8 and socket
+deadlines are validated.
+
+`src/` contains only `ipc`, `privileged_helper` and `http_server`. The two executable
+subsystems expose only `run`; analysis, JSON adapters and presentation models are
+private children of `http_server`. IPC modules are visible only within the crate.
+Each executable includes the same
+IPC source definitions; main supplies their serde implementations through remote
+derives and JSON adapters. IPC has no serde or JSON values. The normal helper build
+does not include main's HTTP, JSON, ELF/DWARF, framehop, iced-x86, hardware-topology
+or DNS code. Helper tests include main's presentation adapters to exercise the
+existing HTTP contracts without putting that code into the installed helper.
+
+A mapped-file request selects a process identity, the start address of a current
+executable mapping and up to 60 file ranges. It cannot select a pathname or an
+arbitrary process-memory range. The helper pins and verifies a regular file against
+the mapping's device/inode, checks the ranges against the file length, reads at
+most 64 MiB per request, and rechecks the file metadata before replying. Source
+files are limited to 128 MiB. Descriptors remain inside the helper.
+
+Main first reads the ELF header and file identity. A previously cached identity
+requires no further data transfer. Otherwise, main reads the program/section
+headers and section-name table, then selects symbol/string tables, DWARF and
+unwind sections. Executable code and unrelated sections are omitted. A sparse
+reader lets the parser access only those captured ranges. Each reply must retain
+the same file identity throughout acquisition. Parsing, decompression limits,
+caching and source lookup all run in main. Unsupported or changed files retain
+raw stack addresses.
+
+Main owns per-session rates, histories, CPU deltas and analysis caches. Closing an
+observation releases that session's state. Mapping epochs travel with captured
+stack/register samples so a retained sample uses its original mapping context.
+Observation leases release abandoned helper collectors; lagged system subscribers
+receive a current typed snapshot for resynchronization.

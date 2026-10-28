@@ -1,90 +1,24 @@
-//! Serializable system activity and sensor health data for monitoring delivery.
+//! Raw system activity and sensor health data for monitoring delivery.
 //!
 //! # Interface
 //!
-//! | Definition | Visibility | Kind |
+//! | Definition | Visibility | Kind / signature |
 //! | --- | --- | --- |
 //! | [`SystemActivity`] | `pub(in crate::privileged_helper)` | `struct SystemActivity` |
-//! | [`IpcActivity`] | `pub(in crate::privileged_helper)` | `struct IpcActivity` |
-//! | [`CpuActivity`] | `pub(in crate::privileged_helper)` | `struct CpuActivity` |
-//! | [`SignalEvent`] | `pub(super)` | `struct SignalEvent` |
 //! | [`SystemMonitorStatus`] | `pub(in crate::privileged_helper)` | `struct SystemMonitorStatus` |
 //! | [`SensorState`] | `pub(in crate::privileged_helper)` | `enum SensorState` |
-//!
-//! Activity endpoints use [`ProcessId`]; file observations use [`FileActivity`].
-use super::files::FileActivity;
-use crate::privileged_helper::process::ProcessId;
-use crate::privileged_helper::resource::IpcIdentity;
-use serde::Serialize;
 
-#[derive(Clone, Serialize)]
-pub(in crate::privileged_helper) struct SystemActivity {
-    pub(super) captured_at: u64,
-    pub(super) window_ms: u64,
-    pub(super) files: Vec<FileActivity>,
-    pub(super) ipc: Vec<IpcActivity>,
-    pub(super) cpu: Vec<CpuActivity>,
-    pub(super) signals: Vec<SignalEvent>,
-    pub(super) status: SystemMonitorStatus,
-}
-/// An observed signal generation, not a confirmation of delivery or execution.
-/// Endpoint identities prevent PID reuse from attaching an event to another process.
-#[derive(Clone, Debug, Serialize)]
-pub(super) struct SignalEvent {
-    pub(super) timestamp_ns: u64,
-    pub(super) src_pid: u32,
-    pub(super) dst_pid: u32,
-    pub(super) signal: i32,
-    pub(super) source_id: ProcessId,
-    pub(super) destination_id: ProcessId,
-}
-#[derive(Clone, Serialize)]
-pub(in crate::privileged_helper) struct IpcActivity {
-    pub(super) process_id: ProcessId,
-    pub(super) resource: IpcIdentity,
-    pub(super) write: bool,
-    pub(super) bytes: u64,
-    pub(super) count: u64,
-}
-#[derive(Clone, Serialize)]
-pub(in crate::privileged_helper) struct CpuActivity {
-    pub(super) process_id: ProcessId,
-    pub(super) runtime_ns: u64,
-    pub(super) switches: u64,
-    pub(super) running_threads: usize,
-    pub(super) cpus: Vec<usize>,
-}
-#[derive(Clone, Default, Serialize)]
-/// State and collection health of the system monitoring sensors.
-pub(in crate::privileged_helper) struct SystemMonitorStatus {
-    pub(super) active: bool,
-    pub(super) ipc: SensorState,
-    pub(super) cpu: SensorState,
-    pub(super) files: SensorState,
-    pub(super) signals: SensorState,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) signals_lost: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) coverage: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) files_coverage: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) lost: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) unresolved: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) files_lost: Option<u64>,
-}
-/// Serializes as `{state, message?}`; only unavailable and error states carry a message.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
-#[serde(tag = "state", content = "message", rename_all = "snake_case")]
-pub(in crate::privileged_helper) enum SensorState {
-    #[default]
-    Idle,
-    Observing,
-    Unavailable(String),
-    Error(String),
-}
+#[cfg(test)]
+use crate::ipc::activity::{CpuActivity, IpcActivity};
+#[cfg(test)]
+use crate::privileged_helper::process::ProcessId;
+#[cfg(test)]
+use crate::privileged_helper::resource::IpcIdentity;
+
+/// Health of an acquisition sensor; unavailable and error states carry a diagnostic.
+pub(in crate::privileged_helper) use crate::ipc::acquisition::SensorState;
+pub(in crate::privileged_helper) use crate::ipc::acquisition::SystemActivity;
+pub(in crate::privileged_helper) use crate::ipc::acquisition::SystemMonitorStatus;
 impl std::fmt::Display for SensorState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -129,6 +63,7 @@ mod tests {
                 running_threads: 2,
                 cpus: vec![0, 2],
             }],
+            raw_activity: None,
             status: SystemMonitorStatus {
                 active: true,
                 signals: SensorState::Observing,
@@ -136,8 +71,8 @@ mod tests {
                 ipc: SensorState::Observing,
                 cpu: SensorState::Unavailable("permission denied".into()),
                 files: SensorState::Error("poll failed".into()),
-                coverage: Some("ipc coverage"),
-                files_coverage: Some("file coverage"),
+                coverage: Some("ipc coverage".into()),
+                files_coverage: Some("file coverage".into()),
                 lost: Some(0),
                 unresolved: Some(1),
                 files_lost: Some(2),

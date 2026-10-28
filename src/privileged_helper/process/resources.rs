@@ -1,12 +1,11 @@
 use super::{
-    ProcessId, details,
-    maps::{self, MemoryMap, SmapsEntry},
+    MemoryMap, ProcessId, details,
+    maps::{self},
     monitoring, procfs,
     sockets::{self, SocketInfo},
     validate_process_identity,
 };
 use anyhow::Result;
-use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(in crate::privileged_helper) fn timestamp_ms() -> u64 {
@@ -28,25 +27,25 @@ pub(in crate::privileged_helper) enum SubscribeError {
     TooManySubscribers,
 }
 
-pub(in crate::privileged_helper) fn observation(id: ProcessId) -> Result<impl Serialize> {
-    Ok(monitoring::initial_observation(
-        &monitoring::capture_sample(id)?,
-    ))
+pub(in crate::privileged_helper) fn observation(
+    id: ProcessId,
+) -> Result<crate::ipc::acquisition::ObservationData> {
+    Ok(crate::ipc::acquisition::ObservationData {
+        process_sample: monitoring::capture_sample(id)?,
+        threads_only: false,
+    })
 }
+pub(in crate::privileged_helper) fn threads(
+    id: ProcessId,
+) -> Result<crate::ipc::acquisition::ObservationData> {
+    Ok(crate::ipc::acquisition::ObservationData {
+        process_sample: monitoring::capture_sample(id)?,
+        threads_only: true,
+    })
+}
+pub use crate::ipc::acquisition::MemoryMaps;
 
-pub(in crate::privileged_helper) fn threads(id: ProcessId) -> Result<impl Serialize> {
-    Ok(monitoring::initial_observation(&monitoring::capture_sample(id)?).threads)
-}
-#[derive(Serialize)]
-struct MemoryMaps {
-    process_id: ProcessId,
-    maps: Vec<SmapsEntry>,
-    error: Option<String>,
-    captured_at: Option<u64>,
-    rollup: Option<maps::MemoryRollup>,
-}
-
-pub(in crate::privileged_helper) fn maps(id: ProcessId) -> Result<impl Serialize> {
+pub(in crate::privileged_helper) fn maps(id: ProcessId) -> Result<MemoryMaps> {
     validate_process_identity(id)?;
     let result = maps::read_smaps(id.pid);
     let rollup = maps::rollup(id.pid);
@@ -64,15 +63,21 @@ pub(in crate::privileged_helper) fn maps(id: ProcessId) -> Result<impl Serialize
     })
 }
 
-pub(in crate::privileged_helper) fn environment(id: ProcessId) -> Result<impl Serialize> {
+pub(in crate::privileged_helper) fn environment(
+    id: ProcessId,
+) -> Result<crate::ipc::acquisition::EnvironmentData> {
     details::environment(id)
 }
 
-pub(in crate::privileged_helper) fn auxv(id: ProcessId) -> Result<impl Serialize> {
+pub(in crate::privileged_helper) fn auxv(
+    id: ProcessId,
+) -> Result<crate::ipc::acquisition::AuxData> {
     details::auxv(id)
 }
 
-pub(in crate::privileged_helper) fn fds(id: ProcessId) -> Result<impl Serialize> {
+pub(in crate::privileged_helper) fn fds(
+    id: ProcessId,
+) -> Result<crate::ipc::descriptors::FileDescriptors> {
     super::fds::read(id)
 }
 
@@ -81,6 +86,7 @@ pub(in crate::privileged_helper) fn memory_maps(pid: i32) -> Result<Vec<MemoryMa
     maps::read_maps(pid)
 }
 
+#[cfg(test)]
 pub(in crate::privileged_helper) fn ticks_per_second() -> f64 {
     procfs::ticks_per_second()
 }

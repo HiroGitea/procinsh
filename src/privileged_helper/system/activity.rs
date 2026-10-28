@@ -1,10 +1,10 @@
 use super::files::FileActivity;
-use super::model::{CpuActivity, IpcActivity, SensorState, SystemMonitorStatus};
+use super::model::{SensorState, SystemMonitorStatus};
+use super::signals::SignalCollector;
 use super::{
     SystemSnapshot, files::FileActivityCollector, ipc::IpcActivityCollector,
     sched::CpuActivityCollector,
 };
-use super::{model::SignalEvent, signals::SignalCollector};
 
 /// Owns independently initialized BPF sensors, without service lifecycle or delivery.
 pub(super) struct ActivityCollector {
@@ -17,9 +17,9 @@ pub(super) struct ActivityCollector {
 
 pub(super) struct ActivityBatch {
     pub(super) files: Vec<FileActivity>,
-    pub(super) ipc: Vec<IpcActivity>,
-    pub(super) cpu: Vec<CpuActivity>,
-    pub(super) signals: Vec<SignalEvent>,
+    pub(super) ipc: Vec<crate::ipc::activity::IpcEvent>,
+    pub(super) cpu: crate::ipc::activity::CpuCounters,
+    pub(super) signals: Vec<crate::ipc::activity::SignalSample>,
 }
 
 impl ActivityCollector {
@@ -41,9 +41,9 @@ impl ActivityCollector {
             files: files_state,
             signals: signals_state,
             coverage: Some(
-                "pipe read/write; socket send/recv. splice, sendfile and some io_uring paths are not observed; worker attribution is excluded.",
+                "pipe read/write; socket send/recv. splice, sendfile and some io_uring paths are not observed; worker attribution is excluded.".into(),
             ),
-            files_coverage: Some(super::files::COVERAGE),
+            files_coverage: Some(super::files::COVERAGE.into()),
             ..SystemMonitorStatus::default()
         };
         Self {
@@ -83,9 +83,9 @@ impl ActivityCollector {
             }
             Some(Err(error)) => {
                 self.status.cpu = update_state(Err(error));
-                Vec::new()
+                Default::default()
             }
-            None => Vec::new(),
+            None => Default::default(),
         };
         self.status.lost = Some(self.ipc.as_ref().map_or(0, IpcActivityCollector::lost));
         self.status.unresolved = Some(
@@ -170,7 +170,7 @@ mod tests {
         collector.poll(&snapshot);
         let batch = collector.drain(123, &snapshot);
         assert!(batch.signals.is_empty());
-        assert!(batch.ipc.is_empty() && batch.cpu.is_empty() && batch.files.is_empty());
+        assert!(batch.ipc.is_empty() && batch.cpu.current.is_empty() && batch.files.is_empty());
         let mut status = collector.status();
         assert_eq!(
             status.signals,

@@ -5,7 +5,13 @@
 //! PTRACE_GETREGSET / NT_PRSTATUS, sample the same registers with
 //! PERF_REG_ARM64_* (whose order differs from ptrace), and name them with
 //! PC → pc, SP → sp, X29 → fp, X30 → lr and PSTATE → flags.
-use crate::privileged_helper::process::snapshot::registers::RegisterRole;
+//!
+//! # Interface
+//! All entries have `pub(in crate::privileged_helper::process::snapshot)` visibility.
+//! - [`PERF_REGS_MASK`]: `const PERF_REGS_MASK: u64`.
+//! - [`PC`]: `const PC: usize`.
+//! - [`SP`]: `const SP: usize`.
+//! - [`read_registers`]: `fn read_registers(tid: i32) -> anyhow::Result<[u64; 24]>`.
 use anyhow::{Result, bail};
 
 /// Zero makes perf sampling refuse to open; see `PerfEventReader::open_attr`.
@@ -13,14 +19,8 @@ pub(in crate::privileged_helper::process::snapshot) const PERF_REGS_MASK: u64 = 
 /// Indices of PC, SP and FP in the register set.
 pub(in crate::privileged_helper::process::snapshot) const PC: usize = 0;
 pub(in crate::privileged_helper::process::snapshot) const SP: usize = 0;
+#[cfg(test)]
 pub(in crate::privileged_helper::process::snapshot) const FP: usize = 0;
-
-/// Displayed registers in order: name, role and register-set index.
-pub(in crate::privileged_helper::process::snapshot) const REGISTERS: &[(
-    &str,
-    RegisterRole,
-    usize,
-)] = &[];
 
 pub(in crate::privileged_helper::process::snapshot) fn read_registers(
     _tid: i32,

@@ -1,5 +1,4 @@
 use anyhow::{Context, Result, anyhow, ensure};
-use serde::Serialize;
 use std::{collections::HashMap, fs, io::Read};
 
 #[derive(Debug, Clone)]
@@ -95,11 +94,7 @@ pub(super) fn field_u64(fields: &HashMap<String, String>, key: &str) -> Option<u
     fields.get(key)?.split_whitespace().next()?.parse().ok()
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
-pub(super) struct IoStats {
-    pub(super) read_bytes: u64,
-    pub(super) write_bytes: u64,
-}
+pub(super) use crate::ipc::model::process::IoStats;
 
 pub(super) fn read_io(pid: i32) -> Result<IoStats> {
     let f = fields(&format!("/proc/{pid}/io"))?;

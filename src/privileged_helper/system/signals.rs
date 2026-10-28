@@ -6,72 +6,29 @@
 //! | --- | --- | --- |
 //! | [`SignalCollector`] | `pub(super)` | `struct SignalCollector` |
 //!
-//! Drained observations use [`SignalEvent`] and are matched against [`SystemSnapshot`].
+//! Drained observations use [`SignalSample`]; main matches them against captured process identities.
 
-use super::{model::SignalEvent, snapshot::SystemSnapshot};
+use super::snapshot::SystemSnapshot;
+#[cfg(test)]
 use crate::privileged_helper::process::{ProcessId, ticks_per_second};
 use anyhow::{Context, Result};
 use libbpf_rs::{MapCore, MapFlags, ObjectBuilder, RingBufferBuilder};
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+#[cfg(test)]
+use std::collections::HashMap;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
 };
 
 const MAX_EVENTS: usize = 1024;
 
-#[derive(Clone, Copy, Debug)]
-struct SignalSample {
-    timestamp_ns: u64,
-    src_start: u64,
-    dst_start: u64,
-    src_pid: u32,
-    dst_pid: u32,
-    signal: i32,
-}
-
-fn decode(bytes: &[u8]) -> Option<SignalSample> {
-    if bytes.len() != 40 {
-        return None;
-    }
-    let u64at = |i| u64::from_ne_bytes(bytes[i..i + 8].try_into().unwrap());
-    let u32at = |i| u32::from_ne_bytes(bytes[i..i + 4].try_into().unwrap());
-    Some(SignalSample {
-        timestamp_ns: u64at(0),
-        src_start: u64at(8),
-        dst_start: u64at(16),
-        src_pid: u32at(24),
-        dst_pid: u32at(28),
-        signal: u32at(32) as i32,
-    })
-}
-
-fn resolve(sample: SignalSample, processes: &HashMap<i32, ProcessId>) -> Option<SignalEvent> {
-    let source_id = *processes.get(&(sample.src_pid as i32))?;
-    let destination_id = *processes.get(&(sample.dst_pid as i32))?;
-    let ticks = |start: u64| (start as u128 * ticks_per_second() as u128 / 1_000_000_000) as u64;
-    if sample.signal <= 0
-        || sample.signal > 64
-        || ticks(sample.src_start) != source_id.start_time_ticks
-        || ticks(sample.dst_start) != destination_id.start_time_ticks
-    {
-        return None;
-    }
-    Some(SignalEvent {
-        timestamp_ns: sample.timestamp_ns,
-        src_pid: sample.src_pid,
-        dst_pid: sample.dst_pid,
-        signal: sample.signal,
-        source_id,
-        destination_id,
-    })
-}
-
+#[cfg(test)]
+use crate::http_server::analysis::activity::resolve_signal as resolve;
+use crate::ipc::activity::SignalSample;
+use crate::privileged_helper::abi::decode_signal as decode;
 /// Owns the signal_generate hook and a bounded batch of process-level observations.
 /// At most 1024 events are retained between service drains. Excess events contribute
-/// to `lost`, independently of other sensors. Unrepresented or reused PIDs are ignored.
+/// to `lost`, independently of other sensors. Main matches process identities.
 pub(super) struct SignalCollector {
     ring: libbpf_rs::RingBuffer<'static>,
     _links: Vec<libbpf_rs::Link>,
@@ -127,18 +84,8 @@ impl SignalCollector {
         Ok(())
     }
 
-    pub(super) fn drain(&self, snapshot: &SystemSnapshot) -> Vec<SignalEvent> {
-        let processes = snapshot
-            .processes
-            .iter()
-            .map(|n| (n.identity.pid, n.identity))
-            .collect();
-        self.queue
-            .lock()
-            .unwrap()
-            .drain(..)
-            .filter_map(|sample| resolve(sample, &processes))
-            .collect()
+    pub(super) fn drain(&self, _snapshot: &SystemSnapshot) -> Vec<SignalSample> {
+        self.queue.lock().unwrap().drain(..).collect()
     }
 
     pub(super) fn lost(&self) -> u64 {

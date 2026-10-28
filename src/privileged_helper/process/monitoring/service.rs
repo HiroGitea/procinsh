@@ -1,19 +1,20 @@
+#[cfg(test)]
+use super::sampling::{initial_observation, next_observation};
+#[cfg(test)]
+use std::collections::VecDeque;
 // Session handles and lifecycle methods are re-exported by the process façade.
-use super::history::{self, HistoryPoint};
-use super::sampling::{
-    ProcessObservation, ProcessSample, capture_sample, initial_observation, next_observation,
-};
+#[cfg(test)]
+use super::history::{self};
+use super::sampling::{ProcessSample, capture_sample};
 use crate::privileged_helper::process::SubscribeError;
 
 use crate::privileged_helper::process::{
-    self, ProcessId, ProcessSummary,
-    maps::{self, MemoryMap, MemoryRollup, SmapsEntry},
+    self, ProcessId,
+    maps::{self, MemoryMap},
     procfs,
 };
 use anyhow::{Result, ensure};
-use serde::Serialize;
 use std::{
-    collections::VecDeque,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -24,20 +25,7 @@ use tokio::sync::watch;
 
 /// SSE observation state with detailed maps and independently aged live samples.
 /// Map entries flatten structural mappings with optional RSS/PSS measurements.
-#[derive(Clone, Debug, Serialize)]
-pub(in crate::privileged_helper) struct ProcessDetailSnapshot {
-    summary: ProcessSummary,
-    pub(in crate::privileged_helper) exited: bool,
-    error: Option<String>,
-    observation: Option<ProcessObservation>,
-    history: VecDeque<HistoryPoint>,
-    maps: Vec<SmapsEntry>,
-    maps_error: Option<String>,
-    maps_captured_at: Option<u64>,
-    rollup: Option<MemoryRollup>,
-    live_samples: Vec<process::snapshot::ThreadSample>,
-    sampling_error: Option<String>,
-}
+pub use crate::ipc::acquisition::ProcessDetailSnapshot;
 /// Manages process observation sessions, collector workers and shutdown.
 pub(in crate::privileged_helper) struct ProcessMonitor {
     interval: Duration,
@@ -96,7 +84,7 @@ impl ProcessMonitor {
         id: ProcessId,
         permit: ObservationPermit,
     ) -> Result<ObservationSession> {
-        let (mut target, mut previous_sample) = capture_target(id)?;
+        let (mut target, mut _previous_sample) = capture_target(id)?;
         // Cache structural mappings for the sampler, updating them at each map refresh.
         let mut structural_maps: Vec<MemoryMap> =
             target.maps.iter().map(|m| m.mapping.clone()).collect();
@@ -105,6 +93,7 @@ impl ProcessMonitor {
             target.sampling_error = Some(format!("{error:#}"));
         }
         target.live_samples = sampler.latest();
+        target.mapping_snapshots = sampler.mapping_snapshots();
         let (tx, receiver) = watch::channel(target.clone());
         let state = self.clone();
         let cancelled = permit.cancelled.clone();
@@ -151,10 +140,14 @@ impl ProcessMonitor {
                     }
                     match capture_sample(id) {
                         Ok(current) => {
-                            let o = next_observation(&previous_sample, &current);
-                            previous_sample = current;
-                            history::push(&mut target.history, &o);
-                            target.observation = Some(o);
+                            #[cfg(test)]
+                            {
+                                let o = next_observation(&_previous_sample, &current);
+                                _previous_sample = current.clone();
+                                history::push(&mut target.history, &o);
+                                target.observation = Some(o);
+                            }
+                            target.process_sample = current;
                             if target.error.take().is_some() {
                                 log::info!("observation recovered pid={}", id.pid);
                             }
@@ -177,6 +170,7 @@ impl ProcessMonitor {
                         }
                     }
                     target.live_samples = sampler.latest();
+                    target.mapping_snapshots = sampler.mapping_snapshots();
                     tx.send_replace(target.clone());
                     if target.exited {
                         log::info!("process exited pid={}", id.pid);
@@ -220,20 +214,27 @@ pub(in crate::privileged_helper::process) fn capture_target(
     let summary = process::summary(&stat, &process::users());
     ensure!(summary.identity == id, "Process exited (PID reused)");
     let sample = capture_sample(id)?;
+    #[cfg(test)]
     let observation = initial_observation(&sample);
+    #[cfg(test)]
     let mut history = VecDeque::new();
+    #[cfg(test)]
     history::push(&mut history, &observation);
     let mut target = ProcessDetailSnapshot {
         summary,
+        process_sample: sample.clone(),
         exited: false,
         error: None,
+        #[cfg(test)]
         observation: Some(observation),
+        #[cfg(test)]
         history,
         maps: Vec::new(),
         maps_error: None,
         maps_captured_at: None,
         rollup: None,
         live_samples: Vec::new(),
+        mapping_snapshots: Vec::new(),
         sampling_error: None,
     };
     refresh_maps(&mut target);
