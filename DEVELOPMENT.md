@@ -6,7 +6,6 @@
 
 - [ProcInSh Development Guide](#procinsh-development-guide)
   - [Build and runtime environment](#build-and-runtime-environment)
-    - [Frontend development with Vite](#frontend-development-with-vite)
     - [Verification before publishing to crates.io](#verification-before-publishing-to-cratesio)
     - [Releases](#releases)
   - [Implementation structure](#implementation-structure)
@@ -87,37 +86,6 @@ cargo build --release --locked
 ```
 
 Open http://127.0.0.1:9090 in a browser. The web UI uses vanilla TypeScript in the separate `web/` project. `npm --prefix web run build` checks types, then uses Vite's multipage build to generate list, process, and space HTML, CSS, and JavaScript in `web/dist/`. It bundles shared modules and Three.js from npm (revision 180), with hashed asset names. Generated files are not tracked in Git, and Cargo does not run npm automatically. If the generated files are missing, the Cargo build fails with preparation instructions.
-
-### Frontend development with Vite
-
-First run `npm --prefix web ci && npm --prefix web run build && cargo build --locked`. Start the backend in one terminal and Vite in another.
-
-```sh
-# Terminal 1 (repository root)
-./scripts/dev_run.sh --listen 127.0.0.1:9090
-
-# Terminal 2
-cd web
-npm run dev
-```
-
-Open the URL printed by Vite (usually http://127.0.0.1:5173). Existing page URLs and process identity queries work as usual. Vite proxies all of `/api` to the backend, allowing JSON and process/system SSE to use the same origin. Change the backend URL with `PROCINSH_BACKEND_URL=http://127.0.0.1:8080 npm run dev` or `web/.env.local`. The development header shows the version from Cargo.toml and a development indicator. In production, Rust inserts the Git SHA by replacing an HTML placeholder.
-
-In production, `rust-embed` embeds all of `web/dist/` in the binary and serves files with MIME types based on their extensions. Debug builds also use embedded files. After changing TypeScript, HTML, or CSS, run `npm --prefix web run build` and rebuild the Rust binary. Cargo watches generated files but does not check whether they are up to date with the sources. Node.js, npm, and external CDNs are unnecessary at runtime. SPACE requires WebGL2.
-
-Each page header shows the binary's version and, when available, a seven-character Git SHA. The SHA links separately to the GitHub commit; its accessible label contains the full SHA. `build.rs` prefers a 40-character hexadecimal SHA from `PROCINSH_GIT_SHA`. Otherwise, it reads the Git checkout containing the manifest directory and appends `-dirty` when tracked files have changes. Distribution builds without Git metadata, or builds explicitly setting `PROCINSH_GIT_SHA=""`, show only the version. HTTP requests do not read Git or the checkout.
-
-| CLI option | Behavior |
-|---|---|
-| `--listen ADDRESS` | Listen address. Repeat to listen on multiple addresses. Default: `127.0.0.1:8080` |
-| `--allow-non-loopback` | Explicitly allow listening on non-loopback addresses. This exposes process memory and environment variables without authentication or TLS |
-| `--accept-agents ADDRESS` | Accept agent links as a hub (repeatable). Non-loopback addresses require both `--allow-non-loopback` and an agent token |
-| `--connect HOST:PORT` | Link to a hub's agent address as an agent and answer its requests with this host's helper |
-| `--host-name NAME` | Host name shown by a hub. Default: the kernel host name. 1-63 letters, digits, `.`, `_` or `-`; not `all` |
-| `--agent-token-file PATH` | File holding the token shared by a hub and its agents. The token is never taken from arguments or the environment, because procinsh shows every process's command line and environment |
-| `--help` / `--version` | Show help / version |
-
-SIGINT (Ctrl+C) or SIGTERM stops collection and shuts down the HTTP server. Fatal startup or server failures exit with a nonzero status.
 
 ### Verification before publishing to crates.io
 
