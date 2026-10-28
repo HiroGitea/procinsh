@@ -15,10 +15,12 @@ EDGE = re.compile(r'^\s*"([^"]+)" -> "([^"]+)" \[.*; // "(\w+)" edge$')
 
 def parse_modules(dot):
     nodes, edges = set(), set()
+    roots = {match[1] for line in dot.splitlines()
+             if (match := NODE.match(line)) and match[2] == 'crate'}
     for line in dot.splitlines():
         if match := NODE.match(line):
             name, kind = match.groups()
-            if (kind == 'mod' and name.startswith('procinsh::')) or (kind == 'crate' and name == 'procinsh'):
+            if kind == 'crate' or (kind == 'mod' and name.split('::', 1)[0] in roots):
                 nodes.add(name)
         elif match := EDGE.match(line):
             source, target, kind = match.groups()
@@ -34,7 +36,7 @@ def parse_modules(dot):
 
 def overview(nodes, edges):
     def top(name):
-        # Summarize at the HTTP subsystem boundary, below the single root module.
+        # Summarize each executable at its subsystem boundary.
         return '::'.join(name.split('::')[:3])
     return {top(n) for n in nodes}, {(top(a), top(b)) for a, b in edges if top(a) != top(b)}
 
@@ -61,7 +63,8 @@ def render_dot(nodes, edges, *, nested=False):
                              'fontname="sans-serif", color="#94a3b8", '
                              'style="rounded", margin=16, labeljust=l];')
                 if node in nodes:
-                    lines.append(f'{indent}  {json.dumps(node)} [label="(module)", '
+                    label = '(module)' if '::' in node else 'main'
+                    lines.append(f'{indent}  {json.dumps(node)} [label={json.dumps(label)}, '
                                  f'tooltip={json.dumps(node)}];')
                 for child in sorted(children[node]):
                     emit(child, indent + '  ')
@@ -70,13 +73,11 @@ def render_dot(nodes, edges, *, nested=False):
                 lines.append(f'{indent}{json.dumps(node)} [label={json.dumps(label)}, '
                              f'tooltip={json.dumps(node)}];')
 
-        if 'procinsh' in nodes:
-            lines.append('  "procinsh" [label="main"];')
-        for node in sorted(children.get('procinsh', ())):
+        for node in sorted({n.split('::', 1)[0] for n in nodes}):
             emit(node, '  ')
     else:
         for node in sorted(nodes):
-            lines.append(f'  {json.dumps(node)} [label={json.dumps(node.removeprefix("procinsh::"))}];')
+            lines.append(f'  {json.dumps(node)} [label={json.dumps(node)}];')
     for source, target in sorted(edges):
         lines.append(f'  {json.dumps(source)} -> {json.dumps(target)};')
     return '\n'.join(lines + ['}', ''])
@@ -84,10 +85,14 @@ def render_dot(nodes, edges, *, nested=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', type=Path)
+    parser.add_argument('input', type=Path, nargs='+')
     parser.add_argument('--output', type=Path, default=Path('target/doc/rust-architecture'))
     args = parser.parse_args()
-    nodes, edges = parse_modules(args.input.read_text())
+    nodes, edges = set(), set()
+    for path in args.input:
+        input_nodes, input_edges = parse_modules(path.read_text())
+        nodes.update(input_nodes)
+        edges.update(input_edges)
     args.output.mkdir(parents=True, exist_ok=True)
     for name, graph in [('module-dependencies', overview(nodes, edges)),
                         ('module-dependencies-detail', (nodes, edges))]:
