@@ -114,53 +114,13 @@ The script verifies the crates.io publication, pushes the version tag, and creat
 
 ## Implementation structure
 
-The implementation is described from the browser toward the kernel: frontend, HTTP API, unprivileged backend, private IPC, and privileged helper. Here, **backend** means the `procinsh` HTTP process; **helper** means the separate `procinsh-privileged-helper` process.
-
-
 | Location | Responsibility |
 |---|---|
-| `src/http_server/entry.rs` | CLI, logger initialization, startup configuration validation |
 | `src/http_server/` | Unprivileged HTTP, helper supervision, IPC client and SSE formatting |
 | `src/privileged_helper/` | Privileged acquisition, collectors and IPC request dispatch |
 | `src/ipc/` | Message schema and bounded transport shared by both executables |
-| `src/http_server/api/` | HTTP input/responses, domain error to status conversion, JSON and SSE (Server-Sent Events) |
-| `src/http_server/web.rs` | Static web UI serving |
-| `src/privileged_helper/process/monitoring/` | Independent acquisition per connection, latest-state delivery |
-| `src/privileged_helper/process/` | `/proc` parsing, PID identity, process/thread/memory/FD/socket information |
-| `src/privileged_helper/process/snapshot/` | Registers/stacks from initial and 10-second ptrace captures and continuous perf sampling, instruction-byte capture |
-| `src/privileged_helper/process/elf.rs` | Identity-verified acquisition of mapped ELF bytes |
-| `src/http_server/analysis/snapshot/` | ELF/DWARF parsing, caching, framehop unwinding, register classification and symbol/source resolution in main |
-| `src/http_server/processing.rs` | Main-side interpretation of raw IPC responses before HTTP output |
-| `src/ipc/model/` | Native data values shared through IPC, without serde |
-| `src/http_server/model/`, `src/http_server/json/` | Main-only JSON representations of shared values |
-| `src/ipc/stack.rs` | Stack frame values |
-| `src/privileged_helper/system/` | Protected system snapshots, subscriptions and BPF collection |
-| `src/http_server/analysis/hardware/` | Interpret helper-acquired hardware attributes into GPUs, RDMA NICs, accelerators, NVSwitches, PCIe paths, and device holders |
-| `src/privileged_helper/netlink.rs` | Netlink dumps with deadlines and attribute parsing shared by UNIX socket diagnostics and other users |
-| `src/http_server/hosts/` | Agent links, host registry, and cross-host connection matching |
-| `src/privileged_helper/system/rdma/` | RDMA acquisition through netlink and sysfs |
 | `web/src/` | TypeScript pages, SPACE, rendering models, and CSS (HTML entry points: `web/{list,process,space}/index.html`) |
 | `tests/` | Rust, browser, log, and live sensor tests, plus C fixtures |
-
-`main.rs` starts the unprivileged `http_server` module tree. The separate
-`procinsh-privileged-helper` target owns `privileged_helper/root.rs` and all
-inspection modules. The small library exposes only protocol definitions and
-bounded transport. See [privilege separation](#privileged-helper)
-for the ownership inventory, deployment, IPC limits and verification. Modules live at the lowest common ancestor of their direct consumers. Child module declarations are private; items needed by parents generally use `pub(super)`.
-
-Rust type names express responsibilities. Data and values describe their contents (`ProcessId`, `ProcessSummary`, `ProcessSnapshot`); types managing operations, state, or resources describe their roles (`ProcessScanner`, `ProcessMonitor`, `FileActivityCollector`, `PerfEventReader`, `PtraceGuard`). Helper methods alone do not determine this distinction, and types do not all require mechanical suffixes.
-
-Hierarchical modules use `foo.rs` plus `foo/`, without `mod.rs`. `foo.rs` contains only module documentation, child module declarations, and re-exports. Implementations of types, functions, and constants live in child files named for their responsibilities.
-
-HTTP startup/shutdown lives in `http_server/server.rs`, shared state in `http_server/state.rs`, router assembly in `http_server/router.rs` and `http_server/api/router.rs`, and HTTP guards/access logs in `http_server/middleware.rs`. The process façade is implemented in `process/identity.rs` and `process/resources.rs`, observation lifecycle in `monitoring/service.rs`, and snapshot orchestration in `snapshot/capture.rs`. Symbol handling is split into `symbol/cache.rs` and `symbol/resolve.rs`; system monitoring uses `system/service.rs` and state logging in `status.rs`. `activity.rs` owns BPF sensors and manages collection, status, and loss counts. Dependency diagrams include these child modules; overview diagrams group them by subsystem.
-
-HTTP handlers use the shared IPC schema in `ipc/schema.rs` and the client in `http_server/client.rs`. Helper-side system monitoring uses the `privileged_helper/process.rs` façade. Within `process`, `monitoring` handles continuous observation; `snapshot` handles stopped-state capture with ptrace initially and every 10 seconds, plus continuous perf sampling without stopping the target. Each collector's sampler owns perf FDs and mmap mappings; main owns ELF and unwind caches. `process` and `system` do not depend on Axum types.
-
-As an exception, domain types and subscription operations re-exported through façades use `pub(in crate::privileged_helper)`. This visibility allows parents to re-export items from private children; it does not expose them outside the crate. Internal tests live in their respective modules. `tests/http.rs` starts the binary to verify HTTP, SSE, and SIGTERM shutdown.
-
-Tokio/Axum handles HTTP and SSE. Detail APIs send bounded IPC requests to the helper. Periodic process observation and system-wide structure/activity collection run on helper OS threads. Process detail monitoring has independent state per connection. HTTP `AppState` holds the IPC client and shutdown state; helper `MonitorState` owns the process scanner and collection subsystems. Process monitoring manages connection counts and collectors; each collector manages its perf lifecycle. Main owns symbol/unwind caches, per-session rate calculations and histories.
-
-Web UI API types live in `web/src/shared/api-types.ts` and are maintained alongside Rust JSON responses. The contract includes null handling and hexadecimal address strings. These are compile-time types, not runtime input validation. Vite bundles Three.js as an npm dependency; TypeScript and type definitions are build-only npm dependencies.
 
 ### Frontend processing
 
@@ -1074,6 +1034,8 @@ tests/targets/bin/recursive --allow-inspector
 `--allow-inspector` is a test-only option granting ptrace access to that fixture. It does not alter system-wide Yama settings.
 
 ## API documentation
+
+Rust type names express responsibilities. Data and values describe their contents (`ProcessId`, `ProcessSummary`, `ProcessSnapshot`); types managing operations, state, or resources describe their roles (`ProcessScanner`, `ProcessMonitor`, `FileActivityCollector`, `PerfEventReader`, `PtraceGuard`). Helper methods alone do not determine this distinction, and types do not all require mechanical suffixes.
 
 [API Documentation](https://akawashiro.github.io/procinsh/) links to the Rust API, [TypeScript API](https://akawashiro.github.io/procinsh/main/typescript/), [Rust dependency graph](https://akawashiro.github.io/procinsh/main/rust-architecture/), and [TypeScript dependency graph](https://akawashiro.github.io/procinsh/main/typescript-architecture/).
 Each module root's `//!` documentation explains its responsibility and entry points used outside that module, including interfaces for parents and siblings as well as any external interfaces.
