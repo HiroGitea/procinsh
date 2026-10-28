@@ -60,6 +60,7 @@
     - [Browser tests](#browser-tests)
     - [Generating communication/IPC load with Chromium](#generating-communicationipc-load-with-chromium)
     - [Live sensor tests](#live-sensor-tests)
+  - [API documentation](#api-documentation)
   - [Related links](#related-links)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -160,14 +161,6 @@ As an exception, domain types and subscription operations re-exported through fa
 Tokio/Axum handles HTTP and SSE. Detail APIs send bounded IPC requests to the helper. Periodic process observation and system-wide structure/activity collection run on helper OS threads. Process detail monitoring has independent state per connection. HTTP `AppState` holds the IPC client and shutdown state; helper `MonitorState` owns the process scanner and collection subsystems. Process monitoring manages connection counts and collectors; each collector manages its perf lifecycle. Main owns symbol/unwind caches, per-session rate calculations and histories.
 
 Web UI API types live in `web/src/shared/api-types.ts` and are maintained alongside Rust JSON responses. The contract includes null handling and hexadecimal address strings. These are compile-time types, not runtime input validation. Vite bundles Three.js as an npm dependency; TypeScript and type definitions are build-only npm dependencies.
-
-[API Documentation](https://akawashiro.github.io/procinsh/) links to the Rust API, [TypeScript API](https://akawashiro.github.io/procinsh/main/typescript/), [Rust dependency graph](https://akawashiro.github.io/procinsh/main/rust-architecture/), and [TypeScript dependency graph](https://akawashiro.github.io/procinsh/main/typescript-architecture/).
-Each module root's `//!` documentation explains its responsibility and entry points used outside that module, including interfaces for parents and siblings as well as any external interfaces.
-`//! # Interface` lists the types and functions the root exposes or re-exports in normal builds, including types, visibility, function signatures, and definition links. Update it whenever an entry point changes. Link to definitions of supporting types used in signatures where necessary.
-Do not exhaustively copy child module internals, fields, enum variants, or test-only items. Document public type methods, JSON representation and fallback contracts, and ownership, locking, or ordering requirements at their definitions. Comments describe current behavior rather than change history.
-This manual list compensates for the pinned rustdoc's inability to show restricted re-exports as façade interfaces in this module arrangement.
-Name links open the defining rustdoc page, whose **Source** link opens the implementation.
-CI treats `rustdoc::broken_intra_doc_links` as an error to catch broken links, but does not check that signatures written in comments match the code.
 
 ### Frontend processing
 
@@ -1079,6 +1072,16 @@ tests/targets/bin/recursive --allow-inspector
 ```
 
 `--allow-inspector` is a test-only option granting ptrace access to that fixture. It does not alter system-wide Yama settings.
+
+## API documentation
+
+[API Documentation](https://akawashiro.github.io/procinsh/) links to the Rust API, [TypeScript API](https://akawashiro.github.io/procinsh/main/typescript/), [Rust dependency graph](https://akawashiro.github.io/procinsh/main/rust-architecture/), and [TypeScript dependency graph](https://akawashiro.github.io/procinsh/main/typescript-architecture/).
+Each module root's `//!` documentation explains its responsibility and entry points used outside that module, including interfaces for parents and siblings as well as any external interfaces.
+`//! # Interface` lists the types and functions the root exposes or re-exports in normal builds, including types, visibility, function signatures, and definition links. Update it whenever an entry point changes. Link to definitions of supporting types used in signatures where necessary.
+Do not exhaustively copy child module internals, fields, enum variants, or test-only items. Document public type methods, JSON representation and fallback contracts, and ownership, locking, or ordering requirements at their definitions. Comments describe current behavior rather than change history.
+This manual list compensates for the pinned rustdoc's inability to show restricted re-exports as façade interfaces in this module arrangement.
+Name links open the defining rustdoc page, whose **Source** link opens the implementation.
+CI treats `rustdoc::broken_intra_doc_links` as an error to catch broken links, but does not check that signatures written in comments match the code.
 
 ## Related links
 
