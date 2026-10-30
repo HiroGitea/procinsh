@@ -925,8 +925,9 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "logblur-core"
-version = "0.2.1"
-source = "git+https://github.com/HiroGitea/logblur?rev=fef4727#fef472775077a46118d5cadf2412cd2986eaf84a"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d8e9e55a34fdc0653ff72099442a15a94b0c75fc8878320a8bf7221f9192d1b"
 dependencies = [
  "aho-corasick",
  "memchr",
