@@ -1,5 +1,4 @@
 import type { Evaluate, Cdp } from "./harness.js";
-import { delay as pause } from "../support/runtime.js";
 import assert from "node:assert/strict";
 
 type RdmaVisuals = {
@@ -14,13 +13,11 @@ type RdmaVisuals = {
   devices: { id: string; label: string; screen: number[] }[];
 };
 
-export async function checkRdmaSpace(
-  evaluate: Evaluate,
-  delay: typeof pause,
-  cdp: Cdp,
-) {
+export async function checkRdmaSpace(evaluate: Evaluate, cdp: Cdp) {
   await evaluate(`(async()=>{
     const m=await import(window.spaceTestModule);
+    // Finish the preceding fixture's activity before replacing its snapshot.
+    document.getElementById('reset').click();
     const node={identity:{pid:900101,start_time_ticks:1},name:'rdma-browser',uid:1000,euid:1000,maps:[]};
     const endpoint=(qpn,owner)=>({owner,device:'ib0',port:1,qpn,qp_type:{kind:'rc'},state:{kind:'rts'}});
     const user={kind:'process',process_id:node.identity};
@@ -35,7 +32,18 @@ export async function checkRdmaSpace(
       ]};
     m.renderSystemSnapshot(window.rdmaFixture,true);m.fitScene();
   })()`);
-  await delay(100);
+  // Fitting changes the camera before the renderer updates its world matrix.
+  // Wait for rendered frames before projecting coordinates used for picking.
+  await evaluate(
+    "new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
+  );
+  assert.deepEqual(
+    await evaluate(
+      "import(window.spaceTestModule).then(m=>m.networkVisuals())",
+    ),
+    [],
+    "the RDMA fixture has no retained network destinations",
+  );
   const visuals = await evaluate<RdmaVisuals>(
     "import(window.spaceTestModule).then(m=>m.rdmaVisuals())",
   );
@@ -54,7 +62,10 @@ export async function checkRdmaSpace(
   );
   const process = visuals.groups.find((g) => g.anchor === "900101:1")!;
   assert.equal(process.start[2], 8, "process QPs leave from the hull roof");
-  const click = async ([x, y]: number[]) => {
+  const click = async (projection: string) => {
+    const [x, y] = await evaluate<[number, number]>(
+      `import(window.spaceTestModule).then(m=>${projection})`,
+    );
     for (const type of ["mousePressed", "mouseReleased"] as const)
       await cdp("Input.dispatchMouseEvent", {
         type,
@@ -66,7 +77,7 @@ export async function checkRdmaSpace(
   };
   const text = (id: string) =>
     evaluate<string>(`document.getElementById('${id}').textContent`);
-  await click(visuals.groups.find((g) => g.anchor !== "900101:1")!.screen);
+  await click("m.rdmaVisuals().groups.find(g=>g.anchor!=='900101:1').screen");
   assert.equal(
     await text("connection-state"),
     "RDMA queue pairs to a remote destination",
@@ -75,10 +86,10 @@ export async function checkRdmaSpace(
     await text("connection-endpoints"),
     /Remote QP 624 · GID fe80:0000:0000:0000:f452:1403:0080:de51/,
   );
-  await click(visuals.devices[0].screen);
+  await click("m.rdmaVisuals().devices[0].screen");
   assert.equal(await text("connection-state"), "RDMA device");
   assert.match(await text("connection-endpoints"), /Port 1 · ACTIVE/);
-  await click(visuals.links[0].screen);
+  await click("m.rdmaVisuals().links[0].screen");
   assert.equal(
     await text("connection-state"),
     "Connected queue pairs on this host",
