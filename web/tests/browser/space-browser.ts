@@ -836,7 +836,7 @@ try {
   await checkFileSpace(evaluate, delay, cdp);
   await checkNetlinkSpace(evaluate, delay, cdp);
   await checkSocketVisibility(evaluate);
-  await checkRdmaSpace(evaluate, delay, cdp);
+  await checkRdmaSpace(evaluate, cdp);
   await checkNetworkSpace(evaluate, delay, cdp);
   // A close-up right drag should travel as far in world space as a focused drag.
   await evaluate(
