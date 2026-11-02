@@ -831,7 +831,7 @@ Record during the initial build. For another clean recording, prepare a new VM w
 
 Copy verified gzip to `web/replay-public/recordings/`. Bundled demo ID `linux-build-ubuntu26` is available through the demo menu, static site's landing page, and `/replay/space/?recording=linux-build-ubuntu26`. After capture, stop the disposable VM with `VM_DIR=/tmp/kernel-demo scripts/recording-vm/run.sh stop`.
 
-The bundled recording compiles upstream Linux `v7.0` in an Ubuntu 26.04 guest with Ubuntu clang 21.1.8 and two parallel jobs. It contains 50 compiler identities with real CPU/file activity; the gzip asset is about 4 MiB.
+The bundled recording compiles upstream Linux `v7.0` in an Ubuntu 26.04 guest with Ubuntu clang 21.1.8 and two parallel jobs. It contains 41 compiler identities with real CPU/file activity; the gzip asset is about 6 MiB.
 
 ### Recording/replay verification
 
