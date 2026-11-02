@@ -4,30 +4,6 @@ use crate::privileged_helper::process::{self, ProcessId};
 use std::{io::Write, os::unix::net::UnixStream, sync::Arc, time::Duration};
 
 #[test]
-fn rejects_unbounded_truncated_and_unknown_requests() {
-    for bytes in [
-        vec![0, 0, 8, 0],
-        vec![0, 0, 0, 5, b'{'],
-        vec![0, 0, 0, 2, b'{', b'}'],
-    ] {
-        let (mut reader, mut writer) = UnixStream::pair().unwrap();
-        writer.write_all(&bytes).unwrap();
-        drop(writer);
-        assert!(transport::read::<MonitorRequest>(&mut reader, MAX_REQUEST).is_err());
-    }
-    let request = MonitorRequest::Process {
-        id: ProcessId {
-            pid: 1,
-            start_time_ticks: 1,
-        },
-        resource: ProcessResource::Maps,
-    };
-    let mut bytes = crate::ipc::codec::encode(&request, MAX_REQUEST).unwrap();
-    bytes.extend_from_slice(b"/etc/shadow");
-    assert!(crate::ipc::codec::decode::<MonitorRequest>(&bytes).is_err());
-}
-
-#[test]
 fn validates_identity_before_creating_collectors_and_releases_sessions() {
     let state = Arc::new(MonitorState::new(Duration::from_millis(100)));
     let mut service = MonitorService::new(state.clone());

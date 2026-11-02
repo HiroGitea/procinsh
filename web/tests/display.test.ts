@@ -87,12 +87,35 @@ describe("shared formatting", () => {
     expect(byteRate(value)).toBe(`${expected}/s`);
   });
 
+  test("formats descriptor access and memory mappings", () => {
+    expect(Display.access("unknown")).toBe("N/A");
+    expect(
+      Display.mapping({
+        pathname: "/tmp/a [b]",
+        readable: true,
+        writable: true,
+        executable: false,
+        private: true,
+      }),
+    ).toBe("/tmp/a [b] [rw-p]");
+    expect(
+      Display.mapping({
+        pathname: null,
+        readable: true,
+        writable: false,
+        executable: false,
+        private: false,
+      }),
+    ).toBe("[anonymous] [r--s]");
+  });
+
   test("formats IPv6 addresses and unknown structured values", () => {
     expect(Display.address({ ip: "::1", port: 9090 })).toBe("[::1]:9090");
     expect(Display.address({ ip: "127.0.0.1", port: 9090 })).toBe(
       "127.0.0.1:9090",
     );
     expect(Display.address(null)).toBe("");
+    expect(Display.affinity(null)).toBe("N/A");
     expect(Display.scheduler({ kind: "unknown", code: 99 })).toBe(
       "UNKNOWN (99)",
     );

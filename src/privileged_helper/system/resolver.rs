@@ -132,7 +132,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn queues_once_and_retries_expired_negative_entries() {
+    fn cached_entries_avoid_queueing_and_expired_entries_retry() {
         let (tx, rx) = mpsc::sync_channel(4096);
         let r = ReverseDnsResolver {
             cache: Arc::new(Mutex::new(HashMap::new())),
@@ -153,23 +153,6 @@ mod tests {
         );
         assert_eq!(r.lookup(ip), None);
         assert_eq!(rx.try_recv().unwrap(), ip);
-        for i in 0..4096u32 {
-            r.cache.lock().unwrap().insert(
-                IpAddr::V4(i.into()),
-                Entry {
-                    name: None,
-                    expires: Instant::now() + Duration::from_secs(60),
-                    pending: false,
-                },
-            );
-        }
-        assert_eq!(r.lookup("192.0.2.1".parse().unwrap()), None);
-        assert!(rx.try_recv().is_err());
-    }
-
-    #[test]
-    fn cached_positive_negative_and_pending() {
-        let r = ReverseDnsResolver::new();
         for (ip, name, pending) in [
             ("192.0.2.1", Some("example.test".to_string()), false),
             ("2001:db8::1", None, false),
@@ -185,6 +168,19 @@ mod tests {
                 },
             );
             assert_eq!(r.lookup(ip), name);
+            assert!(rx.try_recv().is_err());
         }
+        for i in 0..4096u32 {
+            r.cache.lock().unwrap().insert(
+                IpAddr::V4(i.into()),
+                Entry {
+                    name: None,
+                    expires: Instant::now() + Duration::from_secs(60),
+                    pending: false,
+                },
+            );
+        }
+        assert_eq!(r.lookup("192.0.2.3".parse().unwrap()), None);
+        assert!(rx.try_recv().is_err());
     }
 }

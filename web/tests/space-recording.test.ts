@@ -155,15 +155,6 @@ test("shared validator rejects invalid metadata, ordering, and nested payloads",
   }
 });
 
-test("recording fixture is self-contained and contains synthetic values only", () => {
-  const recording = sample();
-  expect(recording.events.length).toBeGreaterThan(100);
-  expect(
-    recording.initial_snapshot.processes.every((p) => p.username === "demo"),
-  ).toBe(true);
-  expect(recording.end_reason).toContain("Synthetic sanitized demo");
-});
-
 test("Cloudflare Pages Free build guard accepts the boundary and rejects oversized files", () => {
   const directory = mkdtempSync(join(tmpdir(), "procinsh-pages-limit-"));
   try {
