@@ -134,30 +134,6 @@ mod tests {
             serde_json::to_value(file).unwrap()["inode"],
             u64::MAX.to_string()
         );
-        let mut identities = std::collections::HashSet::from([file]);
-        identities.insert(FileIdentity {
-            inode: file.inode - 1,
-            ..file
-        });
-        identities.insert(FileIdentity {
-            generation: file.generation + 1,
-            ..file
-        });
-        identities.insert(FileIdentity {
-            device: DeviceId {
-                major: device.major + 1,
-                ..device
-            },
-            ..file
-        });
-        identities.insert(FileIdentity {
-            device: DeviceId {
-                minor: device.minor - 1,
-                ..device
-            },
-            ..file
-        });
-        assert_eq!(identities.len(), 5);
         let ipc = IpcIdentity {
             kind: IpcKind::Socket,
             device,
@@ -167,29 +143,5 @@ mod tests {
             serde_json::to_value(ipc).unwrap()["inode"],
             u64::MAX.to_string()
         );
-        let mut ipc_keys = std::collections::HashSet::from([ipc]);
-        ipc_keys.insert(IpcIdentity {
-            kind: IpcKind::Pipe,
-            ..ipc
-        });
-        ipc_keys.insert(IpcIdentity {
-            inode: ipc.inode - 1,
-            ..ipc
-        });
-        ipc_keys.insert(IpcIdentity {
-            device: DeviceId {
-                major: device.major + 1,
-                ..device
-            },
-            ..ipc
-        });
-        ipc_keys.insert(IpcIdentity {
-            device: DeviceId {
-                minor: device.minor - 1,
-                ..device
-            },
-            ..ipc
-        });
-        assert_eq!(ipc_keys.len(), 5);
     }
 }

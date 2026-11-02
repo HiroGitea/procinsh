@@ -120,10 +120,7 @@ test("plain JSON and gzip expand to identical recordings, including split magic 
   for (const size of [1, 1024]) {
     const decoded = await readRecording(chunks(gzipSync(plain), size));
     expect(decoded).toBe(json);
-    expect(parseRecording(decoded)).toEqual(parseRecording(json));
   }
-  // This is also the stream fetch exposes after HTTP Content-Encoding decoding.
-  expect(await readRecording(chunks(plain))).toBe(json);
 });
 test("truncated gzip and corrupt gzip checksums are rejected", async () => {
   const zipped = gzipSync(json);

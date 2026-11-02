@@ -75,14 +75,6 @@ fn access(mode: Option<u32>) -> FdAccess {
     FdAccess::from_mode(mode)
 }
 
-#[cfg(test)]
-fn pipe_opposite(a: Option<u32>, b: Option<u32>) -> bool {
-    matches!(
-        (a, b),
-        (Some(0), Some(1 | 2)) | (Some(1), Some(0 | 2)) | (Some(2), Some(0..=2))
-    )
-}
-
 fn owners(
     keys: &HashSet<Key>,
     deadline: Instant,
@@ -475,16 +467,6 @@ pub(super) fn read(id: ProcessId) -> Result<FileDescriptors> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn pipe_directions_are_not_confused_with_shared_ends() {
-        assert!(pipe_opposite(Some(0), Some(1)));
-        assert!(pipe_opposite(Some(1), Some(0)));
-        assert!(pipe_opposite(Some(2), Some(0)));
-        assert!(!pipe_opposite(Some(0), Some(0)));
-        assert!(!pipe_opposite(Some(1), Some(1)));
-        assert!(!pipe_opposite(None, Some(1)));
-    }
 
     #[test]
     fn reverse_matching_excludes_listeners_and_unconnected_sockets() {

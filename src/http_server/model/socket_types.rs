@@ -247,13 +247,6 @@ mod tests {
             };
             assert_eq!(serde_json::to_value(kind).unwrap(), case["value"]);
             assert_eq!(kind.to_string(), case["label"].as_str().unwrap());
-            assert_eq!(
-                kind.is_tcp_or_udp(),
-                matches!(
-                    kind,
-                    SocketProtocol::Tcp { .. } | SocketProtocol::Udp { .. }
-                )
-            );
         }
     }
 

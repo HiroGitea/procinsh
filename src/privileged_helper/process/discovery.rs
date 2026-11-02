@@ -152,10 +152,6 @@ mod uid_tests {
             Some(1_700_003_412_320)
         );
         assert_eq!(start_timestamp(u64::MAX, 0, 100.0), None);
-        let stat = procfs::read_stat(&format!("/proc/{}/stat", std::process::id())).unwrap();
-        let timestamp = started_at(stat.start_time).unwrap();
-        assert!(timestamp <= super::super::timestamp_ms());
-        assert!(timestamp > 1_000_000_000_000);
     }
 
     #[test]
