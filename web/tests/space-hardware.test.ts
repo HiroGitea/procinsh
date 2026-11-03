@@ -304,6 +304,13 @@ describe("hardware bay", () => {
     expect(overlay()).toBe(16 * 2);
     scene.updateSelection(selection({}));
     expect(overlay()).toBe(0);
+    let disposedGeometry = 0;
+    let disposedMaterial = 0;
+    users.geometry.addEventListener("dispose", () => disposedGeometry++);
+    (users.material as T.Material).addEventListener(
+      "dispose",
+      () => disposedMaterial++,
+    );
     // Processes hidden by search have no links.
     scene.rebuild(
       {
@@ -325,7 +332,24 @@ describe("hardware bay", () => {
         scene.root.getObjectByName("hardware-users") as T.LineSegments
       ).geometry.getAttribute("position").count,
     ).toBe(0);
+    expect(disposedGeometry).toBe(1);
+    expect(disposedMaterial).toBe(0);
+    // Replacements must render before the retired materials release their shaders.
+    Reflect.apply(scene.root.onAfterRender, scene.root, []);
+    expect(disposedMaterial).toBe(1);
+    Reflect.apply(scene.root.onAfterRender, scene.root, []);
+    expect(disposedMaterial).toBe(1);
+    const currentUsers = scene.root.getObjectByName(
+      "hardware-users",
+    ) as T.LineSegments;
+    let currentDisposed = 0;
+    (currentUsers.material as T.Material).addEventListener(
+      "dispose",
+      () => currentDisposed++,
+    );
     scene.dispose();
+    expect(currentDisposed).toBe(1);
+    expect(disposedMaterial).toBe(1);
   });
 
   test("details list identity, paths and processes", () => {
