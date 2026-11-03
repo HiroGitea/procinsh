@@ -5,6 +5,7 @@
 use super::helper_service::{MonitorService, MonitorState};
 use crate::ipc::{schema::*, transport};
 use anyhow::{Result, ensure};
+use clap::Parser;
 use std::{
     net::Shutdown,
     os::{
@@ -19,24 +20,30 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Parser)]
+struct Cli {
+    /// Inherited private IPC endpoint (must be file descriptor 3)
+    #[arg(long, value_parser = clap::value_parser!(i32).range(3..=3))]
+    ipc_fd: i32,
+    /// PID of the parent process that owns the IPC endpoint
+    #[arg(long)]
+    parent_pid: i32,
+}
+
 static STOP: AtomicBool = AtomicBool::new(false);
 extern "C" fn stop(_: i32) {
     STOP.store(true, Ordering::Relaxed);
 }
 
 pub(crate) fn run() -> Result<()> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    ensure!(
-        args.len() == 4 && args[0] == "--ipc-fd" && args[1] == "3" && args[2] == "--parent-pid",
-        "helper requires an inherited private IPC endpoint"
-    );
-    let parent: i32 = args[3].parse()?;
+    let cli = Cli::parse();
+    let parent = cli.parent_pid;
     let mut peer: libc::ucred = unsafe { std::mem::zeroed() };
     let mut size = std::mem::size_of_val(&peer) as libc::socklen_t;
     ensure!(
         unsafe {
             libc::getsockopt(
-                3,
+                cli.ipc_fd,
                 libc::SOL_SOCKET,
                 libc::SO_PEERCRED,
                 &mut peer as *mut _ as *mut _,
@@ -48,9 +55,9 @@ pub(crate) fn run() -> Result<()> {
             && peer.uid == unsafe { libc::getuid() },
         "invalid IPC parent identity"
     );
-    let mut socket = unsafe { UnixStream::from_raw_fd(3) };
+    let mut socket = unsafe { UnixStream::from_raw_fd(cli.ipc_fd) };
     ensure!(
-        unsafe { libc::fcntl(3, libc::F_SETFD, libc::FD_CLOEXEC) } == 0,
+        unsafe { libc::fcntl(cli.ipc_fd, libc::F_SETFD, libc::FD_CLOEXEC) } == 0,
         "seal inherited endpoint"
     );
     super::privileges::restrict_monitor_privileges()?;
