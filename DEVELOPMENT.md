@@ -147,7 +147,7 @@ The list, process detail, and SPACE pages have separate HTML and TypeScript entr
 | [space/model.ts](web/src/space/model.ts) | Pure functions for process/resource identities, labels, UID colors |
 | [space/data.ts](web/src/space/data.ts) | SSE, observation/activity state, structure-event merging, retained layout state; independent of Three.js/DOM |
 | [space/process-layout.ts](web/src/space/process-layout.ts) | Pure functions for full parent/child tree layout and added-process placement preserving existing coordinates |
-| [space/scene.ts](web/src/space/scene.ts) | Building/updating Three.js objects from layout data and releasing unused Geometry/Material resources |
+| [space/scene.ts](web/src/space/scene.ts) | Composing [geometry builders](developer-docs/space-scene.md), updating selection, and owning Geometry/Material disposal |
 | [space/renderer.ts](web/src/space/renderer.ts) | Render loop, activity animations, Canvas 2D text labels, FPS/render-resolution adjustment |
 | [space/search.ts](web/src/space/search.ts) | PID/name filtering and search events |
 | [space/selection.ts](web/src/space/selection.ts) | Selection/hover state, click/drag detection, scene hit testing |
