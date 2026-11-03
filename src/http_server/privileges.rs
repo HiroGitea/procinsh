@@ -66,16 +66,12 @@ pub(super) fn close_inherited() -> Result<()> {
     )
 }
 
-fn clear_ambient() -> Result<()> {
+pub(super) fn drop_application_capabilities() -> Result<()> {
     prctl(
         libc::PR_CAP_AMBIENT,
         libc::PR_CAP_AMBIENT_CLEAR_ALL as _,
         "clear ambient capabilities",
-    )
-}
-
-pub(super) fn drop_application_capabilities() -> Result<()> {
-    clear_ambient()?;
+    )?;
     set_capabilities(&[CapabilitySet::default(); 2])?;
     // Do not let ordinary same-UID processes inspect or tamper with the IPC
     // client. This also closes the /proc/PID/fd access route to the socketpair.

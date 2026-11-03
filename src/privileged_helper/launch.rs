@@ -60,7 +60,7 @@ pub(crate) fn run() -> Result<()> {
         unsafe { libc::fcntl(cli.ipc_fd, libc::F_SETFD, libc::FD_CLOEXEC) } == 0,
         "seal inherited endpoint"
     );
-    super::privileges::restrict_monitor_privileges()?;
+    super::privileges::restrict_helper_privileges()?;
     let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
     action.sa_sigaction = stop as *const () as libc::sighandler_t;
     unsafe {
