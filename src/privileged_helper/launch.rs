@@ -55,7 +55,7 @@ pub(crate) fn run() -> Result<()> {
             && peer.uid == unsafe { libc::getuid() },
         "invalid IPC parent identity"
     );
-    let mut socket = unsafe { UnixStream::from_raw_fd(cli.ipc_fd) };
+    let mut ipc_socket = unsafe { UnixStream::from_raw_fd(cli.ipc_fd) };
     ensure!(
         unsafe { libc::fcntl(cli.ipc_fd, libc::F_SETFD, libc::FD_CLOEXEC) } == 0,
         "seal inherited endpoint"
@@ -78,7 +78,7 @@ pub(crate) fn run() -> Result<()> {
         "parent exited during helper startup"
     );
     transport::write(
-        &mut socket,
+        &mut ipc_socket,
         &HelperIdentity {
             pid: std::process::id(),
             capabilities: super::privileges::effective_capabilities()?,
@@ -87,12 +87,12 @@ pub(crate) fn run() -> Result<()> {
     )?;
     let state = Arc::new(MonitorState::new(Duration::from_secs(1)));
     let service = MonitorService::new(state.clone());
-    let shutdown = socket.try_clone()?;
+    let shutdown = ipc_socket.try_clone()?;
     let (finished, completion) = mpsc::channel();
     std::thread::Builder::new()
         .name("privileged-ipc".into())
         .spawn(move || {
-            let _ = finished.send(service.serve(socket));
+            let _ = finished.send(service.serve(ipc_socket));
         })?;
     loop {
         match completion.try_recv() {
