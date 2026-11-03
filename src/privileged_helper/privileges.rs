@@ -51,16 +51,12 @@ fn prctl(option: i32, arg: libc::c_ulong, operation: &str) -> Result<()> {
     )
 }
 
-fn clear_ambient() -> Result<()> {
+pub(crate) fn restrict_helper_privileges() -> Result<()> {
     prctl(
         libc::PR_CAP_AMBIENT,
         libc::PR_CAP_AMBIENT_CLEAR_ALL as _,
         "clear ambient capabilities",
-    )
-}
-
-pub(crate) fn restrict_monitor_privileges() -> Result<()> {
-    clear_ambient()?;
+    )?;
     let mut data = capabilities()?;
     if data[0].effective & (1 << 8) != 0 {
         // Disable UID-0's special exec capability rules while CAP_SETPCAP is
@@ -74,7 +70,7 @@ pub(crate) fn restrict_monitor_privileges() -> Result<()> {
                 prctl(
                     libc::PR_CAPBSET_DROP,
                     cap as _,
-                    "restrict monitor bounding set",
+                    "restrict helper bounding set",
                 )?;
             }
         }
@@ -86,8 +82,8 @@ pub(crate) fn restrict_monitor_privileges() -> Result<()> {
         set.inheritable = 0;
     }
     set_capabilities(&data)?;
-    prctl(libc::PR_SET_NO_NEW_PRIVS, 1, "set monitor no_new_privs")?;
-    prctl(libc::PR_SET_DUMPABLE, 0, "disable monitor dumps")
+    prctl(libc::PR_SET_NO_NEW_PRIVS, 1, "set helper no_new_privs")?;
+    prctl(libc::PR_SET_DUMPABLE, 0, "disable helper dumps")
 }
 
 pub(crate) fn effective_capabilities() -> Result<u64> {
